@@ -37,6 +37,7 @@ def setup_home() -> str:
     <p class='muted'>Terminal remains the primary appliance interface.</p>
     <p>Current step: <strong>{summary['current_step']}</strong> ({summary['step_index']}/{summary['total_steps']})</p>
     <p>Progress: {summary['progress_percent']}%</p>
+    <p><a href='/network'>Network Status</a> <a href='/identity'>Device Identity</a> <a href='/backend'>Backend</a> <a href='/workspace'>Workspace</a> <a href='/theme'>Theme</a> <a href='/openclaw'>OpenClaw</a> <a href='/progress'>Progress</a></p>
     <p><a href='/network'>Network Status</a> <a href='/identity'>Device Identity</a> <a href='/backend'>Backend</a> <a href='/workspace'>Workspace</a> <a href='/theme'>Theme</a> <a href='/progress'>Progress</a></p>
     """
     return _layout("Hosaka Setup", body)

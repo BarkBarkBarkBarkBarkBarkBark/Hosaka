@@ -3,6 +3,7 @@ set -euo pipefail
 
 APP_ROOT="/opt/hosaka-field-terminal"
 SERVICE_NAME="hosaka-field-terminal.service"
+HEADLESS_SERVICE_NAME="hosaka-field-terminal-headless.service"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 INSTALL_TAILSCALE="${INSTALL_TAILSCALE:-0}"

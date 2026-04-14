@@ -12,6 +12,7 @@ STEP_PROMPTS: dict[str, str] = {
     "configure_backend_endpoint_optional": "Backend endpoint (optional): ",
     "configure_workspace_root": "Workspace root [/opt/hosaka/workspace]: ",
     "configure_theme": "Theme [dark/amber/blue]: ",
+    "configure_openclaw": "OpenClaw path [/opt/openclaw] (or 'skip'): ",
     "confirm_setup_summary": "Type 'confirm' to finalize setup or 'back': ",
     "finalize_and_enter_main_console": "Setup complete. Press enter for main console.",
 }
@@ -68,6 +69,14 @@ def run_setup_flow(orchestrator: SetupOrchestrator, web_url: str) -> None:
             orchestrator.set_field("workspace_root", answer or "/opt/hosaka/workspace")
         elif current_step == "configure_theme":
             orchestrator.set_field("theme", answer or "dark")
+        elif current_step == "configure_openclaw":
+            if answer.lower() == "skip":
+                orchestrator.set_field("openclaw_enabled", False)
+                orchestrator.set_field("openclaw_ready", False)
+            else:
+                orchestrator.set_field("openclaw_enabled", True)
+                orchestrator.set_field("openclaw_path", answer or "/opt/openclaw")
+                orchestrator.set_field("openclaw_ready", True)
         elif current_step == "confirm_setup_summary":
             if answer.lower() == "back":
                 orchestrator.previous_step()
