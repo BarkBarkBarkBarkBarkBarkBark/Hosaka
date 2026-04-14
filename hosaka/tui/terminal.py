@@ -1,14 +1,8 @@
 from __future__ import annotations
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.progress import BarColumn, Progress, TextColumn
-
 from hosaka.offline.assist import classify_intent
 from hosaka.setup.orchestrator import SetupOrchestrator
 from hosaka.setup.steps import SETUP_STEPS
-
-console = Console()
 
 STEP_PROMPTS: dict[str, str] = {
     "welcome_and_branding": "Press enter to continue.",
@@ -24,33 +18,27 @@ STEP_PROMPTS: dict[str, str] = {
 
 
 def _banner() -> None:
-    console.print(
-        Panel.fit(
-            "[bold cyan]HOSAKA FIELD TERMINAL[/bold cyan]\nInitializing operator console...",
-            border_style="cyan",
-        )
-    )
+    print("\n==============================")
+    print("HOSAKA FIELD TERMINAL")
+    print("Initializing operator console...")
+    print("==============================\n")
 
 
 def _render_progress(orchestrator: SetupOrchestrator) -> None:
     summary = orchestrator.summary()
-    with Progress(
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=36),
-        TextColumn("{task.completed}/{task.total}"),
-        TextColumn("{task.percentage:>3.0f}%"),
-        transient=True,
-    ) as progress:
-        progress.add_task("Onboarding", total=summary["total_steps"], completed=summary["step_index"])
+    print(
+        f"Onboarding progress: step {summary['step_index']}/{summary['total_steps']} "
+        f"({summary['progress_percent']}%)"
+    )
 
 
 def run_setup_flow(orchestrator: SetupOrchestrator, web_url: str) -> None:
     _banner()
-    console.print(
+    print(
         "Setup is incomplete. Hosaka can guide you here in the terminal, "
         "or continue in browser on your local network."
     )
-    console.print(f"[bold green]Setup GUI available at: {web_url}[/bold green]")
+    print(f"Setup GUI available at: {web_url}")
 
     while not orchestrator.state.setup_completed:
         orchestrator.update_runtime_network()
@@ -58,15 +46,15 @@ def run_setup_flow(orchestrator: SetupOrchestrator, web_url: str) -> None:
         current_step = orchestrator.state.current_step
         prompt = STEP_PROMPTS.get(current_step, "Press enter to continue.")
         try:
-            console.print(f"\n[bold]{current_step}[/bold]")
-            answer = console.input(prompt, markup=False).strip()
+            print(f"\n{current_step}")
+            answer = input(prompt).strip()
         except (EOFError, KeyboardInterrupt):
-            console.print("[yellow]Input stream unavailable; setup can continue from LAN web UI.[/yellow]")
+            print("Input stream unavailable; setup can continue from LAN web UI.")
             break
 
         if answer.startswith("help"):
             intent = classify_intent(answer)
-            console.print(f"[cyan]{intent.intent}:[/] {intent.guidance}")
+            print(f"{intent.intent}: {intent.guidance}")
             continue
 
         if current_step == "choose_or_confirm_hostname":
@@ -85,7 +73,7 @@ def run_setup_flow(orchestrator: SetupOrchestrator, web_url: str) -> None:
                 orchestrator.previous_step()
                 continue
             if answer.lower() != "confirm":
-                console.print("Type 'confirm' to complete setup.")
+                print("Type 'confirm' to complete setup.")
                 continue
             orchestrator.finalize()
             break
@@ -93,4 +81,4 @@ def run_setup_flow(orchestrator: SetupOrchestrator, web_url: str) -> None:
         if current_step != SETUP_STEPS[-1]:
             orchestrator.next_step()
 
-    console.print("[bold green]Setup complete.[/bold green]")
+    print("Setup complete.")

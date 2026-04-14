@@ -115,6 +115,7 @@ On boot, systemd runs `python -m hosaka`, which:
 sudo journalctl -u hosaka-field-terminal.service -f
 cat /var/lib/hosaka/state.json
 curl http://127.0.0.1:8421/progress
+sudo -u root /opt/hosaka-field-terminal/.venv/bin/python -m hosaka
 ```
 
 If you change the systemd unit manually, run:
