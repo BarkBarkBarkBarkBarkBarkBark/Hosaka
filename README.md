@@ -118,6 +118,13 @@ On boot, systemd runs `python -m hosaka`, which:
 - Onboarding includes an OpenClaw configuration step (path + enable/disable).
 - See implementation roadmap: `docs/openclaw_console_plan.md`.
 
+### Main console operator UX
+
+- Motto: **No Wrong Way**.
+- Unknown/failed commands trigger playful redirect guidance and suggested commands.
+- Built-in reader command: `read <file>` with pager controls (`Enter` next page, `q` exit).
+- Built-in manual: `read manifest` (loads `docs/no_wrong_way_manifest.md`).
+
 ### Debugging
 
 ```bash
