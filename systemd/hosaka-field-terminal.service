@@ -1,0 +1,21 @@
+[Unit]
+Description=Hosaka Field Terminal Appliance
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/hosaka-field-terminal
+Environment=HOSAKA_STATE_PATH=/var/lib/hosaka/state.json
+Environment=PYTHONUNBUFFERED=1
+Environment=HOSAKA_BOOT_MODE=console
+ExecStart=/opt/hosaka-field-terminal/.venv/bin/python -m hosaka
+Restart=always
+RestartSec=2
+StandardInput=tty-force
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+
+[Install]
+WantedBy=multi-user.target
