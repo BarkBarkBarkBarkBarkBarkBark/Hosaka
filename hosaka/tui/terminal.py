@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from hosaka.ops.updater import run_update
 from hosaka.offline.assist import classify_intent
 from hosaka.setup.orchestrator import SetupOrchestrator
 from hosaka.setup.steps import SETUP_STEPS
@@ -56,6 +57,13 @@ def run_setup_flow(orchestrator: SetupOrchestrator, web_url: str) -> None:
         if answer.startswith("help"):
             intent = classify_intent(answer)
             print(f"{intent.intent}: {intent.guidance}")
+            continue
+        if answer.lower() == "update":
+            print("Starting Hosaka update... this may restart services.")
+            ok, output = run_update()
+            if output:
+                print(output)
+            print("Update complete." if ok else "Update encountered an issue.")
             continue
 
         if current_step == "choose_or_confirm_hostname":

@@ -18,3 +18,11 @@ def test_change_directory_relative_path(tmp_path) -> None:
     sub.mkdir()
     out = main_console._change_directory("alpha", current_dir=tmp_path)
     assert out == sub
+
+
+def test_update_flow_prints_output(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(main_console, "run_update", lambda: (True, "updated"))
+    main_console._run_update_flow()
+    out = capsys.readouterr().out
+    assert "updated" in out
+    assert "Update complete." in out

@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 from typing import Iterable
 
+from hosaka.ops.updater import run_update
+
 APP_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_DOC = APP_ROOT / "docs" / "no_wrong_way_manifest.md"
 DEFAULT_HELP_TOPICS = (
@@ -15,6 +17,7 @@ DEFAULT_HELP_TOPICS = (
     "/theme",
     "/preview",
     "/manifest",
+    "update",
     "read <file>",
     "/exit",
 )
@@ -90,6 +93,16 @@ def _unknown_command(command: str) -> None:
     _show_manifest_hint()
 
 
+def _run_update_flow() -> None:
+    print("Starting Hosaka update... this may restart services.")
+    ok, output = run_update()
+    print(output)
+    if ok:
+        print("Update complete.")
+    else:
+        print("Update encountered an issue.")
+
+
 def _change_directory(argument: str, current_dir: Path) -> Path:
     target_input = argument.strip() or "~"
     candidate = Path(target_input).expanduser()
@@ -130,6 +143,8 @@ def run_main_console() -> None:
             print("Preview mode is reserved for future OpenClaw integration.")
         elif raw == "/manifest":
             _read_file("manifest", current_dir=current_dir)
+        elif raw in {"update", "/update"}:
+            _run_update_flow()
         elif raw.startswith("read "):
             _read_file(raw[5:], current_dir=current_dir)
         elif raw == "pwd":
