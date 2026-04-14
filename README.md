@@ -138,6 +138,7 @@ On boot, systemd runs `python -m hosaka`, which:
 - Unknown/failed commands trigger playful redirect guidance and suggested commands.
 - Built-in reader command: `read <file>` with pager controls (`Enter` next page, `q` exit).
 - Built-in manual: `read manifest` (loads `docs/no_wrong_way_manifest.md`).
+- Supports common shell navigation in-console (`cd`, `pwd`) and runs shell commands from the active working directory.
 
 ### Debugging
 

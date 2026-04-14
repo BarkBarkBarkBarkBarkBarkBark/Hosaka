@@ -16,6 +16,8 @@ fi
 
 sudo mkdir -p "$APP_ROOT"
 sudo rsync -a --delete "$REPO_ROOT/hosaka" "$APP_ROOT/"
+sudo rsync -a --delete "$REPO_ROOT/docs" "$APP_ROOT/"
+sudo rsync -a "$REPO_ROOT/README.md" "$APP_ROOT/"
 sudo rsync -a "$REPO_ROOT/requirements-hosaka.txt" "$APP_ROOT/"
 
 if [[ "$INSTALL_TAILSCALE" == "1" ]]; then

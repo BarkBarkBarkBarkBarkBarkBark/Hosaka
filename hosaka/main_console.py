@@ -56,18 +56,18 @@ def _paginate_lines(lines: Iterable[str], page_size: int = 24) -> None:
     input()
 
 
-def _resolve_read_target(argument: str) -> Path:
+def _resolve_read_target(argument: str, current_dir: Path) -> Path:
     cleaned = argument.strip()
     if cleaned in {"manifest", "guide", "manual"}:
         return MANIFEST_DOC
     candidate = Path(cleaned)
     if not candidate.is_absolute():
-        candidate = (APP_ROOT / candidate).resolve()
+        candidate = (current_dir / candidate).resolve()
     return candidate
 
 
-def _read_file(argument: str) -> None:
-    target = _resolve_read_target(argument)
+def _read_file(argument: str, current_dir: Path) -> None:
+    target = _resolve_read_target(argument, current_dir=current_dir)
     if not target.exists():
         print(f"Read failed: file not found: {target}")
         return
@@ -90,11 +90,26 @@ def _unknown_command(command: str) -> None:
     _show_manifest_hint()
 
 
+def _change_directory(argument: str, current_dir: Path) -> Path:
+    target_input = argument.strip() or "~"
+    candidate = Path(target_input).expanduser()
+    if not candidate.is_absolute():
+        candidate = (current_dir / candidate).resolve()
+    if not candidate.exists():
+        print(f"cd failed: path does not exist: {candidate}")
+        return current_dir
+    if not candidate.is_dir():
+        print(f"cd failed: not a directory: {candidate}")
+        return current_dir
+    return candidate
+
+
 def run_main_console() -> None:
     _print_banner()
+    current_dir = Path.cwd()
     while True:
         try:
-            raw = input("hosaka> ").strip()
+            raw = input(f"hosaka:{current_dir} > ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\nExiting Hosaka console.")
             break
@@ -114,14 +129,19 @@ def run_main_console() -> None:
         elif raw == "/preview":
             print("Preview mode is reserved for future OpenClaw integration.")
         elif raw == "/manifest":
-            _read_file("manifest")
+            _read_file("manifest", current_dir=current_dir)
         elif raw.startswith("read "):
-            _read_file(raw[5:])
+            _read_file(raw[5:], current_dir=current_dir)
+        elif raw == "pwd":
+            print(current_dir)
+        elif raw == "cd" or raw.startswith("cd "):
+            current_dir = _change_directory(raw[2:].strip(), current_dir=current_dir)
+            print(f"Directory: {current_dir}")
         elif raw == "/exit":
             break
         else:
             try:
-                proc = subprocess.run(shlex.split(raw), capture_output=True, text=True)
+                proc = subprocess.run(shlex.split(raw), capture_output=True, text=True, cwd=str(current_dir))
                 if proc.stdout:
                     print(proc.stdout)
                 if proc.stderr:
