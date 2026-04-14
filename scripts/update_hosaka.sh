@@ -1,10 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET_BRANCH="${1:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)}"
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONSOLE_SERVICE="hosaka-field-terminal.service"
 HEADLESS_SERVICE="hosaka-field-terminal-headless.service"
+
+find_repo_root() {
+  if [[ -n "${HOSAKA_REPO_ROOT:-}" && -d "${HOSAKA_REPO_ROOT}/.git" ]]; then
+    echo "${HOSAKA_REPO_ROOT}"
+    return
+  fi
+
+  local candidates=(
+    "$SCRIPT_ROOT"
+    "$PWD"
+    "/workspace/cyber_deck"
+    "$HOME/cyber_deck"
+  )
+
+  local home_candidate
+  for home_candidate in /home/*/cyber_deck; do
+    candidates+=("$home_candidate")
+  done
+
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -d "$candidate/.git" ]]; then
+      echo "$candidate"
+      return
+    fi
+  done
+}
+
+REPO_ROOT="$(find_repo_root || true)"
+if [[ -z "$REPO_ROOT" ]]; then
+  echo "[hosaka-update] Could not find git repository root."
+  echo "[hosaka-update] Set HOSAKA_REPO_ROOT=/path/to/cyber_deck and retry."
+  exit 1
+fi
+
+TARGET_BRANCH="${1:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)}"
 
 cd "$REPO_ROOT"
 

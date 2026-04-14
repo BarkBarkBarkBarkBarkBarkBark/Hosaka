@@ -105,6 +105,12 @@ Optional: pass a branch name:
 ./scripts/update_hosaka.sh work
 ```
 
+If running from an installed `/opt/hosaka-field-terminal` copy, set repo root explicitly when needed:
+
+```bash
+HOSAKA_REPO_ROOT=~/cyber_deck /opt/hosaka-field-terminal/scripts/update_hosaka.sh
+```
+
 ### Boot behavior
 
 On boot, systemd runs `python -m hosaka`, which:
