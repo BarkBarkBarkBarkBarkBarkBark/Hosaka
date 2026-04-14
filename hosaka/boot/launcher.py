@@ -12,7 +12,6 @@ from hosaka.tui.terminal import run_setup_flow
 
 WEB_HOST = os.getenv("HOSAKA_WEB_HOST", "0.0.0.0")
 WEB_PORT = int(os.getenv("HOSAKA_WEB_PORT", "8421"))
-BOOT_MODE = os.getenv("HOSAKA_BOOT_MODE", "console")
 
 
 def start_web_server() -> subprocess.Popen[str] | None:
@@ -43,9 +42,7 @@ def launch() -> None:
     web_url = f"http://{orchestrator.state.local_ip}:{WEB_PORT}"
     web_process = start_web_server()
 
-    if BOOT_MODE == "headless" or not sys.stdin.isatty():
-        if BOOT_MODE != "headless":
-            print("Hosaka warning: no TTY detected; falling back to headless web setup mode.")
+    if not sys.stdin.isatty():
         print(f"Hosaka web setup available at: {web_url}")
         while True:
             if web_process and web_process.poll() is not None:

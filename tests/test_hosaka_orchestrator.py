@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from hosaka.setup.orchestrator import build_default_orchestrator
-from hosaka.setup.steps import SETUP_STEPS
 
 
 def test_orchestrator_resume_and_progress(tmp_path: Path) -> None:
@@ -31,11 +30,3 @@ def test_orchestrator_invalid_step_and_empty_defaults(tmp_path: Path) -> None:
     assert summary["hostname"] == "hosaka-field-terminal"
     assert summary["workspace_root"] == "/opt/hosaka/workspace"
     assert summary["theme"] == "dark"
-
-
-def test_openclaw_defaults_and_step_present(tmp_path: Path) -> None:
-    orchestrator = build_default_orchestrator(tmp_path / "state.json")
-    assert "configure_openclaw" in SETUP_STEPS
-
-    orchestrator.set_field("openclaw_path", "")
-    assert orchestrator.summary()["openclaw_path"] == "/opt/openclaw"

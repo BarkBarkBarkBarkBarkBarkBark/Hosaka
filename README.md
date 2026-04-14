@@ -83,9 +83,6 @@ sudo systemctl start hosaka-field-terminal.service
 sudo systemctl status hosaka-field-terminal.service
 ```
 
-`hosaka-field-terminal.service` is now **console-first** (keyboard input on tty1).  
-Use `hosaka-field-terminal-headless.service` only for web-only/headless operation.
-
 Optional install flags:
 
 - `INSTALL_TAILSCALE=1 ./scripts/install_hosaka.sh`
@@ -109,14 +106,8 @@ On boot, systemd runs `python -m hosaka`, which:
 - `/backend` backend endpoint
 - `/workspace` workspace root
 - `/theme` theme
-- `/openclaw` openclaw setup
 - `/progress` JSON progress payload
 - `/complete` finalize setup
-
-### OpenClaw integration
-
-- Onboarding includes an OpenClaw configuration step (path + enable/disable).
-- See implementation roadmap: `docs/openclaw_console_plan.md`.
 
 ### Debugging
 

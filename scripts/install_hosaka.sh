@@ -41,10 +41,8 @@ sudo "$APP_ROOT/.venv/bin/pip" install -r "$APP_ROOT/requirements-hosaka.txt"
 
 sudo install -d -m 755 /var/lib/hosaka
 sudo cp "$REPO_ROOT/systemd/$SERVICE_NAME" "/etc/systemd/system/$SERVICE_NAME"
-sudo cp "$REPO_ROOT/systemd/$HEADLESS_SERVICE_NAME" "/etc/systemd/system/$HEADLESS_SERVICE_NAME"
 sudo systemctl daemon-reload
 sudo systemctl enable "$SERVICE_NAME"
-sudo systemctl disable "$HEADLESS_SERVICE_NAME" >/dev/null 2>&1 || true
 
 echo "Hosaka Field Terminal installed."
 echo "Start now: sudo systemctl start $SERVICE_NAME"
