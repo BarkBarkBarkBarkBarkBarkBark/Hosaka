@@ -1,158 +1,157 @@
 # CyberDeck
 
-Portable computing systems built for technical professionals. This is the v1 marketing and pre-commerce website, built with Next.js 16, TypeScript, and Tailwind CSS.
+This repository now contains two deliverables:
 
-[Web Site](https://cyber-deck-psi.vercel.app/faq)
+1. **CyberDeck marketing site** (existing Next.js 16 app).
+2. **Hosaka Field Terminal appliance slice** (new Python + systemd first-boot experience).
 
-## Tech Stack
+The Hosaka work is additive and does **not** remove or alter the existing website stack.
 
-- **Framework:** Next.js 16 (App Router)
-- **Language:** TypeScript
-- **Styling:** Tailwind CSS v4
-- **Icons:** lucide-react
-- **Animations:** framer-motion
-- **Deployment:** Vercel
+---
 
-## Getting Started
+## 1) Existing Web Platform (unchanged)
 
-### Prerequisites
+- Framework: Next.js 16 (App Router)
+- Language: TypeScript
+- Styling: Tailwind CSS
 
-- Node.js 20+
-- npm 10+
-
-### Install dependencies
+Run locally:
 
 ```bash
 npm install
-```
-
-### Set up environment variables
-
-```bash
-cp .env.example .env.local
-```
-
-Edit `.env.local` and fill in any required values. For local development, defaults work without changes.
-
-### Run locally
-
-```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+---
 
-### Build for production
+## 2) Hosaka Field Terminal Appliance
+
+A terminal-first appliance shell intended for a headless Debian/Linux box that:
+
+- auto-starts on boot (systemd)
+- runs a guided first-boot setup in terminal
+- serves a lightweight LAN setup GUI in parallel
+- persists setup progress and resumes after reboot
+- launches a branded main console after setup
+
+### New repository layout
+
+```text
+hosaka/
+  boot/          # boot launcher and web startup
+  tui/           # terminal setup flow
+  setup/         # orchestrator + shared setup steps
+  web/           # FastAPI setup pages
+  network/       # local/tailscale discovery helpers
+  offline/       # offline intent classifier (rules)
+  config/        # persisted setup state model/store
+scripts/
+  install_hosaka.sh
+systemd/
+  hosaka-field-terminal.service
+tests/
+  test_hosaka_orchestrator.py
+  test_hosaka_offline.py
+requirements-hosaka.txt
+```
+
+### Why this is streamlined
+
+To reduce redundancy and keep behavior consistent between TUI and web:
+
+- setup step names are centralized in `hosaka/setup/steps.py`
+- both terminal and web read/write the same state file fields
+- one orchestrator (`hosaka/setup/orchestrator.py`) drives flow state/progress
+
+### Quick start (dev)
 
 ```bash
-npm run build
-npm run start
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-hosaka.txt
+python -m hosaka
 ```
 
-## Project Structure
+Default setup state path in dev: `/var/lib/hosaka/state.json` (override with `HOSAKA_STATE_PATH`).
 
-```
-app/                    # Next.js App Router pages
-├── layout.tsx          # Root layout (Navbar + Footer)
-├── page.tsx            # Home page
-├── sitemap.ts          # Auto-generated sitemap
-├── robots.ts           # robots.txt
-├── products/
-│   ├── page.tsx        # Product listing
-│   └── [slug]/
-│       └── page.tsx    # Product detail (dynamic)
-├── about/page.tsx
-├── contact/
-│   ├── page.tsx
-│   └── ContactForm.tsx  # Client form component
-├── preorder/
-│   ├── page.tsx
-│   └── PreorderForm.tsx # Client form component
-├── faq/page.tsx
-├── terms/page.tsx
-└── privacy/page.tsx
+### Appliance install (target Debian box)
 
-components/
-├── layout/
-│   ├── Navbar.tsx       # Sticky responsive navbar
-│   └── Footer.tsx       # Site footer
-├── ui/
-│   ├── Button.tsx       # Reusable button (primary/secondary/ghost)
-│   ├── Badge.tsx        # Status badge
-│   └── Accordion.tsx    # FAQ accordion
-├── sections/            # Home page sections
-│   ├── Hero.tsx
-│   ├── ValueProp.tsx
-│   ├── FeaturedProducts.tsx
-│   ├── WhyUs.tsx
-│   ├── UseCases.tsx
-│   └── LeadCaptureCTA.tsx
-└── product/
-    ├── ProductCard.tsx  # Product card for listings
-    └── ProductSpecs.tsx # Spec grid display
-
-data/
-└── products.ts          # Typed product data + helper functions
-
-lib/
-├── utils.ts             # cn(), formatPrice()
-└── actions.ts           # Server actions for form handling
+```bash
+./scripts/install_hosaka.sh
+sudo systemctl daemon-reload
+sudo systemctl start hosaka-field-terminal.service
+sudo systemctl status hosaka-field-terminal.service
 ```
 
-## Pages
+`hosaka-field-terminal.service` is now **console-first** (keyboard input on tty1).  
+Use `hosaka-field-terminal-headless.service` only for web-only/headless operation.
 
-| Route | Description |
-|---|---|
-| `/` | Home — hero, value prop, products, use cases, lead capture |
-| `/products` | Product listing |
-| `/products/[slug]` | Product detail with specs, FAQ, related |
-| `/about` | Company story and values |
-| `/contact` | Contact form |
-| `/preorder` | Preorder interest form |
-| `/faq` | Full FAQ with accordion |
-| `/terms` | Terms of Service |
-| `/privacy` | Privacy Policy |
+Optional install flags:
 
-## Form Handling
+- `INSTALL_TAILSCALE=1 ./scripts/install_hosaka.sh`
+- `INSTALL_CADDY=1 ./scripts/install_hosaka.sh`
 
-Forms use Next.js Server Actions (`lib/actions.ts`). Submissions are currently logged to console. To connect a real email service:
+### Boot behavior
 
-1. Install your email library (e.g., `npm install resend`)
-2. Add your API key to `.env.local`
-3. Replace the `console.log` stubs in `lib/actions.ts` with real send calls
+On boot, systemd runs `python -m hosaka`, which:
 
-The form architecture supports Resend, Formspree, Supabase, or any server-side handler.
+1. starts the local FastAPI setup server (`0.0.0.0:8421` by default)
+2. opens the branded terminal setup flow when `setup_completed=false`
+3. advertises the LAN setup URL in terminal
+4. resumes setup from persisted `current_step`
+5. enters the main Hosaka console after completion
 
-## Deploy to Vercel
+### LAN setup GUI pages
 
-### One-click deploy
+- `/` setup home
+- `/network` network status
+- `/identity` hostname
+- `/backend` backend endpoint
+- `/workspace` workspace root
+- `/theme` theme
+- `/openclaw` openclaw setup
+- `/progress` JSON progress payload
+- `/complete` finalize setup
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yourusername/cyber_deck)
+### OpenClaw integration
 
-### Manual deploy
+- Onboarding includes an OpenClaw configuration step (path + enable/disable).
+- See implementation roadmap: `docs/openclaw_console_plan.md`.
 
-1. Push your code to a GitHub/GitLab/Bitbucket repository
-2. Import the project at [vercel.com/new](https://vercel.com/new)
-3. Add environment variables from `.env.example` as needed
-4. Deploy
+### Main console operator UX
 
-Vercel automatically handles build, preview deployments, and production. No additional configuration required.
+- Motto: **No Wrong Way**.
+- Unknown/failed commands trigger playful redirect guidance and suggested commands.
+- Built-in reader command: `read <file>` with pager controls (`Enter` next page, `q` exit).
+- Built-in manual: `read manifest` (loads `docs/no_wrong_way_manifest.md`).
 
-## Adding Products
+### Debugging
 
-Edit `data/products.ts`. Each product follows the `Product` interface defined at the top of the file. The site will automatically pick up new products in listings, the sitemap, and static params for the detail page.
+```bash
+sudo journalctl -u hosaka-field-terminal.service -f
+cat /var/lib/hosaka/state.json
+curl http://127.0.0.1:8421/progress
+sudo -u root /opt/hosaka-field-terminal/.venv/bin/python -m hosaka
+```
 
-## Future Roadmap
+If you manually run Hosaka while the service is already running, port `8421` may already be occupied.
+In that case, stop the service first or run with a different port:
 
-The codebase is structured to support:
+```bash
+sudo systemctl stop hosaka-field-terminal.service
+HOSAKA_WEB_PORT=8422 sudo -u root /opt/hosaka-field-terminal/.venv/bin/python -m hosaka
+```
 
-- **Stripe checkout** — add payment routes in `app/checkout/`
-- **CMS integration** — replace `data/products.ts` with Contentful / Sanity / Payload fetches
-- **User accounts** — add auth via NextAuth or Clerk
-- **Blog / content** — add `app/blog/` with MDX or CMS-sourced posts
-- **Order tracking** — add order status routes once fulfillment is integrated
-- **Support portal** — add ticket system or integrate Intercom/Zendesk
+If you change the systemd unit manually, run:
 
-## License
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart hosaka-field-terminal.service
+```
 
-Private. All rights reserved.
+### Assumptions
+
+- systemd available
+- python3.10+ available
+- no desktop environment required
+- headless-friendly deployment
