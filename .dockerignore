@@ -1,0 +1,15 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+.DS_Store
+.env*
+*.egg-info
+dist
+build
+.vscode
+.idea
+node_modules
+.next
+docker

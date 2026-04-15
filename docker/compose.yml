@@ -1,0 +1,82 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Hosaka Field Terminal — Docker Compose for local development
+#
+# Start:     docker compose -f docker/compose.yml up
+# Rebuild:   docker compose -f docker/compose.yml up --build
+# Shell:     docker compose -f docker/compose.yml exec hosaka bash
+# Logs:      docker compose -f docker/compose.yml logs -f hosaka
+# Teardown:  docker compose -f docker/compose.yml down -v
+#
+# OpenClaw gateway starts automatically inside the container on first boot.
+# Set OPENAI_API_KEY in your .env file to enable the full agent experience.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── shared config ────────────────────────────────────────────────────────────
+x-hosaka-common: &hosaka-common
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  environment: &hosaka-env
+    - HOSAKA_WEB_HOST=0.0.0.0
+    - HOSAKA_WEB_PORT=8421
+    - HOSAKA_STATE_PATH=/var/lib/hosaka/state.json
+    - PYTHONUNBUFFERED=1
+    # ── OpenClaw gateway (Node.js, starts inside container) ────────
+    - OPENCLAW_GATEWAY_PORT=18789
+    # ── OpenAI backend — set OPENAI_API_KEY in your .env file ─────
+    # - OPENAI_API_KEY=sk-...
+    # - OPENAI_MODEL=gpt-4o-mini
+  volumes: &hosaka-vols
+    # ── live-mount source code for development (overrides COPY) ────
+    - ../hosaka:/opt/hosaka-field-terminal/hosaka
+    - ../docs:/opt/hosaka-field-terminal/docs
+    - ../scripts:/opt/hosaka-field-terminal/scripts
+    - ../tests:/opt/hosaka-field-terminal/tests
+    # ── persist state + openclaw config across restarts ────────────
+    - hosaka-state:/var/lib/hosaka
+    - openclaw-config:/root/.openclaw
+
+services:
+  # ── headless mode — background web UI, no terminal ─────────────────────
+  hosaka:
+    <<: *hosaka-common
+    container_name: hosaka-dev
+    ports:
+      - "8421:8421"
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      - HOSAKA_BOOT_MODE=headless
+      - HOSAKA_WEB_HOST=0.0.0.0
+      - HOSAKA_WEB_PORT=8421
+      - HOSAKA_STATE_PATH=/var/lib/hosaka/state.json
+      - PYTHONUNBUFFERED=1
+      - OPENCLAW_GATEWAY_PORT=18789
+    restart: unless-stopped
+
+  # ── console mode — full interactive TUI (the one you develop in) ───────
+  # Start with:  docker compose -f docker/compose.yml run --rm console
+  # Or:          ./docker/dev.sh tui
+  console:
+    <<: *hosaka-common
+    container_name: hosaka-console
+    ports:
+      - "8421:8421"
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      - HOSAKA_BOOT_MODE=console
+      - HOSAKA_WEB_HOST=0.0.0.0
+      - HOSAKA_WEB_PORT=8421
+      - HOSAKA_STATE_PATH=/var/lib/hosaka/state.json
+      - PYTHONUNBUFFERED=1
+      - OPENCLAW_GATEWAY_PORT=18789
+    stdin_open: true    # docker run -i
+    tty: true           # docker run -t
+    profiles: ["tui"]   # only starts when explicitly requested
+
+volumes:
+  hosaka-state:
+  openclaw-config:

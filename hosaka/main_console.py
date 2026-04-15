@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 from pathlib import Path
 from typing import Iterable
 
+from hosaka.llm.chat import enter_chat_mode, one_shot
 from hosaka.ops.updater import run_update
 
 APP_ROOT = Path(__file__).resolve().parents[1]
@@ -15,17 +17,22 @@ DEFAULT_HELP_TOPICS = (
     "/setup",
     "/network",
     "/theme",
-    "/preview",
     "/manifest",
     "update",
     "read <file>",
+    "code",
+    "chat",
+    "chat <prompt>",
+    "/openclaw status",
+    "/openclaw doctor",
+    "/openclaw install",
     "/exit",
 )
 
 
 def _print_banner() -> None:
     print("HOSAKA MAIN CONSOLE // NO WRONG WAY")
-    print("Type /help to begin, /manifest for the field guide.\n")
+    print("Type /help to begin. chat to talk to the LLM. code for a shell.\n")
 
 
 def _show_help() -> None:
@@ -117,6 +124,88 @@ def _change_directory(argument: str, current_dir: Path) -> Path:
     return candidate
 
 
+def _enter_code_mode(current_dir: Path) -> None:
+    shell = os.environ.get("SHELL", "/bin/bash")
+    print(f"Entering shell ({shell}). Type 'exit' or Ctrl-D to return.")
+    try:
+        subprocess.run([shell], cwd=str(current_dir))  # noqa: S603
+    except Exception as exc:  # noqa: BLE001
+        print(f"Shell failed: {exc}")
+    print("Back in Hosaka console.")
+
+
+def _hostname() -> str:
+    """Best-effort hostname from state file or system."""
+    try:
+        from hosaka.config.state import StateStore
+
+        state = StateStore().load()
+        if state.hostname:
+            return state.hostname
+    except Exception:  # noqa: BLE001
+        pass
+    import socket
+
+    return socket.gethostname()
+
+
+def _openclaw_status() -> None:
+    from hosaka.llm.openclaw import (
+        configured_model,
+        is_cli_installed,
+        is_gateway_up,
+        OPENCLAW_GATEWAY_PORT,
+    )
+
+    cli = is_cli_installed()
+    gateway = is_gateway_up()
+    status = "gateway online" if gateway else ("CLI installed" if cli else "not installed")
+    print(f"OpenClaw: {status}")
+    print(f"Gateway:  127.0.0.1:{OPENCLAW_GATEWAY_PORT}")
+    print(f"Model:    {configured_model()}")
+    if not gateway:
+        print("Run /openclaw install to set up, or /openclaw doctor for diagnostics.")
+
+
+def _openclaw_doctor() -> None:
+    from hosaka.llm.openclaw import doctor
+
+    print("Running OpenClaw diagnostics...\n")
+    info = doctor()
+    print(f"  CLI installed:         {info['cli_installed']}")
+    print(f"  CLI version:           {info['cli_version'] or 'n/a'}")
+    print(f"  Gateway up (:{info['gateway_port']}):  {info['gateway_up']}")
+    print(f"  Configured model:      {info['configured_model']}")
+    print(f"  OpenAI key set:        {info['openai_key_set']}")
+    print(f"  Config exists:         {info['config_exists']}")
+    print()
+    if not info['cli_installed']:
+        print("Fix: run /openclaw install")
+    elif not info['openai_key_set']:
+        print("Fix: set OPENAI_API_KEY in your .env file")
+    elif not info['config_exists']:
+        print("Fix: run /openclaw install to complete onboarding")
+    elif not info['gateway_up']:
+        print("Fix: restart Hosaka or run 'openclaw gateway start'")
+    else:
+        print("All checks passed. Type 'chat' to start talking.")
+
+
+def _openclaw_install() -> None:
+    from hosaka.llm.openclaw import run_install_script
+
+    print("Running OpenClaw installer...")
+    print("This will install Node.js 24 and the openclaw CLI, then onboard with OpenAI.")
+    print("Requires OPENAI_API_KEY to be set in your environment.\n")
+    ok, output = run_install_script()
+    if output:
+        print(output)
+    if ok:
+        print("\nOpenClaw install complete. Type 'chat' to start talking.")
+    else:
+        print("\nOpenClaw install encountered an issue. Run /openclaw doctor for details.")
+
+
 def run_main_console() -> None:
     _print_banner()
     current_dir = Path.cwd()
@@ -139,14 +228,24 @@ def run_main_console() -> None:
             print("Theme command stub. Use setup flow or web GUI to change it.")
         elif raw == "/network":
             print("Use setup step or web network page to inspect network details.")
-        elif raw == "/preview":
-            print("Preview mode is reserved for future OpenClaw integration.")
+        elif raw == "/openclaw status" or raw == "/openclaw":
+            _openclaw_status()
+        elif raw == "/openclaw doctor":
+            _openclaw_doctor()
+        elif raw == "/openclaw install":
+            _openclaw_install()
         elif raw == "/manifest":
             _read_file("manifest", current_dir=current_dir)
         elif raw in {"update", "/update"}:
             _run_update_flow()
         elif raw.startswith("read "):
             _read_file(raw[5:], current_dir=current_dir)
+        elif raw == "code":
+            _enter_code_mode(current_dir)
+        elif raw == "chat":
+            enter_chat_mode(hostname=_hostname(), cwd=str(current_dir))
+        elif raw.startswith("chat "):
+            one_shot(raw[5:], hostname=_hostname(), cwd=str(current_dir))
         elif raw == "pwd":
             print(current_dir)
         elif raw == "cd" or raw.startswith("cd "):

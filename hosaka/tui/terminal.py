@@ -13,7 +13,7 @@ STEP_PROMPTS: dict[str, str] = {
     "configure_backend_endpoint_optional": "Backend endpoint (optional): ",
     "configure_workspace_root": "Workspace root [/opt/hosaka/workspace]: ",
     "configure_theme": "Theme [dark/amber/blue]: ",
-    "configure_openclaw": "OpenClaw path [/opt/openclaw] (or 'skip'): ",
+    "configure_openclaw": "OpenClaw setup [install/skip/path]: ",
     "confirm_setup_summary": "Type 'confirm' to finalize setup or 'back': ",
     "finalize_and_enter_main_console": "Setup complete. Press enter for main console.",
 }
@@ -81,9 +81,40 @@ def run_setup_flow(orchestrator: SetupOrchestrator, web_url: str) -> None:
             if answer.lower() == "skip":
                 orchestrator.set_field("openclaw_enabled", False)
                 orchestrator.set_field("openclaw_ready", False)
+            elif answer.lower() in {"install", "yes", "y", ""}:
+                print("\nInstalling OpenClaw (Ollama + default model)...")
+                print("This may take a few minutes on first run.\n")
+                try:
+                    from hosaka.llm.openclaw import run_install_script, doctor
+
+                    ok, output = run_install_script()
+                    if output:
+                        print(output)
+                    if ok:
+                        info = doctor()
+                        if info["api_reachable"] and info["default_model_available"]:
+                            print("\nOpenClaw is ready!")
+                            orchestrator.set_field("openclaw_enabled", True)
+                            orchestrator.set_field("openclaw_path", "/opt/openclaw")
+                            orchestrator.set_field("openclaw_ready", True)
+                        else:
+                            print("\nOpenClaw installed but not fully verified.")
+                            print("You can run /openclaw doctor after setup to troubleshoot.")
+                            orchestrator.set_field("openclaw_enabled", True)
+                            orchestrator.set_field("openclaw_ready", False)
+                    else:
+                        print("\nOpenClaw install encountered an issue.")
+                        print("You can retry with /openclaw install after setup.")
+                        orchestrator.set_field("openclaw_enabled", True)
+                        orchestrator.set_field("openclaw_ready", False)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"\nInstall error: {exc}")
+                    print("You can retry with /openclaw install after setup.")
+                    orchestrator.set_field("openclaw_enabled", True)
+                    orchestrator.set_field("openclaw_ready", False)
             else:
                 orchestrator.set_field("openclaw_enabled", True)
-                orchestrator.set_field("openclaw_path", answer or "/opt/openclaw")
+                orchestrator.set_field("openclaw_path", answer)
                 orchestrator.set_field("openclaw_ready", True)
         elif current_step == "confirm_setup_summary":
             if answer.lower() == "back":
