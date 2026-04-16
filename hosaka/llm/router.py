@@ -30,16 +30,6 @@ def detect_backend() -> str:
     return LLMBackend.OFFLINE
 
 
-def shutdown_gateway() -> None:
-    """No-op — picoclaw adapter is stateless (subprocess per call)."""
-    pass
-
-
-def _get_gateway():
-    """Legacy compat shim — returns None, picoclaw adapter is stateless."""
-    return None
-
-
 def stream_chat(
     messages: list[dict[str, str]],
     backend: str | None = None,

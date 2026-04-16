@@ -1,7 +1,6 @@
 """Picoclaw adapter — calls `picoclaw agent` as a subprocess.
 
-Picoclaw (https://github.com/sipeed/picoclaw) is a channel-based local agent.
-It does not expose an OpenClaw-compatible WebSocket RPC interface.
+Picoclaw (https://github.com/sipeed/picoclaw) is a lightweight local agent.
 This adapter drives the `picoclaw agent` CLI directly.
 
 Key facts:

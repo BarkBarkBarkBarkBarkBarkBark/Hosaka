@@ -13,7 +13,7 @@ STEP_PROMPTS: dict[str, str] = {
     "configure_backend_endpoint_optional": "Backend endpoint (optional): ",
     "configure_workspace_root": "Workspace root [/opt/hosaka/workspace]: ",
     "configure_theme": "Theme [dark/amber/blue]: ",
-    "configure_openclaw": "OpenClaw setup [install/skip/path]: ",
+    "configure_picoclaw": "Picoclaw setup [verify/skip]: ",
     "confirm_setup_summary": "Type 'confirm' to finalize setup or 'back': ",
     "finalize_and_enter_main_console": "Setup complete. Press enter for main console.",
 }
@@ -77,45 +77,23 @@ def run_setup_flow(orchestrator: SetupOrchestrator, web_url: str) -> None:
             orchestrator.set_field("workspace_root", answer or "/opt/hosaka/workspace")
         elif current_step == "configure_theme":
             orchestrator.set_field("theme", answer or "dark")
-        elif current_step == "configure_openclaw":
+        elif current_step == "configure_picoclaw":
             if answer.lower() == "skip":
-                orchestrator.set_field("openclaw_enabled", False)
-                orchestrator.set_field("openclaw_ready", False)
-            elif answer.lower() in {"install", "yes", "y", ""}:
-                print("\nInstalling OpenClaw (Ollama + default model)...")
-                print("This may take a few minutes on first run.\n")
-                try:
-                    from hosaka.llm.openclaw import run_install_script, doctor
-
-                    ok, output = run_install_script()
-                    if output:
-                        print(output)
-                    if ok:
-                        info = doctor()
-                        if info["api_reachable"] and info["default_model_available"]:
-                            print("\nOpenClaw is ready!")
-                            orchestrator.set_field("openclaw_enabled", True)
-                            orchestrator.set_field("openclaw_path", "/opt/openclaw")
-                            orchestrator.set_field("openclaw_ready", True)
-                        else:
-                            print("\nOpenClaw installed but not fully verified.")
-                            print("You can run /openclaw doctor after setup to troubleshoot.")
-                            orchestrator.set_field("openclaw_enabled", True)
-                            orchestrator.set_field("openclaw_ready", False)
-                    else:
-                        print("\nOpenClaw install encountered an issue.")
-                        print("You can retry with /openclaw install after setup.")
-                        orchestrator.set_field("openclaw_enabled", True)
-                        orchestrator.set_field("openclaw_ready", False)
-                except Exception as exc:  # noqa: BLE001
-                    print(f"\nInstall error: {exc}")
-                    print("You can retry with /openclaw install after setup.")
-                    orchestrator.set_field("openclaw_enabled", True)
-                    orchestrator.set_field("openclaw_ready", False)
+                orchestrator.set_field("picoclaw_enabled", False)
+                orchestrator.set_field("picoclaw_ready", False)
             else:
-                orchestrator.set_field("openclaw_enabled", True)
-                orchestrator.set_field("openclaw_path", answer)
-                orchestrator.set_field("openclaw_ready", True)
+                import shutil
+                installed = bool(shutil.which("picoclaw"))
+                if installed:
+                    print("Picoclaw found on PATH.")
+                    orchestrator.set_field("picoclaw_enabled", True)
+                    orchestrator.set_field("picoclaw_ready", True)
+                else:
+                    print("Picoclaw not found. Install from https://github.com/sipeed/picoclaw/releases")
+                    print("Then run 'picoclaw onboard' to initialise.")
+                    print("You can run /picoclaw doctor after setup to verify.")
+                    orchestrator.set_field("picoclaw_enabled", True)
+                    orchestrator.set_field("picoclaw_ready", False)
         elif current_step == "confirm_setup_summary":
             if answer.lower() == "back":
                 orchestrator.previous_step()

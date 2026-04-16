@@ -37,7 +37,7 @@ def setup_home() -> str:
     <p class='muted'>Terminal remains the primary appliance interface.</p>
     <p>Current step: <strong>{summary['current_step']}</strong> ({summary['step_index']}/{summary['total_steps']})</p>
     <p>Progress: {summary['progress_percent']}%</p>
-    <p><a href='/network'>Network Status</a> <a href='/identity'>Device Identity</a> <a href='/backend'>Backend</a> <a href='/workspace'>Workspace</a> <a href='/theme'>Theme</a> <a href='/openclaw'>OpenClaw</a> <a href='/progress'>Progress</a></p>
+    <p><a href='/network'>Network Status</a> <a href='/identity'>Device Identity</a> <a href='/backend'>Backend</a> <a href='/workspace'>Workspace</a> <a href='/theme'>Theme</a> <a href='/picoclaw'>Picoclaw</a> <a href='/progress'>Progress</a></p>
     """
     return _layout("Hosaka Setup", body)
 
@@ -126,27 +126,25 @@ def save_theme(theme: str = Form(...)) -> RedirectResponse:
     return RedirectResponse("/", status_code=303)
 
 
-@app.get("/openclaw", response_class=HTMLResponse)
-def openclaw_config() -> str:
+@app.get("/picoclaw", response_class=HTMLResponse)
+def picoclaw_config() -> str:
     s = orchestrator.summary()
-    enabled = "yes" if s["openclaw_enabled"] else "no"
+    enabled = "yes" if s["picoclaw_enabled"] else "no"
     body = f"""
-    <h2>OpenClaw Setup</h2>
-    <form method='post' action='/openclaw'>
-      <label>Enable OpenClaw (yes/no)</label><input name='openclaw_enabled' value='{enabled}' />
-      <label>OpenClaw Path</label><input name='openclaw_path' value='{s['openclaw_path']}' />
+    <h2>Picoclaw Setup</h2>
+    <form method='post' action='/picoclaw'>
+      <label>Enable Picoclaw (yes/no)</label><input name='picoclaw_enabled' value='{enabled}' />
       <button type='submit'>Save</button>
     </form><p><a href='/'>Back</a></p>
     """
-    return _layout("OpenClaw", body)
+    return _layout("Picoclaw", body)
 
 
-@app.post("/openclaw")
-def save_openclaw(openclaw_enabled: str = Form("yes"), openclaw_path: str = Form("/opt/openclaw")) -> RedirectResponse:
-    enabled = openclaw_enabled.strip().lower() not in {"no", "false", "0"}
-    orchestrator.set_field("openclaw_enabled", enabled)
-    orchestrator.set_field("openclaw_path", openclaw_path)
-    orchestrator.set_field("openclaw_ready", enabled and bool(openclaw_path.strip()))
+@app.post("/picoclaw")
+def save_picoclaw(picoclaw_enabled: str = Form("yes")) -> RedirectResponse:
+    enabled = picoclaw_enabled.strip().lower() not in {"no", "false", "0"}
+    orchestrator.set_field("picoclaw_enabled", enabled)
+    orchestrator.set_field("picoclaw_ready", enabled)
     return RedirectResponse("/", status_code=303)
 
 

@@ -33,9 +33,5 @@ def test_orchestrator_invalid_step_and_empty_defaults(tmp_path: Path) -> None:
     assert summary["theme"] == "dark"
 
 
-def test_openclaw_defaults_and_step_present(tmp_path: Path) -> None:
-    orchestrator = build_default_orchestrator(tmp_path / "state.json")
-    assert "configure_openclaw" in SETUP_STEPS
-
-    orchestrator.set_field("openclaw_path", "")
-    assert orchestrator.summary()["openclaw_path"] == "/opt/openclaw"
+def test_picoclaw_step_present(tmp_path: Path) -> None:
+    assert "configure_picoclaw" in SETUP_STEPS

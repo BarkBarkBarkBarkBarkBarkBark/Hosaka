@@ -9,7 +9,6 @@ from hosaka.llm.router import (
     LLMBackend,
     backend_display_name,
     detect_backend,
-    shutdown_gateway,
     stream_chat,
     sync_chat,
 )
@@ -82,7 +81,7 @@ def enter_chat_mode(hostname: str, cwd: str) -> None:
         print(f"Session: {picoclaw_adapter.DEFAULT_SESSION}")
         print("Model: " + (picoclaw_adapter.DEFAULT_MODEL or "default") + "\n")
     elif backend == LLMBackend.OFFLINE:
-        print("No LLM backend available. Connect OpenClaw or set OPENAI_API_KEY.")
+        print("No LLM backend available. Install Picoclaw or set OPENAI_API_KEY.")
         print("Falling back to offline keyword assist.\n")
 
     history: list[dict[str, str]] = [_build_system_message(hostname, cwd)]

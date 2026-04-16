@@ -47,9 +47,8 @@ class SetupState:
     backend_endpoint: str = ""
     workspace_root: str = "/opt/hosaka/workspace"
     theme: str = "dark"
-    openclaw_enabled: bool = True
-    openclaw_path: str = "/opt/openclaw"
-    openclaw_ready: bool = False
+    picoclaw_enabled: bool = True
+    picoclaw_ready: bool = False
     timestamps: dict[str, str] = field(default_factory=lambda: {"created": _utc_now(), "updated": _utc_now()})
     last_error: str = ""
 

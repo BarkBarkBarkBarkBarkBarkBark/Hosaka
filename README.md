@@ -285,10 +285,10 @@ hosaka/
   offline/           # rule-based intent classifier (offline fallback)
   ops/               # update script runner
   llm/
-    router.py        # Picoclaw → OpenAI → offline fallback
-    picoclaw_adapter.py  # subprocess adapter for picoclaw agent CLI
-    chat.py          # chat REPL and one-shot handler
-    openai_adapter.py    # OpenAI API fallback
+    router.py           # Picoclaw → OpenAI → offline fallback
+    picoclaw_adapter.py # subprocess adapter for picoclaw agent CLI
+    chat.py             # chat REPL and one-shot handler
+    openai_adapter.py   # OpenAI API fallback
 scripts/
   setup_hosaka.sh    # red carpet one-shot bootstrap
   install_hosaka.sh  # appliance installer
@@ -304,6 +304,8 @@ systemd/
 tests/
 docs/
   no_wrong_way_manifest.md    # built-in operator manual
+  picoclaw_cli_backend.md     # picoclaw CLI cheat sheet
+  llm_integration_plan.md     # LLM routing architecture
 requirements-hosaka.txt
 ```
 

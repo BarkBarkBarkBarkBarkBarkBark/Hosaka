@@ -42,7 +42,7 @@ class SetupOrchestrator:
             "workspace_root": "/opt/hosaka/workspace",
             "theme": "dark",
             "tailscale_status": "unknown",
-            "openclaw_path": "/opt/openclaw",
+            "picoclaw_ready": False,
         }
         if key in defaults and not normalized:
             normalized = defaults[key]
