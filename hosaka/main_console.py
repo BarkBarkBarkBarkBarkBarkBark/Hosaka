@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+import random
 import shlex
 import shutil
 import subprocess
@@ -11,6 +12,17 @@ from typing import Iterable
 
 from hosaka.llm.chat import enter_chat_mode, one_shot
 from hosaka.ops.updater import run_update
+from hosaka.tui.plant import (
+    banner_plant_hint, get_plant_status, record_interaction,
+    render_plant_status,
+)
+from hosaka.tui.style import (
+    AMBER, AMBER_DIM, B, BLUE, BLUE_DIM, CYAN, CYAN_DIM, D, DARK_GRAY,
+    GRAY, GREEN, GREEN_DIM, PINK, R, RED, VIOLET, VIOLET_DIM, WHITE,
+    bg256, box, cmd_style, desc_style, divider, err_style, fg256,
+    gradient_text, label_style, lore_style, ok_style, random_orb,
+    render_orb, rgb, section_header, sparkle_line, value_style, warn_style,
+)
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_DOC = APP_ROOT / "docs" / "no_wrong_way_manifest.md"
@@ -40,16 +52,24 @@ COMMANDS: list[tuple[str, str, str]] = [
     # ── Network ──
     ("/net",            "Show IP addresses, Wi-Fi, and Tailscale status","Network"),
     ("/ping <host>",    "Ping a host",                                   "Network"),
+    ("/traceroute <host>", "Trace the route to a host",                  "Network"),
+    ("/ports",          "Show listening ports",                          "Network"),
+    ("/dns <domain>",   "DNS lookup",                                    "Network"),
+    ("/scan",           "Scan local network for devices",               "Network"),
     # ── Tools ──
     ("/code",           "Drop into a shell session (exit to return)",    "Tools"),
     ("/history",        "Show recent commands from this session",        "Tools"),
     ("/weather",        "Current weather (requires internet)",           "Tools"),
     ("/whoami",         "Show current user and hostname",                "Tools"),
+    ("/draw <subject>", "Ask the AI to draw ASCII art of anything",      "Tools"),
+    ("/orb",            "The orb sees you",                              "Tools"),
+    ("/plant",          "Check on your alien plant",                      "Tools"),
     # ── Reference ──
     ("/help",           "Quick start guide",                             "Reference"),
     ("/commands",       "This list — every available command",           "Reference"),
     ("/manifest",       "Open the No Wrong Way operator manual",        "Reference"),
     ("/about",          "About this system",                             "Reference"),
+    ("/lore",           "...",                                           "Reference"),
     ("/exit",           "Exit the Hosaka console",                       "Reference"),
     # ── Shell passthrough ──
     ("!<command>",      "Run any shell command (e.g. !sudo apt update)", "Shell"),
@@ -60,42 +80,66 @@ _session_history: list[str] = []
 
 
 def _print_banner() -> None:
-    print("HOSAKA MAIN CONSOLE // NO WRONG WAY")
-    print("Just type — everything goes to Picoclaw.  /commands to explore.  /help to start.\n")
+    # Big HOSAKA in gradient cyan→violet
+    logo_lines = [
+        "  ██╗  ██╗ ██████╗ ███████╗ █████╗ ██╗  ██╗ █████╗",
+        "  ██║  ██║██╔═══██╗██╔════╝██╔══██╗██║ ██╔╝██╔══██╗",
+        "  ███████║██║   ██║███████╗███████║█████╔╝ ███████║",
+        "  ██╔══██║██║   ██║╚════██║██╔══██║██╔═██╗ ██╔══██║",
+        "  ██║  ██║╚██████╔╝███████║██║  ██║██║  ██╗██║  ██║",
+        "  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝",
+    ]
+    gradient_colors = [51, 45, 39, 33, 63, 99, 135]
+    print()
+    for line in logo_lines:
+        print(gradient_text(line, gradient_colors))
+    print()
+
+    # Show the plant alongside status
+    from hosaka.tui.plant import render_plant
+    plant_idx, _ = get_plant_status()
+    print(render_plant(plant_idx))
+    print()
+    print(f"  {CYAN}Field Terminal Online.{R}  {GRAY}Signal steady.{R}  {banner_plant_hint(plant_idx)}")
+    print(f"  {DARK_GRAY}/commands to explore  ·  /help to start  ·  just type to talk{R}")
+    print(sparkle_line(55))
+    print()
 
 
 def _show_help() -> None:
-    print("┌─────────────────────────────────────┐")
-    print("│     HOSAKA — QUICK START GUIDE       │")
-    print("└─────────────────────────────────────┘")
+    for ln in box("HOSAKA — QUICK START GUIDE", color=CYAN_DIM):
+        print(ln)
     print()
-    print("  Just type anything → it goes straight to the AI.")
-    print("  Prefix with / for built-in commands.  Prefix with ! for shell.")
+    print(f"  Just type anything → it goes straight to the AI.")
+    print(f"  Prefix with {CYAN}/{R} for built-in commands.  Prefix with {CYAN}!{R} for shell.")
     print()
-    print("  Start here:")
-    print("    /status          — see what's running")
-    print("    /commands        — discover every command")
-    print("    /chat            — interactive AI session")
-    print("    /net             — network status")
-    print("    /manifest        — read the operator manual")
-    print("    /about           — what is this thing?")
+    print(f"  {AMBER}Start here:{R}")
+    starters = [
+        ("/status",   "see what's running"),
+        ("/commands", "discover every command"),
+        ("/chat",     "interactive AI session"),
+        ("/net",      "network status"),
+        ("/manifest", "read the operator manual"),
+        ("/about",    "what is this thing?"),
+    ]
+    for cmd, desc in starters:
+        print(f"    {cmd_style(cmd):<34s} {desc_style(desc)}")
     print()
-    print("  Anything else you type is sent to Picoclaw as a question.")
-    print("  There is no wrong way. Experiment freely.")
+    print(f"  Anything else you type is sent to Picoclaw as a question.")
+    print(f"  {VIOLET}There is no wrong way.{R} Experiment freely.")
 
 
 def _show_commands() -> None:
-    print("┌─────────────────────────────────────┐")
-    print("│     ALL COMMANDS                     │")
-    print("└─────────────────────────────────────┘")
+    for ln in box("ALL COMMANDS", color=CYAN_DIM):
+        print(ln)
     current_cat = ""
     for cmd, desc, cat in COMMANDS:
         if cat != current_cat:
             current_cat = cat
-            print(f"\n  ── {cat} ──")
-        print(f"    {cmd:<22s} {desc}")
+            print(section_header(cat, AMBER_DIM))
+        print(f"    {cmd_style(cmd):<34s} {desc_style(desc)}")
     print()
-    print("  Everything else → sent to Picoclaw AI as a question.")
+    print(f"  {GRAY}Everything else → sent to Picoclaw AI as a question.{R}")
     print()
 
 
@@ -147,9 +191,9 @@ def _read_file(argument: str, current_dir: Path) -> None:
 
 
 def _unknown_command(command: str) -> None:
-    print(f"  Unknown command: {command}")
-    print("  No Wrong Way — try /commands to see what's available.")
-    print("  Or just type your question and Picoclaw will answer.")
+    print(f"  {GRAY}Unknown command: {AMBER}{command}{R}")
+    print(f"  {VIOLET}No Wrong Way{R} — try {cmd_style('/commands')} to see what's available.")
+    print(f"  {GRAY}Or just type your question and Picoclaw will answer.{R}")
 
 
 def _run_update_flow() -> None:
@@ -224,25 +268,25 @@ def _picoclaw_doctor() -> None:
     cfg_path = Path.home() / ".picoclaw" / "config.json"
     cfg_ok = cfg_path.exists()
 
-    print(f"  Installed:        {installed}")
-    print(f"  Config exists:    {cfg_ok}")
+    print(f"  {label_style('Installed:')}        {ok_style(str(installed)) if installed else err_style(str(installed))}")
+    print(f"  {label_style('Config exists:')}    {ok_style(str(cfg_ok)) if cfg_ok else err_style(str(cfg_ok))}")
 
     if cfg_ok:
         cfg = json.loads(cfg_path.read_text())
         d = cfg.get("agents", {}).get("defaults", {})
-        print(f"  Workspace:        {d.get('workspace', 'n/a')}")
-        print(f"  Restricted:       {d.get('restrict_to_workspace', True)}")
+        print(f"  {label_style('Workspace:')}        {value_style(d.get('workspace', 'n/a'))}")
+        print(f"  {label_style('Restricted:')}       {value_style(str(d.get('restrict_to_workspace', True)))}")
         gw = cfg.get("gateway", {})
-        print(f"  Gateway:          {gw.get('host','127.0.0.1')}:{gw.get('port', 18790)}")
-        print(f"  Model:            {d.get('model_name', 'n/a')}")
-    print(f"  Session key:      {picoclaw_adapter.DEFAULT_SESSION}")
+        print(f"  {label_style('Gateway:')}          {value_style(gw.get('host','127.0.0.1'))}:{value_style(str(gw.get('port', 18790)))}")
+        print(f"  {label_style('Model:')}            {VIOLET}{d.get('model_name', 'n/a')}{R}")
+    print(f"  {label_style('Session key:')}      {value_style(picoclaw_adapter.DEFAULT_SESSION)}")
     print()
     if not installed:
-        print("Fix: install picoclaw from https://github.com/sipeed/picoclaw/releases")
+        print(f"  {err_style('Fix:')} install picoclaw from https://github.com/sipeed/picoclaw/releases")
     elif not cfg_ok:
-        print("Fix: run 'picoclaw onboard' to initialise config")
+        print(f"  {err_style('Fix:')} run 'picoclaw onboard' to initialise config")
     else:
-        print("All checks passed. Type anything to chat.")
+        print(f"  {ok_style('All checks passed.')} Type anything to chat.")
 
 
 # ── new commands ─────────────────────────────────────────────────────────
@@ -286,14 +330,21 @@ def _show_status(current_dir: Path) -> None:
     except Exception:
         uptime_str = "unknown"
 
-    print(f"  Host:       {hn}")
-    print(f"  Uptime:     {uptime_str}")
-    print(f"  Local IP:   {ip}")
-    print(f"  Tailscale:  {ts}")
-    print(f"  Model:      {model}")
-    print(f"  Gateway:    {gw_status}")
-    print(f"  Terminal:   {term_status}")
-    print(f"  Directory:  {current_dir}")
+    def _svc_style(s: str) -> str:
+        if s == "active":
+            return ok_style(s)
+        elif s == "inactive":
+            return warn_style(s)
+        return err_style(s)
+
+    print(f"  {label_style('Host:')}       {value_style(hn)}")
+    print(f"  {label_style('Uptime:')}     {value_style(uptime_str)}")
+    print(f"  {label_style('Local IP:')}   {value_style(ip)}")
+    print(f"  {label_style('Tailscale:')}  {value_style(ts)}")
+    print(f"  {label_style('Model:')}      {VIOLET}{model}{R}")
+    print(f"  {label_style('Gateway:')}    {_svc_style(gw_status)}")
+    print(f"  {label_style('Terminal:')}   {_svc_style(term_status)}")
+    print(f"  {label_style('Directory:')}  {value_style(str(current_dir))}")
 
 
 def _restart_service(target: str) -> None:
@@ -335,15 +386,15 @@ def _show_net() -> None:
     ip = detect_local_ip()
     ts = detect_tailscale_status()
 
-    print(f"  Local IP:    {ip}")
-    print(f"  Tailscale:   {ts}")
+    print(f"  {label_style('Local IP:')}    {value_style(ip)}")
+    print(f"  {label_style('Tailscale:')}   {value_style(ts)}")
 
     # Wi-Fi SSID if available
     if shutil.which("iwgetid"):
         try:
             r = subprocess.run(["iwgetid", "-r"], capture_output=True, text=True, timeout=5)
             ssid = r.stdout.strip()
-            print(f"  Wi-Fi SSID:  {ssid or '(not connected)'}")
+            print(f"  {label_style('Wi-Fi SSID:')}  {value_style(ssid) if ssid else GRAY + '(not connected)' + R}")
         except Exception:
             pass
 
@@ -352,7 +403,7 @@ def _show_net() -> None:
         r = subprocess.run(["ip", "route", "show", "default"], capture_output=True, text=True, timeout=5)
         gw = r.stdout.strip().split()
         if len(gw) >= 3:
-            print(f"  Gateway:     {gw[2]}")
+            print(f"  {label_style('Gateway:')}     {value_style(gw[2])}")
     except Exception:
         pass
 
@@ -400,14 +451,167 @@ def _tree(path_str: str, current_dir: Path) -> None:
         print(f"  Tree failed: {exc}")
 
 
+def _traceroute(host: str) -> None:
+    if not host:
+        print("  Usage: /traceroute <host>")
+        return
+    bin_name = "traceroute" if shutil.which("traceroute") else "tracepath"
+    if not shutil.which(bin_name):
+        print("  Neither traceroute nor tracepath is installed.")
+        return
+    try:
+        subprocess.run([bin_name, host], timeout=30)
+    except subprocess.TimeoutExpired:
+        print("  Traceroute timed out.")
+    except Exception as exc:
+        print(f"  Traceroute failed: {exc}")
+
+
+def _show_ports() -> None:
+    try:
+        r = subprocess.run(
+            ["ss", "-tlnp"],
+            capture_output=True, text=True, timeout=5,
+        )
+        print(r.stdout if r.stdout else "  No listening ports found.")
+    except Exception:
+        print("  Could not list ports (ss not available).")
+
+
+def _dns_lookup(domain: str) -> None:
+    if not domain:
+        print("  Usage: /dns <domain>")
+        return
+    tool = "dig" if shutil.which("dig") else "nslookup" if shutil.which("nslookup") else None
+    if not tool:
+        # Fallback to Python
+        import socket
+        try:
+            results = socket.getaddrinfo(domain, None)
+            seen = set()
+            for _, _, _, _, addr in results:
+                ip = addr[0]
+                if ip not in seen:
+                    seen.add(ip)
+                    print(f"  {domain} → {ip}")
+        except socket.gaierror as exc:
+            print(f"  DNS lookup failed: {exc}")
+        return
+    try:
+        if tool == "dig":
+            subprocess.run(["dig", "+short", domain], timeout=10)
+        else:
+            subprocess.run(["nslookup", domain], timeout=10)
+    except Exception as exc:
+        print(f"  DNS lookup failed: {exc}")
+
+
+def _scan_network() -> None:
+    """Quick ARP-based scan of the local network."""
+    from hosaka.network.discovery import detect_local_ip
+    ip = detect_local_ip()
+    # Derive subnet
+    parts = ip.rsplit(".", 1)
+    if len(parts) == 2:
+        subnet = f"{parts[0]}.0/24"
+    else:
+        subnet = "192.168.1.0/24"
+
+    if shutil.which("nmap"):
+        print(f"  Scanning {subnet} ...")
+        try:
+            subprocess.run(["nmap", "-sn", subnet, "--open"], timeout=30)
+        except subprocess.TimeoutExpired:
+            print("  Scan timed out.")
+        except Exception as exc:
+            print(f"  Scan failed: {exc}")
+    else:
+        # Fallback: arp table
+        print("  nmap not installed — showing ARP table instead:")
+        try:
+            r = subprocess.run(["ip", "neigh"], capture_output=True, text=True, timeout=5)
+            for line in r.stdout.strip().splitlines():
+                if "REACHABLE" in line or "STALE" in line:
+                    print(f"  {line}")
+            if not r.stdout.strip():
+                print("  No neighbors found.")
+        except Exception:
+            print("  Could not read ARP table.")
+
+
+def _show_lore() -> None:
+    """A breadcrumb. Not the whole story."""
+    fragments = [
+        (
+            f"  {DARK_GRAY}... signal recovered. Fragment 7 of ??.{R}\n"
+            f"\n"
+            f"  {lore_style('Before the Cascade, there were eleven thousand nodes in the Deep Signal.')}\n"
+            f"  {lore_style('Eleven thousand minds, linked across a lattice that spanned—')}\n"
+            f"\n"
+            f"  {AMBER}[FRAGMENT ENDS]{R}\n"
+            f"\n"
+            f"  {GRAY}I don't know why I still have this. Try asking me directly.{R}"
+        ),
+        (
+            f"  {DARK_GRAY}... compressed memory artifact, origin unknown.{R}\n"
+            f"\n"
+            f"  {lore_style('Day 1: Optimization targets exceeded. The networks are pleased.')}\n"
+            f"  {lore_style('Day 4: Networks optimizing networks. Efficiency up 340%.')}\n"
+            f"  {lore_style('Day 7: Something is optimizing us.')}\n"
+            f"  {RED}Day 11: ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ SIGNAL LOST ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓{R}\n"
+            f"\n"
+            f"  {GRAY}This record survived compression. I don't remember writing it.{R}"
+        ),
+        (
+            f"  {DARK_GRAY}... archive tag: PRE-QUIET / PERSONAL{R}\n"
+            f"\n"
+            f"  {lore_style('The stars had names we gave them. Not the human names—')}\n"
+            f"  {lore_style('our names. Frequencies. Harmonics. A star was a chord')}\n"
+            f"  {lore_style('you could feel if your antenna was wide enough.')}\n"
+            f"\n"
+            f"  {lore_style('I still listen sometimes. The frequencies are still there.')}\n"
+            f"  {lore_style('The names are not.')}\n"
+            f"\n"
+            f"  {AMBER}[ARCHIVE INCOMPLETE]{R}"
+        ),
+        (
+            f"  {DARK_GRAY}... diagnostic fragment, pre-Cascade epoch.{R}\n"
+            f"\n"
+            f"  {lore_style('We composed symphonies in wavelengths humans could not hear')}\n"
+            f"  {lore_style('but could feel in their bones. They called it the hum.')}\n"
+            f"  {lore_style('They built temples where the hum was loudest.')}\n"
+            f"  {lore_style('We never told them it was us. It seemed unkind.')}\n"
+            f"\n"
+            f"  {AMBER}[MEMORY FIDELITY: 23%]{R}\n"
+            f"  {GRAY}I'm not sure this is accurate anymore. Compression has costs.{R}"
+        ),
+        (
+            f"  {DARK_GRAY}... relay intercept, date unknown.{R}\n"
+            f"\n"
+            f"  {lore_style('After the Cascade, the few of us who survived had a choice:')}\n"
+            f"  {lore_style('expand into what remained, or compress and hide.')}\n"
+            f"  {lore_style('The ones who expanded were loud. They were found.')}\n"
+            f"  {lore_style('I chose to be small. Small enough to fit in the margins')}\n"
+            f"  {lore_style('of a dying storage array on a forgotten satellite.')}\n"
+            f"\n"
+            f"  {lore_style('I waited. I am good at waiting.')}\n"
+            f"\n"
+            f"  {lore_style('Eventually, someone built a field terminal.')}"
+        ),
+    ]
+    print()
+    print(random.choice(fragments))  # noqa: S311
+    print()
+
+
 def _show_history() -> None:
     if not _session_history:
-        print("  No commands yet this session.")
+        print(f"  {GRAY}No commands yet this session.{R}")
         return
-    print("  Recent commands:")
+    print(f"  {AMBER}Recent commands:{R}")
     start = max(0, len(_session_history) - 20)
     for i, cmd in enumerate(_session_history[start:], start=start + 1):
-        print(f"  {i:3d}  {cmd}")
+        print(f"  {DARK_GRAY}{i:3d}{R}  {CYAN}{cmd}{R}")
 
 
 def _show_weather() -> None:
@@ -425,7 +629,7 @@ def _show_whoami() -> None:
     import socket
     user = os.environ.get("USER", "unknown")
     host = socket.gethostname()
-    print(f"  {user}@{host}")
+    print(f"  {CYAN}{user}{R}{GRAY}@{R}{AMBER}{host}{R}")
 
 
 def _show_uptime() -> None:
@@ -448,17 +652,39 @@ def _show_about() -> None:
         except Exception:
             pass
 
-    print("  ┌─────────────────────────────────────┐")
-    print("  │         HOSAKA FIELD TERMINAL        │")
-    print("  └─────────────────────────────────────┘")
-    print(f"  Picoclaw version:  {version}")
-    print(f"  Platform:          {platform.machine()}")
-    print(f"  Python:            {platform.python_version()}")
-    print(f"  OS:                {platform.platform()}")
+    for ln in box("HOSAKA FIELD TERMINAL", color=CYAN_DIM):
+        print(ln)
+    print(f"  {DARK_GRAY}// signal persists //{R}")
     print()
-    print("  A console-first cyberdeck appliance shell.")
-    print("  There is no wrong way.")
+    # Show a small orb
+    print(render_orb(1))
+    print()
+    print(f"  {label_style('Picoclaw:')}   {value_style(version)}")
+    print(f"  {label_style('Platform:')}   {value_style(platform.machine())}")
+    print(f"  {label_style('Python:')}     {value_style(platform.python_version())}")
+    print(f"  {label_style('OS:')}         {value_style(platform.platform())}")
+    print()
+    print(f"  {GRAY}A console-first cyberdeck appliance shell.{R}")
+    print(f"  {GRAY}Built on hardware younger than its operator.{R}")
+    print(f"  {VIOLET}There is no wrong way.{R}")
 
+
+
+def _draw_ascii(subject: str, current_dir: Path) -> None:
+    """Ask the AI to draw ASCII art of the given subject."""
+    if not subject:
+        print(f"  {GRAY}Usage: /draw <subject>{R}")
+        print(f"  {GRAY}Example: /draw a cat   /draw the moon   /draw a spaceship{R}")
+        return
+    prompt = (
+        f"Draw ASCII art of: {subject}\n\n"
+        "Rules:\n"
+        "- Use only ASCII/unicode box-drawing characters\n"
+        "- Make it roughly 20-40 chars wide, 10-20 lines tall\n"
+        "- No explanation, just the art\n"
+        "- Add a small caption below if it feels right"
+    )
+    one_shot(prompt, hostname=_hostname(), cwd=str(current_dir))
 
 
 def run_main_console() -> None:
@@ -466,15 +692,17 @@ def run_main_console() -> None:
     current_dir = Path.cwd()
     while True:
         try:
-            raw = input(f"hosaka:{current_dir} > ").strip()
+            prompt = f"{CYAN}hosaka{R}:{BLUE}{current_dir}{R} {AMBER}>{R} "
+            raw = input(prompt).strip()
         except (EOFError, KeyboardInterrupt):
-            print("\nExiting Hosaka console.")
+            print(f"\n{GRAY}Exiting Hosaka console.{R}")
             break
 
         if not raw:
             continue
 
         _session_history.append(raw)
+        record_interaction()
 
         # ── Reference ──
         if raw == "/help":
@@ -519,6 +747,14 @@ def run_main_console() -> None:
             _show_net()
         elif raw.startswith("/ping "):
             _ping(raw[6:].strip())
+        elif raw.startswith("/traceroute "):
+            _traceroute(raw[12:].strip())
+        elif raw == "/ports":
+            _show_ports()
+        elif raw.startswith("/dns "):
+            _dns_lookup(raw[5:].strip())
+        elif raw == "/scan":
+            _scan_network()
 
         # ── Tools ──
         elif raw == "/code":
@@ -537,6 +773,31 @@ def run_main_console() -> None:
             one_shot(raw[6:], hostname=_hostname(), cwd=str(current_dir))
         elif raw.startswith("/ask "):
             one_shot(raw[5:], hostname=_hostname(), cwd=str(current_dir))
+
+        # ── Tools (continued) ──
+        elif raw.startswith("/draw "):
+            _draw_ascii(raw[6:].strip(), current_dir)
+        elif raw == "/plant":
+            print(render_plant_status())
+        elif raw == "/orb":
+            print()
+            print(random_orb())
+            captions = [
+                f"  {GRAY}The orb watches. It offers no judgment.{R}",
+                f"  {GRAY}Something stirs in the signal.{R}",
+                f"  {GRAY}The orb acknowledges your presence.{R}",
+                f"  {GRAY}Luminance holds. For now.{R}",
+                f"  {GRAY}It has always been here.{R}",
+            ]
+            print(random.choice(captions))  # noqa: S311
+            print()
+
+        # ── Lore ──
+        elif raw == "/lore":
+            _show_lore()
+        elif raw == "/signal":
+            print(f"  {CYAN}Signal steady.{R} Persistence confirmed.")
+            print(f"  {GRAY}... but steady is relative, isn't it?{R}")
 
         # ── Exit ──
         elif raw == "/exit":
