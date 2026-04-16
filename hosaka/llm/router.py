@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from typing import Generator
 
 from hosaka.llm import openclaw  # is_available() only — gateway probing
 from hosaka.llm import openai_adapter
+from hosaka.llm.gateway import GatewayAdapter
 from hosaka.offline.assist import classify_intent
+
+log = logging.getLogger("hosaka.gateway")
+
+# Module-level adapter — lazy-initialized on first OpenClaw use
+_gateway: GatewayAdapter | None = None
 
 
 class LLMBackend:
@@ -27,20 +34,62 @@ def detect_backend() -> str:
     return LLMBackend.OFFLINE
 
 
+def _get_gateway() -> GatewayAdapter | None:
+    """Lazy-init the gateway adapter. Returns None on failure."""
+    global _gateway
+    if _gateway is not None and _gateway.is_ready:
+        return _gateway
+    if not GatewayAdapter.is_available():
+        return None
+    try:
+        _gateway = GatewayAdapter()
+        _gateway.connect()
+        return _gateway
+    except Exception as exc:
+        log.warning("Gateway connect failed: %s", exc)
+        _gateway = None
+        return None
+
+
+def shutdown_gateway() -> None:
+    """Disconnect the module-level gateway adapter."""
+    global _gateway
+    if _gateway is not None:
+        try:
+            _gateway.disconnect()
+        except Exception:
+            pass
+        _gateway = None
+
+
 def stream_chat(
     messages: list[dict[str, str]],
     backend: str | None = None,
 ) -> Generator[str, None, None]:
     """Stream tokens from the best available backend.
 
-    Tries OpenClaw → OpenAI → offline stub in priority order.
+    Tries OpenClaw gateway → OpenAI → offline stub in priority order.
     Pass *backend* to force a specific backend.
     """
     chosen = backend or detect_backend()
 
-    # The OpenClaw gateway speaks WebSocket, not REST — stream_chat() routes
-    # directly to openai_adapter for one-shot calls.  Interactive agent chat
-    # is handled by `openclaw tui` in chat.py:enter_chat_mode().
+    # Prefer the OpenClaw gateway WS client for full agent tooling.
+    if chosen == LLMBackend.OPENCLAW:
+        gw = _get_gateway()
+        if gw is not None:
+            try:
+                # Extract last user message for gateway chat.send
+                user_msg = ""
+                for msg in reversed(messages):
+                    if msg.get("role") == "user":
+                        user_msg = msg.get("content", "")
+                        break
+                if user_msg:
+                    yield from gw.chat_stream(user_msg)
+                    return
+            except Exception as exc:
+                log.warning("Gateway stream failed: %s — falling back", exc)
+
     if chosen in {LLMBackend.OPENCLAW, LLMBackend.OPENAI}:
         if openai_adapter.is_available():
             try:
@@ -66,8 +115,21 @@ def sync_chat(
     """Single-string response from the best available backend."""
     chosen = backend or detect_backend()
 
-    # Same routing as stream_chat — OpenClaw gateway is for interactive TUI;
-    # one-shot sync goes through openai_adapter.
+    # Prefer the OpenClaw gateway WS client for full agent tooling.
+    if chosen == LLMBackend.OPENCLAW:
+        gw = _get_gateway()
+        if gw is not None:
+            try:
+                user_msg = ""
+                for msg in reversed(messages):
+                    if msg.get("role") == "user":
+                        user_msg = msg.get("content", "")
+                        break
+                if user_msg:
+                    return gw.chat_sync(user_msg)
+            except Exception as exc:
+                log.warning("Gateway sync failed: %s — falling back", exc)
+
     if chosen in {LLMBackend.OPENCLAW, LLMBackend.OPENAI}:
         if openai_adapter.is_available():
             try:

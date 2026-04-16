@@ -1,0 +1,248 @@
+You are modifying my terminal application so it talks directly to an OpenClaw Gateway over a LOCAL WebSocket.
+
+OBJECTIVE
+Port my terminal frontend/backend to OpenClaw’s Gateway WebSocket on the local machine and make it production-clean for local development:
+- default Gateway URL: ws://127.0.0.1:18789
+- auth: shared token/password when configured, plus device-token reuse after first successful pairing
+- transport: WebSocket JSON text frames only
+- do NOT use OpenClaw Bridge protocol / TCP JSONL
+- do NOT invent RPC payloads from memory
+- do NOT stop at a mock adapter; complete the real integration
+
+NON-NEGOTIABLE FACTS
+1. OpenClaw Gateway WebSocket is the target transport.
+2. The connection flow must be challenge-aware:
+   - wait for pre-connect challenge event from server
+   - then send connect request
+   - negotiate protocol version using minProtocol/maxProtocol
+3. The protocol is strict and validated server-side.
+4. The source of truth is the actual OpenClaw schema and client code in the installed repo/version, not docs summaries.
+5. Side-effecting RPCs may require idempotency keys.
+6. Session and chat flows exist simultaneously:
+   - use sessions APIs for session lifecycle/subscriptions
+   - use chat APIs for actual chat execution when that is what the current official clients do
+7. Events are not replayed; on reconnect/gaps, refresh state/history explicitly.
+
+FIRST TASK: DISCOVER THE REAL CONTRACT
+Before writing integration code, inspect the OpenClaw version I am actually targeting and extract the exact request/response/event payloads from code.
+
+You MUST inspect these, in this order if present:
+1. src/gateway/protocol/schema.ts
+2. dist/protocol.schema.json
+3. src/gateway/server-methods-list.ts
+4. src/gateway/method-scopes.ts
+5. src/gateway/server.impl.ts
+6. src/gateway/client.ts
+7. the current WebChat / TUI / Control UI client code that connects to the Gateway
+8. any helper that implements:
+   - connect challenge handling
+   - device identity signing
+   - chat.send
+   - chat.history
+   - chat.abort
+   - sessions.create
+   - sessions.resolve
+   - sessions.messages.subscribe
+   - sessions.send
+   - sessions.abort
+
+You must produce a short machine-readable integration note in the repo after inspection:
+- docs/openclaw-terminal-integration-notes.md
+This note must list:
+- exact protocol version used
+- exact connect payload fields required by this version
+- whether connect.challenge must be awaited in practice for this client version
+- exact params shape for chat.send or sessions.send
+- exact params shape for sessions.create / sessions.resolve / sessions.messages.subscribe
+- exact event names the terminal should consume for streaming
+- exact auth precedence used by this version
+
+IMPLEMENTATION REQUIREMENTS
+Build a real adapter layer between my terminal app and OpenClaw.
+
+Create or refactor into these pieces:
+1. OpenClawGatewayClient
+   Responsibilities:
+   - open/close WebSocket
+   - wait for challenge
+   - send connect request
+   - handle req/res/event framing
+   - request/response correlation by id
+   - feature discovery from hello-ok
+   - health/status probe
+   - token/password auth
+   - device-token persistence and reuse
+   - reconnect with bounded exponential backoff
+   - re-subscribe after reconnect
+   - graceful shutdown
+
+2. OpenClawSessionManager
+   Responsibilities:
+   - resolve or create the active session
+   - use agent-scoped session keys
+   - default session key should be configurable, with sensible local default:
+     agent:main:main
+   - support session switching in the terminal
+   - fetch normalized history on initial load and after reconnect
+   - subscribe to session message/tool streams if supported by current client contract
+
+3. OpenClawChatRunner
+   Responsibilities:
+   - send user message into active session
+   - generate and attach idempotencyKey where required
+   - stream assistant output into terminal incrementally
+   - support abort/interrupt
+   - map tool events / run states / final messages into terminal UI state
+
+4. Terminal UI integration
+   Responsibilities:
+   - show connection state: disconnected / connecting / authenticating / pairing-required / ready / streaming / error
+   - show current agent and session
+   - show partial streamed assistant output
+   - show tool activity in a compact way
+   - show clear recoverable errors
+   - preserve local input UX during reconnects and failures
+
+AUTH + PAIRING RULES
+Implement auth in this precedence order unless the inspected version clearly differs:
+1. explicit shared token/password config
+2. explicit deviceToken if available
+3. persisted per-device token
+4. fallback local bootstrap only if officially supported by current version
+
+If pairing is required:
+- do not fail silently
+- surface a clear terminal message describing the exact OpenClaw command the user needs to run, such as:
+  openclaw devices list
+  openclaw devices approve <requestId>
+- keep reconnect logic sane and do not thrash endlessly
+
+DEVICE IDENTITY
+If the current OpenClaw version requires device identity signing:
+- implement it exactly as the current official client does
+- do not approximate
+- persist stable device identity material locally in an app-owned config/state path
+- reuse it across restarts
+- keep the implementation minimal and local-only
+- do not weaken auth by silently bypassing required fields
+
+METHOD SELECTION RULES
+You must determine, from the inspected code, the correct split between:
+- session lifecycle methods
+- chat execution methods
+- event subscriptions
+
+Preferred behavior:
+- use sessions.* for session management
+- use the same execution path the current official WebChat/TUI client uses for sending user chat messages
+- if official clients use chat.send + chat.history + chat.abort, mirror that
+- if official clients have migrated to sessions.send for execution in this version, use that instead
+- do not mix old and new flows arbitrarily
+
+STREAMING + HISTORY RULES
+Implement robust transcript behavior:
+- on app startup:
+  - connect
+  - authenticate
+  - resolve/create active session
+  - subscribe
+  - load history
+- on new user send:
+  - append local optimistic user row only when safe
+  - send RPC
+  - stream assistant/tool events into the active transcript
+- on reconnect:
+  - reconnect
+  - re-auth
+  - re-subscribe
+  - re-fetch history or session snapshot because events are not replayed
+  - reconcile optimistic rows using idempotencyKey or run correlation if available
+
+CONFIGURATION
+Add local configuration support for:
+- OPENCLAW_GATEWAY_URL
+- OPENCLAW_GATEWAY_TOKEN
+- OPENCLAW_GATEWAY_PASSWORD
+- OPENCLAW_SESSION_KEY
+- OPENCLAW_AGENT_ID
+- OPENCLAW_DEVICE_STATE_PATH
+
+Default to local-only behavior:
+- ws://127.0.0.1:18789
+- no remote assumptions
+- no cloud relay assumptions
+
+ERROR HANDLING
+Handle at least these cases cleanly:
+- gateway not running
+- auth token mismatch
+- password mismatch
+- pairing required
+- protocol version mismatch
+- malformed response/event
+- unsupported method not advertised in hello-ok
+- subscription failure
+- reconnect loop exhaustion
+- abort during active streaming
+
+When possible, print operator-friendly next steps using actual OpenClaw CLI commands.
+
+DO NOTS
+- do not implement against legacy Bridge protocol
+- do not hardcode guessed payload shapes
+- do not ignore connect.challenge if the current version requires it
+- do not skip idempotency keys for side-effecting chat sends when required
+- do not silently swallow socket errors
+- do not leave behind dead placeholder code
+- do not change unrelated terminal behavior
+- do not replace the terminal with a web UI
+- do not depend on remote OpenClaw hosting
+
+CODE QUALITY
+- keep the adapter isolated behind a transport/service boundary
+- minimize framework-specific coupling
+- keep business logic out of UI components
+- use typed payloads derived from discovered schema where practical
+- add comments only where protocol behavior is non-obvious
+- prefer small functions over large monoliths
+
+MINIMUM DELIVERABLES
+1. Real OpenClaw local WebSocket integration in the terminal app
+2. Connection/auth/session/chat streaming working end-to-end
+3. Reconnect and abort working
+4. Integration note document committed to repo
+5. Developer README section explaining:
+   - required env vars
+   - how to start local gateway
+   - how to approve pairing if needed
+   - how to run the terminal against local OpenClaw
+6. Tests or at least one automated smoke test around:
+   - connect + hello-ok
+   - session resolve/create
+   - send message
+   - receive streamed events
+   - abort or reconnect path
+
+VALIDATION STEPS
+You must run or script these checks:
+1. Start OpenClaw Gateway locally
+2. Confirm local terminal connects to ws://127.0.0.1:18789
+3. Confirm handshake succeeds
+4. Confirm active session is resolved or created
+5. Send a test prompt
+6. Confirm streamed assistant output appears in terminal
+7. Confirm history reload shows prior messages
+8. Confirm abort interrupts an active run
+9. Restart gateway and confirm terminal reconnects and resubscribes
+10. If pairing is triggered, confirm UX shows clear approval instructions
+
+EXPECTED FILE OUTPUT
+At the end, return:
+1. a concise summary of what you changed
+2. exact files changed
+3. exact protocol methods/events used
+4. any assumptions that still depend on my local OpenClaw version
+5. exact commands I should run to test locally
+
+START NOW
+Work directly against the repo. Inspect the real OpenClaw contract first, then implement the adapter, wire it into the terminal, validate it locally, and commit the integration notes.

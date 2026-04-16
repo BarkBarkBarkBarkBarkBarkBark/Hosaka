@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-import json
-import subprocess
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from hosaka.llm.router import (
     LLMBackend,
     backend_display_name,
     detect_backend,
+    shutdown_gateway,
     stream_chat,
     sync_chat,
+    _get_gateway,
 )
 
 if TYPE_CHECKING:
@@ -47,7 +46,13 @@ def _print_stream(messages: list[dict[str, str]], backend: str | None = None) ->
             sys.stdout.flush()
             collected.append(token)
     except KeyboardInterrupt:
-        pass
+        # Abort active gateway run on Ctrl-C
+        gw = _get_gateway()
+        if gw is not None:
+            try:
+                gw.abort()
+            except Exception:
+                pass
     print()  # newline after streamed response
     return "".join(collected)
 
@@ -76,27 +81,18 @@ def enter_chat_mode(hostname: str, cwd: str) -> None:
     """Interactive chat loop. /back or Ctrl-C to exit."""
     backend = detect_backend()
 
-    # Hand off to openclaw tui for the full agent experience (exec/fs/web tools).
-    if backend == LLMBackend.OPENCLAW:
-        token: str | None = None
-        config_path = Path.home() / ".openclaw" / "openclaw.json"
-        if config_path.exists():
-            try:
-                cfg = json.loads(config_path.read_text())
-                token = cfg.get("gateway", {}).get("auth", {}).get("token")
-            except Exception:  # noqa: BLE001
-                pass
-        cmd = ["openclaw", "tui"]
-        if token:
-            cmd += ["--token", token]
-        result = subprocess.run(cmd)  # replaces this process for the duration
-        if result.returncode not in (0, 130):  # 130 = Ctrl-C in child
-            print(f"openclaw tui exited with code {result.returncode}")
-        return
-
     print(f"HOSAKA CHAT // {backend_display_name(backend)}")
     print("Type your message. /back or Ctrl-C to return to console.")
-    if backend == LLMBackend.OFFLINE:
+
+    if backend == LLMBackend.OPENCLAW:
+        gw = _get_gateway()
+        if gw is not None:
+            print(f"Session: {gw.session_key}")
+            print("Agent tools active. Ctrl-C aborts active generation.\n")
+        else:
+            print("Gateway detected but connection failed. Falling back.\n")
+            backend = LLMBackend.OPENAI if __import__('hosaka.llm.openai_adapter', fromlist=['is_available']).is_available() else LLMBackend.OFFLINE
+    elif backend == LLMBackend.OFFLINE:
         print("No LLM backend available. Connect OpenClaw or set OPENAI_API_KEY.")
         print("Falling back to offline keyword assist.\n")
 
@@ -116,7 +112,22 @@ def enter_chat_mode(hostname: str, cwd: str) -> None:
             return
         if user_input == "/clear":
             history = [_build_system_message(hostname, cwd)]
-            print("Conversation cleared.")
+            gw = _get_gateway()
+            if gw is not None:
+                try:
+                    gw.reset_session()
+                    print("Session and conversation cleared.")
+                except Exception:
+                    print("Conversation cleared (local).")
+            else:
+                print("Conversation cleared.")
+            continue
+        if user_input == "/session":
+            gw = _get_gateway()
+            if gw is not None:
+                print(f"Session: {gw.session_key}")
+            else:
+                print("No active gateway session.")
             continue
 
         history.append({"role": "user", "content": user_input})

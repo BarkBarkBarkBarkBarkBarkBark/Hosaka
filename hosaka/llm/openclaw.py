@@ -8,10 +8,9 @@ This module:
   - Probes whether the OpenClaw gateway is up on port 18789
   - Provides doctor() diagnostics
   - Wraps run_install_script() for /openclaw install
-  - Does NOT attempt to call the gateway directly over HTTP — the gateway speaks
-    WebSocket, not OpenAI-compatible REST.  Chat routing goes through
-    openai_adapter.py for one-shot calls; enter_chat_mode() in chat.py hands off
-    to `openclaw tui` for the full interactive agent experience.
+
+Chat routing via the gateway WebSocket protocol is handled by
+openclaw_gateway.py (sessions.send / chat.send).
 """
 
 from __future__ import annotations

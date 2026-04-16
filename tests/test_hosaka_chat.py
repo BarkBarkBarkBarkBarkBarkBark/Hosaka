@@ -1,9 +1,9 @@
-"""Tests for the LLM router and chat module."""
+"""Tests for the LLM router, chat module, and gateway adapter."""
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
+from unittest.mock import patch, MagicMock, PropertyMock
+import hosaka.llm.router as router_mod
 from hosaka.llm.router import LLMBackend, detect_backend, sync_chat
 
 
@@ -28,6 +28,35 @@ class TestDetectBackend:
 
 
 class TestSyncChat:
+    def setup_method(self):
+        # Reset the module-level gateway between tests
+        router_mod._gateway = None
+
+    def test_openclaw_gateway_used_when_available(self) -> None:
+        messages = [{"role": "user", "content": "hello"}]
+        mock_gw = MagicMock()
+        mock_gw.is_ready = True
+        mock_gw.chat_sync.return_value = "gateway response"
+
+        with (
+            patch("hosaka.llm.openclaw.is_available", return_value=True),
+            patch.object(router_mod, "_gateway", mock_gw),
+        ):
+            result = sync_chat(messages, backend=LLMBackend.OPENCLAW)
+        assert result == "gateway response"
+        mock_gw.chat_sync.assert_called_once_with("hello")
+
+    def test_openclaw_falls_back_to_openai_when_gw_unavailable(self) -> None:
+        messages = [{"role": "user", "content": "hello"}]
+        with (
+            patch("hosaka.llm.openclaw.is_available", return_value=True),
+            patch("hosaka.llm.gateway.GatewayAdapter.is_available", return_value=False),
+            patch("hosaka.llm.openai_adapter.is_available", return_value=True),
+            patch("hosaka.llm.openai_adapter.chat_sync", return_value="openai response"),
+        ):
+            result = sync_chat(messages, backend=LLMBackend.OPENCLAW)
+        assert result == "openai response"
+
     def test_offline_fallback_uses_intent(self) -> None:
         messages = [{"role": "user", "content": "help me get on wifi"}]
         with (
