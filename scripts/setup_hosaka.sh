@@ -3,18 +3,17 @@
 # setup_hosaka.sh — One-shot red-carpet bootstrap for Hosaka Field Terminal
 #
 # This is the ONLY script a new user needs to run on a fresh Raspberry Pi.
-# It chains everything: Hosaka install → OpenClaw install → service enable → boot.
+# It chains everything: Hosaka install → service enable → boot.
+#
+# Requires: picoclaw already installed at /usr/local/bin/picoclaw
+#   Install: https://github.com/sipeed/picoclaw/releases
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/<org>/Hosaka/main/scripts/setup_hosaka.sh | bash
-#   # or from a cloned repo:
 #   ./scripts/setup_hosaka.sh
 #
 # Environment variables (all optional):
-#   OPENCLAW_MODEL    LLM model to pull         (default: llama3)
 #   INSTALL_TAILSCALE 1 to install Tailscale     (default: 0)
 #   INSTALL_CADDY     1 to install Caddy         (default: 0)
-#   SKIP_MODEL_PULL   1 to skip LLM download     (default: 0)
 #   HOSAKA_BOOT_MODE  console or headless         (default: console)
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -49,42 +48,53 @@ if [[ ! -f "$REPO_ROOT/requirements-hosaka.txt" ]]; then
   exit 1
 fi
 
-# ── step 1: install Hosaka ───────────────────────────────────────────────────
+# ── step 1: check picoclaw ───────────────────────────────────────────────────
 banner
-info "Step 1/4 — Installing Hosaka Field Terminal..."
+info "Step 1/3 — Checking picoclaw..."
+
+if ! command -v picoclaw >/dev/null 2>&1; then
+  echo ""
+  echo "  picoclaw is not installed. Install it first:"
+  echo "  https://github.com/sipeed/picoclaw/releases"
+  echo ""
+  echo "  Then run 'picoclaw onboard' and rerun this script."
+  exit 1
+fi
+
+PICOCLAW_VERSION="$(picoclaw version 2>/dev/null | grep -oP 'picoclaw \K[^\s]+' || echo 'unknown')"
+ok "picoclaw ${PICOCLAW_VERSION} found at $(command -v picoclaw)"
+
+if [[ ! -f "$HOME/.picoclaw/config.json" ]]; then
+  warn "No picoclaw config found. Running 'picoclaw onboard'..."
+  picoclaw onboard
+fi
+
+echo ""
+
+# ── step 2: install Hosaka ───────────────────────────────────────────────────
+info "Step 2/3 — Installing Hosaka Field Terminal..."
 echo ""
 bash "$REPO_ROOT/scripts/install_hosaka.sh"
 echo ""
 ok "Hosaka installed."
 
-# ── step 2: install OpenClaw (Ollama + model) ────────────────────────────────
-info "Step 2/4 — Installing OpenClaw (LLM backend)..."
-echo ""
-bash "$REPO_ROOT/scripts/install_openclaw.sh"
-echo ""
-ok "OpenClaw installed."
-
-# ── step 3: configure boot mode ──────────────────────────────────────────────
+# ── step 3: configure boot mode and start ────────────────────────────────────
 BOOT_MODE="${HOSAKA_BOOT_MODE:-console}"
-info "Step 3/4 — Configuring boot mode: ${BOOT_MODE}"
+info "Step 3/3 — Configuring boot mode: ${BOOT_MODE}"
+
+sudo systemctl start picoclaw-gateway.service
+ok "Picoclaw gateway started."
 
 if [[ "$BOOT_MODE" == "headless" ]]; then
   sudo systemctl disable hosaka-field-terminal.service 2>/dev/null || true
   sudo systemctl enable hosaka-field-terminal-headless.service
-  ok "Headless mode enabled. Setup will happen via web UI."
+  sudo systemctl start hosaka-field-terminal-headless.service
+  ok "Headless mode enabled."
 else
   sudo systemctl disable hosaka-field-terminal-headless.service 2>/dev/null || true
   sudo systemctl enable hosaka-field-terminal.service
-  ok "Console mode enabled. Setup will happen on tty1."
-fi
-
-# ── step 4: start the service ────────────────────────────────────────────────
-info "Step 4/4 — Starting Hosaka..."
-
-if [[ "$BOOT_MODE" == "headless" ]]; then
-  sudo systemctl start hosaka-field-terminal-headless.service
-else
   sudo systemctl start hosaka-field-terminal.service
+  ok "Console mode enabled. Setup will happen on tty1."
 fi
 
 # ── detect IP for the user ───────────────────────────────────────────────────
@@ -100,7 +110,7 @@ if [[ -n "$LOCAL_IP" ]]; then
 echo -e "${CYAN}║  ${NC}Web setup: http://${LOCAL_IP}:${WEB_PORT}${CYAN}$(printf '%*s' $((18 - ${#LOCAL_IP} - ${#WEB_PORT})) '')║${NC}"
 fi
 echo -e "${CYAN}║  ${NC}Console:   switch to tty1 or reboot${CYAN}             ║${NC}"
-echo -e "${CYAN}║  ${NC}Chat:      type 'chat' at the hosaka> prompt${CYAN}    ║${NC}"
+echo -e "${CYAN}║  ${NC}Chat:      just type at the hosaka> prompt${CYAN}       ║${NC}"
 echo -e "${CYAN}║                                                  ║${NC}"
 echo -e "${CYAN}║  ${NC}No Wrong Way.${CYAN}                                   ║${NC}"
 echo -e "${CYAN}║                                                  ║${NC}"

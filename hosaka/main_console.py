@@ -14,31 +14,28 @@ MANIFEST_DOC = APP_ROOT / "docs" / "no_wrong_way_manifest.md"
 DEFAULT_HELP_TOPICS = (
     "/help",
     "/status",
-    "/setup",
-    "/network",
-    "/theme",
     "/manifest",
     "update",
     "read <file>",
     "code",
     "chat",
-    "chat <prompt>",
-    "/openclaw status",
-    "/openclaw doctor",
-    "/openclaw install",
+    "!<shell command>",
+    "/picoclaw status",
+    "/picoclaw doctor",
     "/exit",
 )
 
 
 def _print_banner() -> None:
     print("HOSAKA MAIN CONSOLE // NO WRONG WAY")
-    print("Type /help to begin. chat to talk to the LLM. code for a shell.\n")
+    print("Just type — everything goes to Picoclaw. Use !cmd for shell. /help for commands.\n")
 
 
 def _show_help() -> None:
     print("No Wrong Way — command guide")
-    print("You can use slash commands or system shell commands.")
-    print("Core commands:")
+    print("Anything you type goes to the Picoclaw agent unless it's a known command.")
+    print("Prefix with ! to run a shell command directly (e.g. !ls -la).")
+    print("\nBuilt-in commands:")
     for topic in DEFAULT_HELP_TOPICS:
         print(f"  - {topic}")
     print("\nTip: `read manifest` opens the built-in operator manual.")
@@ -149,61 +146,48 @@ def _hostname() -> str:
     return socket.gethostname()
 
 
-def _openclaw_status() -> None:
-    from hosaka.llm.openclaw import (
-        configured_model,
-        is_cli_installed,
-        is_gateway_up,
-        OPENCLAW_GATEWAY_PORT,
-    )
+def _picoclaw_status() -> None:
+    import shutil
+    from hosaka.llm import picoclaw_adapter
 
-    cli = is_cli_installed()
-    gateway = is_gateway_up()
-    status = "gateway online" if gateway else ("CLI installed" if cli else "not installed")
-    print(f"OpenClaw: {status}")
-    print(f"Gateway:  127.0.0.1:{OPENCLAW_GATEWAY_PORT}")
-    print(f"Model:    {configured_model()}")
-    if not gateway:
-        print("Run /openclaw install to set up, or /openclaw doctor for diagnostics.")
+    installed = bool(shutil.which("picoclaw"))
+    print(f"Picoclaw: {'installed' if installed else 'NOT FOUND on PATH'}")
+    print(f"Session:  {picoclaw_adapter.DEFAULT_SESSION}")
+    print(f"Model:    {picoclaw_adapter.DEFAULT_MODEL or 'default'}")
+    if not installed:
+        print("Install: https://github.com/sipeed/picoclaw/releases")
+    else:
+        print("Run 'picoclaw gateway' to start the daemon if not already running.")
 
 
-def _openclaw_doctor() -> None:
-    from hosaka.llm.openclaw import doctor
+def _picoclaw_doctor() -> None:
+    import json, shutil
+    from pathlib import Path
+    from hosaka.llm import picoclaw_adapter
 
-    print("Running OpenClaw diagnostics...\n")
-    info = doctor()
-    print(f"  CLI installed:         {info['cli_installed']}")
-    print(f"  CLI version:           {info['cli_version'] or 'n/a'}")
-    print(f"  Gateway up (:{info['gateway_port']}):  {info['gateway_up']}")
-    print(f"  Configured model:      {info['configured_model']}")
-    print(f"  OpenAI key set:        {info['openai_key_set']}")
-    print(f"  Config exists:         {info['config_exists']}")
+    installed = bool(shutil.which("picoclaw"))
+    cfg_path = Path.home() / ".picoclaw" / "config.json"
+    cfg_ok = cfg_path.exists()
+
+    print(f"  Installed:        {installed}")
+    print(f"  Config exists:    {cfg_ok}")
+
+    if cfg_ok:
+        cfg = json.loads(cfg_path.read_text())
+        d = cfg.get("agents", {}).get("defaults", {})
+        print(f"  Workspace:        {d.get('workspace', 'n/a')}")
+        print(f"  Restricted:       {d.get('restrict_to_workspace', True)}")
+        gw = cfg.get("gateway", {})
+        print(f"  Gateway:          {gw.get('host','127.0.0.1')}:{gw.get('port', 18790)}")
+        print(f"  Model:            {d.get('model_name', 'n/a')}")
+    print(f"  Session key:      {picoclaw_adapter.DEFAULT_SESSION}")
     print()
-    if not info['cli_installed']:
-        print("Fix: run /openclaw install")
-    elif not info['openai_key_set']:
-        print("Fix: set OPENAI_API_KEY in your .env file")
-    elif not info['config_exists']:
-        print("Fix: run /openclaw install to complete onboarding")
-    elif not info['gateway_up']:
-        print("Fix: restart Hosaka or run 'openclaw gateway start'")
+    if not installed:
+        print("Fix: install picoclaw from https://github.com/sipeed/picoclaw/releases")
+    elif not cfg_ok:
+        print("Fix: run 'picoclaw onboard' to initialise config")
     else:
-        print("All checks passed. Type 'chat' to start talking.")
-
-
-def _openclaw_install() -> None:
-    from hosaka.llm.openclaw import run_install_script
-
-    print("Running OpenClaw installer...")
-    print("This will install Node.js 24 and the openclaw CLI, then onboard with OpenAI.")
-    print("Requires OPENAI_API_KEY to be set in your environment.\n")
-    ok, output = run_install_script()
-    if output:
-        print(output)
-    if ok:
-        print("\nOpenClaw install complete. Type 'chat' to start talking.")
-    else:
-        print("\nOpenClaw install encountered an issue. Run /openclaw doctor for details.")
+        print("All checks passed. Type anything to chat.")
 
 
 def run_main_console() -> None:
@@ -220,20 +204,12 @@ def run_main_console() -> None:
             continue
         if raw == "/help":
             _show_help()
-        elif raw == "/status":
-            print("System online. Setup complete. No Wrong Way mode active.")
-        elif raw == "/setup":
-            print("Setup is managed by the onboarding orchestrator and web UI.")
-        elif raw == "/theme":
-            print("Theme command stub. Use setup flow or web GUI to change it.")
-        elif raw == "/network":
-            print("Use setup step or web network page to inspect network details.")
-        elif raw == "/openclaw status" or raw == "/openclaw":
-            _openclaw_status()
-        elif raw == "/openclaw doctor":
-            _openclaw_doctor()
-        elif raw == "/openclaw install":
-            _openclaw_install()
+        elif raw in {"/status", "/setup", "/network", "/theme"}:
+            print("System online. Type anything to chat, or /help for commands.")
+        elif raw in {"/picoclaw", "/picoclaw status"}:
+            _picoclaw_status()
+        elif raw == "/picoclaw doctor":
+            _picoclaw_doctor()
         elif raw == "/manifest":
             _read_file("manifest", current_dir=current_dir)
         elif raw in {"update", "/update"}:
@@ -253,15 +229,17 @@ def run_main_console() -> None:
             print(f"Directory: {current_dir}")
         elif raw == "/exit":
             break
-        else:
+        elif raw.startswith("!"):
+            # Explicit shell passthrough: !ls -la
+            shell_cmd = raw[1:].strip()
             try:
-                proc = subprocess.run(shlex.split(raw), capture_output=True, text=True, cwd=str(current_dir))
-                if proc.stdout:
-                    print(proc.stdout)
-                if proc.stderr:
-                    print(proc.stderr)
+                proc = subprocess.run(
+                    shell_cmd, shell=True, text=True, cwd=str(current_dir)  # noqa: S602
+                )
                 if proc.returncode != 0:
-                    _unknown_command(raw)
+                    print(f"[exit {proc.returncode}]")
             except Exception as exc:  # noqa: BLE001
-                print(f"Command failed: {exc}")
-                _unknown_command(raw)
+                print(f"Shell error: {exc}")
+        else:
+            # Everything else → Picoclaw agent (one-shot)
+            one_shot(raw, hostname=_hostname(), cwd=str(current_dir))

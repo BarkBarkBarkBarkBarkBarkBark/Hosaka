@@ -19,6 +19,7 @@ import os
 import socket
 import threading
 import time
+from urllib.parse import urlparse
 from enum import Enum
 from typing import Any, Callable
 
@@ -96,8 +97,14 @@ class OpenClawGatewayClient:
         password: str | None = None,
     ):
         self._url = url or os.getenv("OPENCLAW_GATEWAY_URL", DEFAULT_GATEWAY_URL)
+        if not url and not os.getenv("OPENCLAW_GATEWAY_URL"):
+            self._url = os.getenv("PICOCLAW_GATEWAY_URL", self._url)
         self._token = token or os.getenv("OPENCLAW_GATEWAY_TOKEN")
+        if not self._token:
+            self._token = os.getenv("PICOCLAW_GATEWAY_TOKEN")
         self._password = password or os.getenv("OPENCLAW_GATEWAY_PASSWORD")
+        if not self._password:
+            self._password = os.getenv("PICOCLAW_GATEWAY_PASSWORD")
         self._ws: Any = None
         self._state = ConnectionState.DISCONNECTED
         self._hello_payload: dict = {}
@@ -451,8 +458,15 @@ class OpenClawGatewayClient:
     def is_gateway_reachable(
         host: str = DEFAULT_GATEWAY_HOST,
         port: int = DEFAULT_GATEWAY_PORT,
+        url: str | None = None,
     ) -> bool:
         """TCP probe to check if gateway is accepting connections."""
+        if url:
+            parsed = urlparse(url)
+            if parsed.hostname:
+                host = parsed.hostname
+            if parsed.port:
+                port = parsed.port
         try:
             with socket.create_connection((host, port), timeout=1):
                 return True

@@ -1,0 +1,18 @@
+[Unit]
+Description=Picoclaw Agent Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Run as the user who owns the picoclaw config (~/.picoclaw).
+# Override with: sudo systemctl edit picoclaw-gateway --force
+User=operator
+ExecStart=/usr/local/bin/picoclaw gateway
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

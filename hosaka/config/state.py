@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,7 +9,28 @@ from typing import Any
 
 from hosaka.setup.steps import SETUP_STEPS
 
-DEFAULT_STATE_PATH = Path("/var/lib/hosaka/state.json")
+_DEFAULT_STATE_PATH_SYSTEM = Path("/var/lib/hosaka/state.json")
+_DEFAULT_STATE_PATH_USER = Path.home() / ".hosaka" / "state.json"
+
+
+def _default_state_path() -> Path:
+    env = os.getenv("HOSAKA_STATE_PATH")
+    if env:
+        return Path(env)
+    # Fall back to user-writable path if the system path isn't accessible
+    if _DEFAULT_STATE_PATH_SYSTEM.parent.exists():
+        try:
+            _DEFAULT_STATE_PATH_SYSTEM.parent.mkdir(parents=True, exist_ok=True)
+            probe = _DEFAULT_STATE_PATH_SYSTEM.parent / ".hosaka_probe"
+            probe.touch()
+            probe.unlink()
+            return _DEFAULT_STATE_PATH_SYSTEM
+        except OSError:
+            pass
+    return _DEFAULT_STATE_PATH_USER
+
+
+DEFAULT_STATE_PATH = _default_state_path()
 
 
 def _utc_now() -> str:
@@ -36,8 +58,8 @@ class SetupState:
 
 
 class StateStore:
-    def __init__(self, state_path: Path = DEFAULT_STATE_PATH):
-        self.state_path = state_path
+    def __init__(self, state_path: Path | None = None):
+        self.state_path = state_path or _default_state_path()
 
     def load(self) -> SetupState:
         if not self.state_path.exists():

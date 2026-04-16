@@ -21,7 +21,11 @@ import socket
 import subprocess
 from pathlib import Path
 
-OPENCLAW_GATEWAY_PORT = int(os.getenv("OPENCLAW_GATEWAY_PORT", "18789"))
+OPENCLAW_GATEWAY_PORT = int(
+    os.getenv("OPENCLAW_GATEWAY_PORT")
+    or os.getenv("PICOCLAW_GATEWAY_PORT")
+    or "18790"
+)
 OPENCLAW_GATEWAY_HOST = os.getenv("OPENCLAW_GATEWAY_HOST", "127.0.0.1")
 
 APP_ROOT = Path(__file__).resolve().parents[2]

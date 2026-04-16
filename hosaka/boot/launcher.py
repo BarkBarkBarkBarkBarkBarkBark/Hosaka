@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 import os
-import secrets
 import shutil
 import socket
 import subprocess
@@ -18,7 +16,11 @@ from hosaka.tui.terminal import run_setup_flow
 WEB_HOST = os.getenv("HOSAKA_WEB_HOST", "0.0.0.0")
 WEB_PORT = int(os.getenv("HOSAKA_WEB_PORT", "8421"))
 BOOT_MODE = os.getenv("HOSAKA_BOOT_MODE", "console")
-OPENCLAW_GATEWAY_PORT = int(os.getenv("OPENCLAW_GATEWAY_PORT", "18789"))
+OPENCLAW_GATEWAY_PORT = int(
+    os.getenv("OPENCLAW_GATEWAY_PORT")
+    or os.getenv("PICOCLAW_GATEWAY_PORT")
+    or "18790"
+)
 
 
 def is_port_in_use(host: str, port: int) -> bool:

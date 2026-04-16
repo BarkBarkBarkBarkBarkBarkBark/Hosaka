@@ -12,7 +12,6 @@ from hosaka.llm.router import (
     shutdown_gateway,
     stream_chat,
     sync_chat,
-    _get_gateway,
 )
 
 if TYPE_CHECKING:
@@ -46,13 +45,7 @@ def _print_stream(messages: list[dict[str, str]], backend: str | None = None) ->
             sys.stdout.flush()
             collected.append(token)
     except KeyboardInterrupt:
-        # Abort active gateway run on Ctrl-C
-        gw = _get_gateway()
-        if gw is not None:
-            try:
-                gw.abort()
-            except Exception:
-                pass
+        pass  # picoclaw subprocess will finish or be abandoned
     print()  # newline after streamed response
     return "".join(collected)
 
@@ -84,14 +77,10 @@ def enter_chat_mode(hostname: str, cwd: str) -> None:
     print(f"HOSAKA CHAT // {backend_display_name(backend)}")
     print("Type your message. /back or Ctrl-C to return to console.")
 
-    if backend == LLMBackend.OPENCLAW:
-        gw = _get_gateway()
-        if gw is not None:
-            print(f"Session: {gw.session_key}")
-            print("Agent tools active. Ctrl-C aborts active generation.\n")
-        else:
-            print("Gateway detected but connection failed. Falling back.\n")
-            backend = LLMBackend.OPENAI if __import__('hosaka.llm.openai_adapter', fromlist=['is_available']).is_available() else LLMBackend.OFFLINE
+    if backend == LLMBackend.PICOCLAW:
+        from hosaka.llm import picoclaw_adapter
+        print(f"Session: {picoclaw_adapter.DEFAULT_SESSION}")
+        print("Model: " + (picoclaw_adapter.DEFAULT_MODEL or "default") + "\n")
     elif backend == LLMBackend.OFFLINE:
         print("No LLM backend available. Connect OpenClaw or set OPENAI_API_KEY.")
         print("Falling back to offline keyword assist.\n")
@@ -112,22 +101,11 @@ def enter_chat_mode(hostname: str, cwd: str) -> None:
             return
         if user_input == "/clear":
             history = [_build_system_message(hostname, cwd)]
-            gw = _get_gateway()
-            if gw is not None:
-                try:
-                    gw.reset_session()
-                    print("Session and conversation cleared.")
-                except Exception:
-                    print("Conversation cleared (local).")
-            else:
-                print("Conversation cleared.")
+            print("Conversation cleared.")
             continue
         if user_input == "/session":
-            gw = _get_gateway()
-            if gw is not None:
-                print(f"Session: {gw.session_key}")
-            else:
-                print("No active gateway session.")
+            from hosaka.llm import picoclaw_adapter
+            print(f"Session: {picoclaw_adapter.DEFAULT_SESSION}")
             continue
 
         history.append({"role": "user", "content": user_input})

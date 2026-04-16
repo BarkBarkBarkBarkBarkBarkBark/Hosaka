@@ -137,7 +137,11 @@ class GatewayAdapter:
             import websockets  # noqa: F401
         except ImportError:
             return False
-        return OpenClawGatewayClient.is_gateway_reachable()
+        url = (
+            os.getenv("OPENCLAW_GATEWAY_URL")
+            or os.getenv("PICOCLAW_GATEWAY_URL")
+        )
+        return OpenClawGatewayClient.is_gateway_reachable(url=url)
 
     def __enter__(self):
         self.connect()

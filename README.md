@@ -18,6 +18,14 @@ pip install -r requirements-hosaka.txt
 python -m hosaka
 ```
 
+```bash
+#Restarting
+pkill -f "picoclaw gateway"
+picoclaw gateway &
+HOSAKA_STATE_PATH="$HOME/.hosaka/state.json" .venv/bin/python -m hosaka
+```
+
+
 State defaults to `/var/lib/hosaka/state.json` — override with `HOSAKA_STATE_PATH`.
 
 ---

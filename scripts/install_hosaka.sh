@@ -42,12 +42,25 @@ sudo "$PYTHON_BIN" -m venv "$APP_ROOT/.venv"
 sudo "$APP_ROOT/.venv/bin/pip" install --upgrade pip
 sudo "$APP_ROOT/.venv/bin/pip" install -r "$APP_ROOT/requirements-hosaka.txt"
 
-sudo install -d -m 755 /var/lib/hosaka
+PICOCLAW_SERVICE_NAME="picoclaw-gateway.service"
+
+# State dir — user-writable, no root needed
+mkdir -p "$HOME/.hosaka"
+
+# Install systemd units
 sudo cp "$REPO_ROOT/systemd/$SERVICE_NAME" "/etc/systemd/system/$SERVICE_NAME"
 sudo cp "$REPO_ROOT/systemd/$HEADLESS_SERVICE_NAME" "/etc/systemd/system/$HEADLESS_SERVICE_NAME"
+sudo cp "$REPO_ROOT/systemd/$PICOCLAW_SERVICE_NAME" "/etc/systemd/system/$PICOCLAW_SERVICE_NAME"
+
+# Patch picoclaw service user to match whoever is running the install
+CURRENT_USER="$(id -un)"
+sudo sed -i "s/^User=operator/User=${CURRENT_USER}/" "/etc/systemd/system/$PICOCLAW_SERVICE_NAME"
+
 sudo systemctl daemon-reload
+sudo systemctl enable "$PICOCLAW_SERVICE_NAME"
 sudo systemctl enable "$SERVICE_NAME"
 sudo systemctl disable "$HEADLESS_SERVICE_NAME" >/dev/null 2>&1 || true
 
 echo "Hosaka Field Terminal installed."
-echo "Start now: sudo systemctl start $SERVICE_NAME"
+echo "Start gateway now: sudo systemctl start $PICOCLAW_SERVICE_NAME"
+echo "Start Hosaka now:  sudo systemctl start $SERVICE_NAME"
