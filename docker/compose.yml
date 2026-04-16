@@ -7,8 +7,9 @@
 # Logs:      docker compose -f docker/compose.yml logs -f hosaka
 # Teardown:  docker compose -f docker/compose.yml down -v
 #
-# OpenClaw gateway starts automatically inside the container on first boot.
-# Set OPENAI_API_KEY in your .env file to enable the full agent experience.
+# Picoclaw is baked into the Docker image (see Dockerfile).
+# Set your model provider API key in .env or run picoclaw onboard inside
+# the container.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── shared config ────────────────────────────────────────────────────────────
@@ -21,20 +22,15 @@ x-hosaka-common: &hosaka-common
     - HOSAKA_WEB_PORT=8421
     - HOSAKA_STATE_PATH=/var/lib/hosaka/state.json
     - PYTHONUNBUFFERED=1
-    # ── OpenClaw gateway (Node.js, starts inside container) ────────
-    - OPENCLAW_GATEWAY_PORT=18789
-    # ── OpenAI backend — set OPENAI_API_KEY in your .env file ─────
-    # - OPENAI_API_KEY=sk-...
-    # - OPENAI_MODEL=gpt-4o-mini
   volumes: &hosaka-vols
     # ── live-mount source code for development (overrides COPY) ────
     - ../hosaka:/opt/hosaka-field-terminal/hosaka
     - ../docs:/opt/hosaka-field-terminal/docs
     - ../scripts:/opt/hosaka-field-terminal/scripts
     - ../tests:/opt/hosaka-field-terminal/tests
-    # ── persist state + openclaw config across restarts ────────────
+    # ── persist state + picoclaw config across restarts ────────────
     - hosaka-state:/var/lib/hosaka
-    - openclaw-config:/root/.openclaw
+    - picoclaw-config:/root/.picoclaw
 
 services:
   # ── headless mode — background web UI, no terminal ─────────────────────
@@ -52,7 +48,6 @@ services:
       - HOSAKA_WEB_PORT=8421
       - HOSAKA_STATE_PATH=/var/lib/hosaka/state.json
       - PYTHONUNBUFFERED=1
-      - OPENCLAW_GATEWAY_PORT=18789
     restart: unless-stopped
 
   # ── console mode — full interactive TUI (the one you develop in) ───────
@@ -72,11 +67,10 @@ services:
       - HOSAKA_WEB_PORT=8421
       - HOSAKA_STATE_PATH=/var/lib/hosaka/state.json
       - PYTHONUNBUFFERED=1
-      - OPENCLAW_GATEWAY_PORT=18789
     stdin_open: true    # docker run -i
     tty: true           # docker run -t
     profiles: ["tui"]   # only starts when explicitly requested
 
 volumes:
   hosaka-state:
-  openclaw-config:
+  picoclaw-config:

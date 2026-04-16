@@ -5,35 +5,69 @@ Hosaka boots directly into a guided setup flow, persists state across reboots,
 serves a parallel LAN setup GUI, and drops the operator into a branded
 **No Wrong Way** console once onboarding is complete.
 
+Everything you type at the prompt goes to the **Picoclaw** AI agent. Use `!cmd`
+for shell commands, `/help` for builtins.
+
 Designed for headless Debian/Linux. No desktop environment required.
+
+---
+
+## Prerequisites
+
+### Install Picoclaw (required)
+
+Picoclaw is a lightweight agentic framework that runs locally.
+Download the binary from [sipeed/picoclaw releases](https://github.com/sipeed/picoclaw/releases):
+
+```bash
+cd /tmp
+curl -L https://github.com/sipeed/picoclaw/releases/download/v0.2.4/picoclaw_Linux_arm64.tar.gz \
+  -o picoclaw_Linux_arm64.tar.gz
+tar -xzf picoclaw_Linux_arm64.tar.gz
+chmod +x picoclaw
+sudo mv picoclaw /usr/local/bin/
+```
+
+Then initialise config and set up your model provider:
+
+```bash
+picoclaw onboard
+```
+
+Verify:
+
+```bash
+picoclaw version
+picoclaw status
+```
 
 ---
 
 ## Quick Start (dev)
 
 ```bash
-python3 -m venv .venv
+git clone https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka.git
+cd Hosaka
+python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-hosaka.txt
+
+# Start picoclaw gateway in background
+picoclaw gateway &
+
+# Run Hosaka
 python -m hosaka
 ```
 
-```bash
-#Restarting
-pkill -f "picoclaw gateway"
-picoclaw gateway &
-HOSAKA_STATE_PATH="$HOME/.hosaka/state.json" .venv/bin/python -m hosaka
-```
-
-
-State defaults to `/var/lib/hosaka/state.json` — override with `HOSAKA_STATE_PATH`.
+State defaults to `~/.hosaka/state.json`, falling back to `/var/lib/hosaka/state.json`
+when running as root. Override with `HOSAKA_STATE_PATH`.
 
 ---
 
 ## Red Carpet Setup (Recommended)
 
-One command does everything — installs Hosaka, installs OpenClaw (Ollama +
-default LLM), enables the systemd service, and starts onboarding:
+One command does everything — checks Picoclaw, installs Hosaka, enables
+systemd services, and starts onboarding:
 
 ```bash
 git clone https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka.git
@@ -44,14 +78,12 @@ cd Hosaka
 Optional flags:
 
 ```bash
-OPENCLAW_MODEL=mistral ./scripts/setup_hosaka.sh     # use a different model
-INSTALL_TAILSCALE=1 ./scripts/setup_hosaka.sh         # also install Tailscale
-HOSAKA_BOOT_MODE=headless ./scripts/setup_hosaka.sh   # web-only setup
-SKIP_MODEL_PULL=1 ./scripts/setup_hosaka.sh           # skip LLM download
+INSTALL_TAILSCALE=1 ./scripts/setup_hosaka.sh     # also install Tailscale
+HOSAKA_BOOT_MODE=headless ./scripts/setup_hosaka.sh # web-only setup
 ```
 
-When it finishes you'll see the web setup URL and can press Enter to start
-onboarding immediately. The `chat` command works as soon as the model is pulled.
+Picoclaw must be installed first (see Prerequisites above). The setup script
+will error early if it isn't found.
 
 ---
 
@@ -59,6 +91,7 @@ onboarding immediately. The `chat` command works as soon as the model is pulled.
 
 ```bash
 ./scripts/install_hosaka.sh
+sudo systemctl start picoclaw-gateway.service
 sudo systemctl start hosaka-field-terminal.service
 ```
 
@@ -71,25 +104,8 @@ PYTHON_BIN=python3.11 ./scripts/install_hosaka.sh # use specific Python
 ```
 
 The installer rsyncs the project to `/opt/hosaka-field-terminal`, creates a
-venv, installs requirements, copies systemd units, and enables the console
-service by default.
-
-### Installing OpenClaw separately
-
-If you used `install_hosaka.sh` instead of the red carpet setup, install
-OpenClaw (Ollama + model) separately:
-
-```bash
-./scripts/install_openclaw.sh
-```
-
-Or from inside the Hosaka console: `/openclaw install`
-
-| Variable | Default | Description |
-|---|---|---|
-| `OPENCLAW_MODEL` | `llama3` | Model to pull |
-| `OPENCLAW_PORT` | `11434` | Ollama API port |
-| `SKIP_MODEL_PULL` | `0` | Set to `1` to skip download |
+venv, installs requirements, copies systemd units (including `picoclaw-gateway.service`),
+and enables both the gateway and console services.
 
 ---
 
@@ -101,37 +117,14 @@ or in an `/etc/default/hosaka` file sourced by the unit.
 
 | Variable | Default | Description |
 |---|---|---|
-| `HOSAKA_STATE_PATH` | `/var/lib/hosaka/state.json` | Path to the persistent setup state file |
+| `HOSAKA_STATE_PATH` | `~/.hosaka/state.json` | Path to the persistent setup state file |
 | `HOSAKA_WEB_HOST` | `0.0.0.0` | Bind address for the LAN setup web server |
 | `HOSAKA_WEB_PORT` | `8421` | Port for the LAN setup web server |
 | `HOSAKA_BOOT_MODE` | `console` | `console` (TTY + web) or `headless` (web only) |
-| `HOSAKA_REPO_ROOT` | *(auto-detected)* | Git repo root for the update script |
-| `PYTHON_BIN` | `python3` | Python binary used by `install_hosaka.sh` |
-| `INSTALL_TAILSCALE` | `0` | Set to `1` to install Tailscale during setup |
-| `INSTALL_CADDY` | `0` | Set to `1` to install Caddy during setup |
-
----
-
-## State File
-
-Persisted at `HOSAKA_STATE_PATH` (default `/var/lib/hosaka/state.json`).
-Human-readable JSON, created automatically on first boot.
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `setup_completed` | `bool` | `false` | Whether first-boot onboarding has finished |
-| `current_step` | `str` | `"welcome_and_branding"` | Active onboarding step name |
-| `hostname` | `str` | `""` | Configured device hostname |
-| `local_ip` | `str` | `""` | Detected LAN IP address |
-| `tailscale_status` | `str` | `"unknown"` | `unknown` / `not-installed` / `installed` / `connected` |
-| `backend_endpoint` | `str` | `""` | Optional backend URL |
-| `workspace_root` | `str` | `"/opt/hosaka/workspace"` | Working directory for operator data |
-| `theme` | `str` | `"dark"` | UI theme (`dark`, `amber`, `blue`) |
-| `openclaw_enabled` | `bool` | `true` | Whether OpenClaw integration is active |
-| `openclaw_path` | `str` | `"/opt/openclaw"` | Path to OpenClaw installation |
-| `openclaw_ready` | `bool` | `false` | Whether OpenClaw passed its readiness check |
-| `timestamps` | `dict` | `{"created": …, "updated": …}` | ISO 8601 UTC timestamps |
-| `last_error` | `str` | `""` | Last recorded error message |
+| `HOSAKA_LOG_FILE` | `/var/log/hosaka/boot.log` | Boot log file path |
+| `HOSAKA_LOG_LEVEL` | `INFO` | Python logging level |
+| `PICOCLAW_SESSION` | `hosaka:main` | Session key for Picoclaw agent |
+| `PICOCLAW_MODEL` | *(picoclaw default)* | Override the model used by the agent |
 
 ---
 
@@ -140,90 +133,47 @@ Human-readable JSON, created automatically on first boot.
 ### Console mode (default)
 
 ```bash
+sudo systemctl enable picoclaw-gateway.service
 sudo systemctl enable hosaka-field-terminal.service
 ```
 
-Takes over `/dev/tty1`. Keyboard input goes directly into the TUI setup and
-then the main console. The LAN web server runs in parallel.
+Takes over `/dev/tty1`. Keyboard input goes directly into the console.
+The LAN web server runs in parallel. Getty login prompt is suppressed.
 
 ### Headless mode
 
 ```bash
+sudo systemctl enable picoclaw-gateway.service
 sudo systemctl enable hosaka-field-terminal-headless.service
 ```
 
-No TTY. All setup happens through the web GUI at `http://<device-ip>:8421`.
+No TTY. All interaction happens through the web GUI at `http://<device-ip>:8421`.
 Output goes to the systemd journal.
 
 Only one mode should be enabled at a time.
 
 ---
 
-## Setup Flow
-
-First boot walks through 10 onboarding steps, resumable across reboots.
-Both the TUI and the LAN web GUI drive the same orchestrator and state file.
-
-| # | Step | What it does |
-|---|---|---|
-| 1 | `welcome_and_branding` | Splash screen, confirm start |
-| 2 | `detect_network_status` | Auto-detect LAN IP and Tailscale |
-| 3 | `choose_or_confirm_hostname` | Set or accept device hostname |
-| 4 | `configure_or_confirm_tailscale` | Tailscale auth / skip |
-| 5 | `configure_backend_endpoint_optional` | Optional backend URL |
-| 6 | `configure_workspace_root` | Operator data directory |
-| 7 | `configure_theme` | `dark` / `amber` / `blue` |
-| 8 | `configure_openclaw` | Enable + path, or skip |
-| 9 | `confirm_setup_summary` | Review before committing |
-| 10 | `finalize_and_enter_main_console` | Mark complete, enter console |
-
-During any setup step you can type `help` for contextual guidance or `update`
-to pull the latest code inline.
-
----
-
 ## Command Reference
 
 After setup, the operator lands at the `hosaka>` prompt.
-All slash commands, builtins, and raw shell commands are available.
+Everything you type is sent to the Picoclaw agent by default.
 
-| Command | Description |
+| Input | What happens |
 |---|---|
-| `/help` | Show the No Wrong Way command guide with all available commands |
-| `/status` | Print system and setup status |
-| `/setup` | Info about the onboarding orchestrator and web UI |
-| `/network` | Network info — use setup flow or web page for full details |
-| `/theme` | Theme info — use setup flow or web GUI to change theme |
-| `/manifest` | Open the built-in operator manual in a paginated reader |
-| `update` | Pull latest code via `scripts/update_hosaka.sh` and restart services |
-| `read <file>` | Paginated file reader with numbered lines (`read manifest` for the field guide) |
-| `code` | Drop to an interactive sub-shell (`$SHELL`). `exit` or Ctrl-D to return |
-| `chat` | Enter LLM conversation mode (OpenClaw → OpenAI → offline) |
-| `chat <prompt>` | One-shot LLM query, print response, stay in console |
-| `/openclaw status` | Check if OpenClaw (Ollama) is online, show endpoint and model |
-| `/openclaw doctor` | Full diagnostic — install, version, running, models, API |
-| `/openclaw install` | Run `scripts/install_openclaw.sh` from inside the console |
-| `pwd` | Print the current working directory |
-| `cd <path>` | Change working directory (supports `~`, relative, and absolute paths) |
-| `/exit` | Exit the Hosaka console |
-| *(anything else)* | Passed to the system shell; on failure, suggests known commands |
-
-### Reader controls
-
-| Key | Action |
-|---|---|
-| **Enter** | Next page |
-| **q** | Quit reader |
-
-### Unknown command behavior
-
-If a command isn't recognized or fails, Hosaka:
-
-1. Explains what happened
-2. Lists suggested commands
-3. Hints at `read manifest`
-
-No dead ends. **No Wrong Way.**
+| `hello, what files are here?` | Sent to Picoclaw agent |
+| `!ls -la` | Shell command (prefix with `!`) |
+| `code` | Drop to interactive shell (`exit` to return) |
+| `chat` | Enter dedicated chat mode (`/back` to return) |
+| `/help` | Show available commands |
+| `/status` | System status |
+| `/picoclaw status` | Picoclaw health check |
+| `/picoclaw doctor` | Full diagnostic |
+| `/manifest` | Open the built-in operator manual |
+| `update` | Pull latest code and restart services |
+| `read <file>` | Paginated file reader |
+| `pwd` / `cd <path>` | Navigate directories |
+| `/exit` | Exit the console |
 
 ---
 
@@ -235,17 +185,6 @@ The built-in FastAPI server runs on `HOSAKA_WEB_HOST:HOSAKA_WEB_PORT`
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/` | Setup home — current step, progress, links |
-| GET | `/network` | Network status (LAN IP, Tailscale) |
-| GET | `/identity` | Hostname edit form |
-| POST | `/identity` | Save hostname |
-| GET | `/backend` | Backend endpoint edit form |
-| POST | `/backend` | Save backend endpoint |
-| GET | `/workspace` | Workspace root edit form |
-| POST | `/workspace` | Save workspace root |
-| GET | `/theme` | Theme picker |
-| POST | `/theme` | Save theme |
-| GET | `/openclaw` | OpenClaw enable/disable + path |
-| POST | `/openclaw` | Save OpenClaw config |
 | GET | `/progress` | Full state as JSON |
 | POST | `/next` | Advance to next step |
 | POST | `/back` | Go to previous step |
@@ -265,18 +204,17 @@ From the device:
 The script fetches, pulls, rsyncs to `/opt/hosaka-field-terminal`, and
 restarts whichever systemd service is enabled.
 
-From inside the console, type `update` at the `hosaka>` prompt.
+From inside the console, type `update` at the prompt.
 
 ---
 
 ## Docker Development (no Pi required)
 
-Spin up a headless Hosaka + Ollama environment in Docker.
+Spin up a headless Hosaka + Picoclaw environment in Docker.
 Works on macOS, Linux, or any machine with Docker.
 
 ```bash
-./docker/dev.sh               # start background services (headless + Ollama)
-./docker/dev.sh pull-model     # download the LLM into Ollama
+./docker/dev.sh               # start background services (headless + picoclaw)
 ./docker/dev.sh tui            # ★ full interactive TUI — your main dev loop
 ./docker/dev.sh test           # run the test suite
 ./docker/dev.sh shell          # bash shell inside the container
@@ -287,7 +225,7 @@ Works on macOS, Linux, or any machine with Docker.
 ```
 
 The **`tui`** command gives you the exact same experience as booting a real
-Raspberry Pi — full setup flow, main console, `chat`, `code`, everything.
+Raspberry Pi — full setup flow, main console, agent chat, everything.
 Source code is live-mounted so you edit locally and restart to pick up changes.
 
 ### Export a shippable image
@@ -313,54 +251,22 @@ docker run -d -p 8421:8421 --name hosaka hosaka:ship
 # follow live logs
 sudo journalctl -u hosaka-field-terminal.service -f
 
+# boot log (tee'd from tty1)
+tail -f /var/log/hosaka/boot.log
+
 # inspect state
-cat /var/lib/hosaka/state.json
+cat ~/.hosaka/state.json
 
 # check web API
 curl http://127.0.0.1:8421/progress
 
-# manual run (stop the service first to free the port)
+# picoclaw gateway health
+curl http://127.0.0.1:18790/health
+
+# manual run (stop the service first to free tty1)
 sudo systemctl stop hosaka-field-terminal.service
-HOSAKA_WEB_PORT=8422 python -m hosaka
+python -m hosaka
 ```
-
----
-
-## Future Features
-
-### `code` — drop to raw terminal
-
-`code` at the `hosaka>` prompt spawns `$SHELL` (or `/bin/bash`) in the
-current working directory. `exit` or Ctrl-D returns to the Hosaka console.
-
-### `chat` — LLM conversation mode
-
-`chat` enters a conversational loop — every line is sent to the LLM and the
-response streams back token-by-token. `/back` or Ctrl-C returns to console.
-`/clear` resets conversation history.
-
-`chat <prompt>` sends a one-shot query without entering the loop.
-
-LLM routing: **OpenClaw (Ollama, local)** → **OpenAI API** → **offline assist**.
-The router probes in order and cascades automatically.
-
-### `/openclaw` commands
-
-| Command | Description |
-|---|---|
-| `/openclaw status` | Quick health check — is it up? |
-| `/openclaw doctor` | Full diagnostic report |
-| `/openclaw install` | Run the installer from inside the console |
-
----
-
-## OpenClaw Integration
-
-Onboarding includes an OpenClaw configuration step.
-When `openclaw_ready=true`, the main console can route to OpenClaw as the
-default operator shell.
-
-See `docs/openclaw_console_plan.md` for the full roadmap.
 
 ---
 
@@ -368,34 +274,36 @@ See `docs/openclaw_console_plan.md` for the full roadmap.
 
 ```
 hosaka/
-  __main__.py        # entry point
-  main_console.py    # post-setup REPL with slash commands
+  __main__.py        # entry point (logging, tee to boot.log)
+  main_console.py    # post-setup REPL — agent-first, !shell, /commands
   boot/              # systemd → launcher → orchestrator → console
   config/            # SetupState dataclass + JSON persistence
   setup/             # orchestrator + step catalog
   tui/               # interactive terminal setup flow
   web/               # FastAPI LAN setup GUI
   network/           # LAN IP + Tailscale detection
-  offline/           # rule-based intent classifier
+  offline/           # rule-based intent classifier (offline fallback)
   ops/               # update script runner
-  llm/               # LLM router, OpenClaw adapter, OpenAI adapter, chat REPL
+  llm/
+    router.py        # Picoclaw → OpenAI → offline fallback
+    picoclaw_adapter.py  # subprocess adapter for picoclaw agent CLI
+    chat.py          # chat REPL and one-shot handler
+    openai_adapter.py    # OpenAI API fallback
 scripts/
   setup_hosaka.sh    # red carpet one-shot bootstrap
   install_hosaka.sh  # appliance installer
-  install_openclaw.sh # Ollama + model installer
   update_hosaka.sh   # git pull + redeploy + service restart
 docker/
-  Dockerfile         # Debian Bookworm headless image
-  compose.yml        # Hosaka + Ollama sidecar
+  Dockerfile         # Debian Bookworm headless image + picoclaw binary
+  compose.yml        # Hosaka + picoclaw gateway
   dev.sh             # CLI wrapper for all dev commands
 systemd/
-  hosaka-field-terminal.service           # console mode
-  hosaka-field-terminal-headless.service  # headless mode
+  picoclaw-gateway.service               # picoclaw daemon
+  hosaka-field-terminal.service          # console mode (tty1)
+  hosaka-field-terminal-headless.service # headless mode
 tests/
 docs/
   no_wrong_way_manifest.md    # built-in operator manual
-  openclaw_console_plan.md    # OpenClaw integration roadmap
-  llm_integration_plan.md     # chat/code LLM architecture
 requirements-hosaka.txt
 ```
 
@@ -404,6 +312,7 @@ requirements-hosaka.txt
 ## Requirements
 
 - Python 3.10+
+- Picoclaw v0.2+ ([install instructions](#install-picoclaw-required))
 - systemd (for appliance boot)
 - No desktop environment needed
 - See `requirements-hosaka.txt` for Python dependencies

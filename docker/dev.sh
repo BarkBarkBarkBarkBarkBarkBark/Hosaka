@@ -9,8 +9,7 @@
 #   ./docker/dev.sh tui          ★ full interactive TUI (your main dev loop)
 #   ./docker/dev.sh test         # run the test suite inside the container
 #   ./docker/dev.sh logs         # tail container logs
-#   ./docker/dev.sh status       # show container + OpenClaw gateway health
-#   ./docker/dev.sh install      # install/update openclaw inside container
+#   ./docker/dev.sh status       # show container + picoclaw gateway health
 #   ./docker/dev.sh export       # export a shippable image tarball
 #   ./docker/dev.sh stop         # stop everything
 #   ./docker/dev.sh nuke         # stop + delete volumes (full reset)
@@ -46,7 +45,7 @@ case "${1:-up}" in
     echo -e "${CYAN}║  ${GREEN}Hosaka dev environment is running${CYAN}              ║${NC}"
     echo -e "${CYAN}║                                                  ║${NC}"
     echo -e "${CYAN}║  ${NC}Web UI:     http://localhost:8421${CYAN}               ║${NC}"
-    echo -e "${CYAN}║  ${NC}OpenClaw:   gateway on :18789 (inside container)${CYAN}║${NC}"
+    echo -e "${CYAN}║  ${NC}Picoclaw:   gateway on :18790 (inside container)${CYAN}║${NC}"
     echo -e "${CYAN}║                                                  ║${NC}"
     echo -e "${CYAN}║  ${NC}Source is live-mounted — edits apply on restart${CYAN} ║${NC}"
     echo -e "${CYAN}║                                                  ║${NC}"
@@ -56,16 +55,10 @@ case "${1:-up}" in
     echo "  ./docker/dev.sh tui          ★ Full interactive TUI (your main dev loop)"
     echo "  ./docker/dev.sh shell        Bash shell in container"
     echo "  ./docker/dev.sh test         Run test suite"
-    echo "  ./docker/dev.sh install      Install/update openclaw"
     echo ""
     ;;
 
   tui|console)
-    # ── This is the main development workflow ──────────────────────────
-    # Stops the headless service (if running) to free port 8421,
-    # then launches the console service with a real TTY attached.
-    # You get the full TUI setup flow → main console → chat, exactly
-    # as it would run on a real Raspberry Pi.
     info "Stopping headless service (if running)..."
     dc stop hosaka 2>/dev/null || true
     echo ""
@@ -83,7 +76,6 @@ case "${1:-up}" in
     ;;
 
   shell)
-    # Try the headless container first, fall back to a one-off run
     if dc ps --status running | grep -q hosaka-dev; then
       info "Opening shell in running hosaka-dev container..."
       dc exec hosaka bash
@@ -108,15 +100,6 @@ case "${1:-up}" in
     dc logs -f hosaka
     ;;
 
-  install)
-    info "Installing/updating OpenClaw inside container..."
-    if dc ps --status running | grep -q hosaka-dev; then
-      dc exec hosaka bash scripts/install_openclaw.sh
-    else
-      dc run --rm --entrypoint bash console scripts/install_openclaw.sh
-    fi
-    ;;
-
   status)
     info "Container status:"
     dc ps
@@ -125,9 +108,9 @@ case "${1:-up}" in
     curl -sf http://localhost:8421/progress 2>/dev/null | python3 -m json.tool 2>/dev/null \
       || warn "Hosaka web UI not responding on :8421"
     echo ""
-    info "OpenClaw gateway health:"
-    curl -sf http://localhost:18789/health 2>/dev/null | python3 -m json.tool 2>/dev/null \
-      || warn "OpenClaw gateway not responding on :18789"
+    info "Picoclaw gateway health:"
+    curl -sf http://localhost:18790/health 2>/dev/null | python3 -m json.tool 2>/dev/null \
+      || warn "Picoclaw gateway not responding on :18790"
     ;;
 
   export)
@@ -175,8 +158,7 @@ case "${1:-up}" in
     echo "  console      Alias for tui"
     echo "  test         Run the test suite"
     echo "  logs         Tail container logs"
-    echo "  install      Install/update openclaw inside container"
-    echo "  status       Show container + OpenClaw gateway health"
+    echo "  status       Show container + picoclaw gateway health"
     echo "  export       Build and save a shippable image tarball"
     echo "  stop         Stop all containers"
     echo "  nuke         Stop + delete all volumes (full reset)"

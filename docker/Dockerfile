@@ -26,14 +26,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         zstd \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Node 24 + OpenClaw AI agent gateway ──────────────────────────────────────
-# OpenClaw runs as a background gateway process alongside Hosaka.
-# It gives the 'chat' command a full agent runtime: exec, fs, web_search,
-# browser, image tools — powered by the configured OpenAI model.
-RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g openclaw@latest \
-    && rm -rf /var/lib/apt/lists/*
+# ── Picoclaw agent binary ─────────────────────────────────────────────────────
+# Picoclaw is a lightweight agentic framework. The gateway runs as a background
+# process alongside Hosaka, giving the console a full agent runtime.
+# Auto-detect arch: amd64 or arm64.
+ARG PICOCLAW_VERSION=0.2.4
+RUN ARCH=$(dpkg --print-architecture) \
+    && case "$ARCH" in \
+         amd64) PICOCLAW_ARCH="x86_64" ;; \
+         arm64) PICOCLAW_ARCH="arm64"   ;; \
+         *)     echo "Unsupported arch: $ARCH" && exit 1 ;; \
+       esac \
+    && curl -L "https://github.com/sipeed/picoclaw/releases/download/v${PICOCLAW_VERSION}/picoclaw_Linux_${PICOCLAW_ARCH}.tar.gz" \
+         -o /tmp/picoclaw.tar.gz \
+    && tar -xzf /tmp/picoclaw.tar.gz -C /tmp \
+    && chmod +x /tmp/picoclaw \
+    && mv /tmp/picoclaw /usr/local/bin/picoclaw \
+    && rm /tmp/picoclaw.tar.gz \
+    && picoclaw version
 
 # ── application directory structure ──────────────────────────────────────────
 ENV APP_ROOT=/opt/hosaka-field-terminal \
