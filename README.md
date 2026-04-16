@@ -37,7 +37,26 @@ tar -xzf picoclaw.tar.gz && chmod +x picoclaw && sudo mv picoclaw /usr/local/bin
 picoclaw onboard
 ```
 
-### 2. Clone and run
+### 2. Set your OpenAI API key
+
+Open `~/.picoclaw/config.json` and add your key to the model entry:
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-4o-mini",
+      "model": "openai/gpt-4o-mini",
+      "api_key": "sk-your-key-here",
+      "api_base": "https://api.openai.com/v1"
+    }
+  ]
+}
+```
+
+If you skip this step, Hosaka will prompt you for your key on first launch.
+
+### 3. Clone and run
 
 ```bash
 git clone https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka.git
@@ -48,7 +67,7 @@ picoclaw gateway &
 python -m hosaka
 ```
 
-### 3. Appliance install (Raspberry Pi)
+### 4. Appliance install (Raspberry Pi)
 
 ```bash
 ./scripts/setup_hosaka.sh

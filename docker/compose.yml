@@ -57,7 +57,7 @@ services:
     <<: *hosaka-common
     container_name: hosaka-console
     ports:
-      - "8421:8421"
+      - "8422:8421"
     env_file:
       - path: ../.env
         required: false

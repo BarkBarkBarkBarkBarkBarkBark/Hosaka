@@ -687,8 +687,72 @@ def _draw_ascii(subject: str, current_dir: Path) -> None:
     one_shot(prompt, hostname=_hostname(), cwd=str(current_dir))
 
 
+def _check_api_key() -> None:
+    """If no API key is configured, prompt the user to enter one."""
+    import json
+
+    cfg_path = Path.home() / ".picoclaw" / "config.json"
+    if not cfg_path.exists():
+        return  # picoclaw not set up yet — onboard handles this
+
+    try:
+        cfg = json.loads(cfg_path.read_text())
+    except Exception:
+        return
+
+    # Check if any model in model_list has an api_key set
+    model_list = cfg.get("model_list", [])
+    has_key = any(m.get("api_key") for m in model_list)
+    if has_key:
+        return
+
+    # Also check the default model
+    defaults = cfg.get("agents", {}).get("defaults", {})
+    model_name = defaults.get("model_name", "")
+
+    print(f"  {AMBER}No API key found in ~/.picoclaw/config.json{R}")
+    print(f"  {GRAY}Hosaka needs an OpenAI API key to talk to the AI.{R}")
+    print()
+    try:
+        key = input(f"  {CYAN}Paste your OpenAI API key (or Enter to skip): {R}").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+
+    if not key:
+        print(f"  {GRAY}Skipped. You can add it later to ~/.picoclaw/config.json{R}")
+        return
+
+    # Find the active model entry or create one
+    target_entry = None
+    for m in model_list:
+        if m.get("model_name") == model_name:
+            target_entry = m
+            break
+
+    if target_entry:
+        target_entry["api_key"] = key
+    else:
+        # Add a default gpt-4o-mini entry
+        model_list.append({
+            "model_name": "gpt-4o-mini",
+            "model": "openai/gpt-4o-mini",
+            "api_key": key,
+            "api_base": "https://api.openai.com/v1",
+        })
+        if not model_name:
+            defaults["model_name"] = "gpt-4o-mini"
+            cfg.setdefault("agents", {}).setdefault("defaults", defaults)
+
+    cfg["model_list"] = model_list
+    cfg_path.write_text(json.dumps(cfg, indent=2))
+    print(f"  {ok_style('API key saved.')} You're ready to go.")
+    print()
+
+
 def run_main_console() -> None:
     _print_banner()
+    _check_api_key()
     current_dir = Path.cwd()
     while True:
         try:

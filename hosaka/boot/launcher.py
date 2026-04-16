@@ -67,6 +67,7 @@ def start_picoclaw_gateway() -> subprocess.Popen | None:  # type: ignore[type-ar
     config_path = Path.home() / ".picoclaw" / "config.json"
     if not config_path.exists():
         print("Hosaka: picoclaw config not found — run 'picoclaw onboard' first.")
+        print("Hosaka: continuing without gateway — the console will prompt for API key.")
         return None
 
     try:
@@ -76,6 +77,9 @@ def start_picoclaw_gateway() -> subprocess.Popen | None:  # type: ignore[type-ar
             stderr=subprocess.DEVNULL,
         )
         time.sleep(2)  # brief pause for gateway to bind
+        if proc.poll() is not None:
+            print("Hosaka: picoclaw gateway exited immediately — check config.")
+            return None
         return proc
     except Exception as exc:  # noqa: BLE001
         print(f"Hosaka: could not start picoclaw gateway: {exc}")
