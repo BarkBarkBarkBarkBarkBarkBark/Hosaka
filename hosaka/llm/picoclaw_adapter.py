@@ -34,24 +34,45 @@ def _strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
 
+def _is_banner_line(clean: str) -> bool:
+    """Return True if the line is a picoclaw banner/chrome line."""
+    return (
+        clean.startswith("█")
+        or "picoclaw" in clean.lower()
+        or "Interactive mode" in clean
+        or "Goodbye" in clean
+        or "Ctrl+C" in clean
+    )
+
+
 def _extract_response(raw_output: str) -> str:
-    """Pull the agent response out of picoclaw's decorated output."""
-    for line in raw_output.splitlines():
+    """Pull the agent response out of picoclaw's decorated output.
+
+    Supports multi-line responses: collects from the first 🦞 line through
+    all subsequent non-banner lines.
+    """
+    all_lines = raw_output.splitlines()
+
+    # Find the first 🦞 response line
+    for idx, line in enumerate(all_lines):
         clean = _strip_ansi(line).strip()
         if clean.startswith(_RESPONSE_PREFIX):
-            return clean[len(_RESPONSE_PREFIX):].strip()
+            collected = [clean[len(_RESPONSE_PREFIX):].strip()]
+            # Gather continuation lines after the 🦞 prefix
+            for cont in all_lines[idx + 1:]:
+                c = _strip_ansi(cont).strip()
+                if not c or _is_banner_line(c):
+                    continue
+                collected.append(c)
+            return "\n".join(collected)
+
     # Fallback: return everything that isn't the banner
     lines = [
         _strip_ansi(l).strip()
-        for l in raw_output.splitlines()
-        if _strip_ansi(l).strip()
-        and not _strip_ansi(l).strip().startswith("█")
-        and "picoclaw" not in _strip_ansi(l).lower()
-        and "Interactive mode" not in _strip_ansi(l)
-        and "Goodbye" not in _strip_ansi(l)
-        and "Ctrl+C" not in _strip_ansi(l)
+        for l in all_lines
+        if _strip_ansi(l).strip() and not _is_banner_line(_strip_ansi(l).strip())
     ]
-    return " ".join(lines)
+    return "\n".join(lines)
 
 
 def chat_sync(message: str, session: str | None = None) -> str:
@@ -79,7 +100,10 @@ def chat_sync(message: str, session: str | None = None) -> str:
 def chat_stream(message: str, session: str | None = None) -> Generator[str, None, None]:
     """Send a message and yield response tokens (word-by-word streaming)."""
     response = chat_sync(message, session=session)
-    # Yield word by word for a streaming feel in the TUI
-    words = response.split(" ")
-    for i, word in enumerate(words):
-        yield word + (" " if i < len(words) - 1 else "")
+    # Yield word by word, preserving newlines for multi-line responses
+    for line_idx, line in enumerate(response.split("\n")):
+        if line_idx > 0:
+            yield "\n"
+        words = line.split(" ")
+        for i, word in enumerate(words):
+            yield word + (" " if i < len(words) - 1 else "")
