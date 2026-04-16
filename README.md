@@ -77,6 +77,17 @@ One command. Installs everything, enables systemd services, starts onboarding.
 
 ---
 
+## Docker (no Pi required)
+
+```bash
+./docker/dev.sh               # start services
+./docker/dev.sh tui            # full interactive terminal
+./docker/dev.sh test           # run tests
+./docker/dev.sh stop           # shut down
+```
+
+---
+
 ## What you get
 
 ```
@@ -132,16 +143,6 @@ and wilts when you don't.
 State persists to `~/.hosaka/plant.json`. Every command feeds it.
 Hours of inactivity drain it. Reach colony state and it records a birth.
 
----
-
-## Docker (no Pi required)
-
-```bash
-./docker/dev.sh               # start services
-./docker/dev.sh tui            # full interactive terminal
-./docker/dev.sh test           # run tests
-./docker/dev.sh stop           # shut down
-```
 
 ---
 
