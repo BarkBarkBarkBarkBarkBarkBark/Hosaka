@@ -1,0 +1,361 @@
+#!/usr/bin/env bash
+# hosaka — operator CLI for the field terminal Pi.
+#
+# Two main jobs:
+#
+#   hosaka mode build    Free up RAM/CPU on the Pi 3B so we can SSH in and
+#                        run `npm run build` without the OOM killer culling
+#                        the build (or worse, the SSH session).
+#   hosaka mode kiosk    Restore the normal touchscreen kiosk experience.
+#
+# Build mode stops chromium, the openbox autostart loop, the picoclaw gateway,
+# and (optionally) the webserver, and writes a marker so that on a reboot the
+# Pi stays in build mode until you flip back. Kiosk mode reverses it.
+#
+# Convenience verbs:
+#
+#   hosaka status                  what's running, RAM/CPU snapshot
+#   hosaka build [--check]         npm build (check = with tsc gate)
+#   hosaka deploy [--check]        build + rsync into /opt + restart webserver
+#   hosaka logs [unit]             tail journalctl for one of our units
+#   hosaka reboot                  safe sync + reboot
+#   hosaka mode                    show current mode + persistence
+#
+# This script is intentionally pure bash + standard Pi tooling. It does not
+# require Python, Node, or anything we install at runtime.
+
+set -euo pipefail
+
+# ── paths ─────────────────────────────────────────────────────────────────────
+
+REPO_ROOT="${HOSAKA_REPO:-/home/operator/Hosaka}"
+DEPLOY_ROOT="${HOSAKA_DEPLOY:-/opt/hosaka-field-terminal}"
+STATE_DIR="${HOSAKA_STATE_DIR:-/var/lib/hosaka}"
+RUNTIME_MODE_FILE="$STATE_DIR/mode"
+BOOT_MARKER="/boot/firmware/hosaka-build-mode"
+KIOSK_AUTOSTART="${HOME:-/home/operator}/.config/openbox/autostart"
+
+WEB_UNIT="hosaka-webserver.service"
+PICO_UNIT="picoclaw-gateway.service"
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+c_red()    { printf '\033[31m%s\033[0m' "$*"; }
+c_green()  { printf '\033[32m%s\033[0m' "$*"; }
+c_amber()  { printf '\033[33m%s\033[0m' "$*"; }
+c_cyan()   { printf '\033[36m%s\033[0m' "$*"; }
+c_dim()    { printf '\033[2m%s\033[0m' "$*"; }
+
+note() { printf '  %s %s\n' "$(c_cyan '›')" "$*"; }
+ok()   { printf '  %s %s\n' "$(c_green '✓')" "$*"; }
+warn() { printf '  %s %s\n' "$(c_amber '!')" "$*"; }
+die()  { printf '  %s %s\n' "$(c_red '✗')" "$*" >&2; exit 1; }
+
+ensure_state_dir() {
+  # Make sure the state dir exists AND is writable by the current user.
+  # Older installs created /var/lib/hosaka root-owned, which broke `hosaka
+  # mode build` for the operator. Re-chown idempotently.
+  if [[ ! -d "$STATE_DIR" ]]; then
+    sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 0755 "$STATE_DIR"
+  elif [[ ! -w "$STATE_DIR" ]]; then
+    sudo chown "$(id -un)":"$(id -gn)" "$STATE_DIR"
+    sudo chmod 0755 "$STATE_DIR"
+  fi
+}
+
+write_runtime_mode() {
+  ensure_state_dir
+  if ! printf '%s\n' "$1" > "$RUNTIME_MODE_FILE" 2>/dev/null; then
+    # Last-resort: write via sudo (state dir may be locked down on some hosts).
+    printf '%s\n' "$1" | sudo tee "$RUNTIME_MODE_FILE" >/dev/null
+    sudo chown "$(id -un)":"$(id -gn)" "$RUNTIME_MODE_FILE" 2>/dev/null || true
+  fi
+}
+
+read_runtime_mode() {
+  # Modes:
+  #   console — interactive UI (chromium kiosk on the touchscreen, terminal,
+  #             reading panel, etc.). The default.
+  #   device  — diagnostic/SSH-friendly. Kiosk is down, picoclaw is paused,
+  #             webserver stays up, screen shows the device dashboard
+  #             (IP, ports, RAM, battery, disk) instead of the kiosk.
+  #
+  # Legacy aliases are accepted on read so we don't break older state files:
+  #   "kiosk" → "console", "build" → "device".
+  local raw=""
+  if [[ -f "$RUNTIME_MODE_FILE" ]]; then
+    raw="$(cat "$RUNTIME_MODE_FILE")"
+  elif [[ -f "$BOOT_MARKER" ]]; then
+    raw="device"
+  else
+    raw="console"
+  fi
+  case "$raw" in
+    kiosk)        echo "console" ;;
+    build)        echo "device"  ;;
+    console|device) echo "$raw"  ;;
+    *)            echo "console" ;;
+  esac
+}
+
+# ── mode device (was: build) ─────────────────────────────────────────────────
+
+mode_device() {
+  local persist=0
+  for arg in "$@"; do
+    [[ "$arg" == "--persist" ]] && persist=1
+  done
+
+  note "entering $(c_amber 'device mode') — freeing RAM/CPU for SSH workflows"
+
+  # Kill the user-space pieces of the kiosk first. We do this WITHOUT sudo so
+  # an SSH session as 'operator' can shed the kiosk. Chromium + the openbox
+  # autostart relaunch loop are both owned by the operator user.
+  if pgrep -u "$(id -un)" -f 'chromium.*hosaka-kiosk-profile' >/dev/null; then
+    pkill -u "$(id -un)" -9 -f 'chromium.*hosaka-kiosk-profile' || true
+    ok "stopped chromium kiosk"
+  fi
+  if pgrep -u "$(id -un)" -f '/.config/openbox/autostart' >/dev/null; then
+    pkill -u "$(id -un)" -9 -f '/.config/openbox/autostart' || true
+    ok "stopped openbox autostart loop"
+  fi
+
+  # Stop the heavy backend daemons. picoclaw-gateway in particular sustains
+  # ~14% CPU at idle, which hurts a Pi 3B under build load.
+  if systemctl is-active --quiet "$PICO_UNIT"; then
+    sudo systemctl stop "$PICO_UNIT"
+    ok "stopped $PICO_UNIT"
+  fi
+  # We KEEP hosaka-webserver running by default so you can hit the web UI from
+  # another machine while the kiosk is dark. Pass `--full` to stop it too.
+  if [[ " $* " == *" --full "* ]]; then
+    if systemctl is-active --quiet "$WEB_UNIT"; then
+      sudo systemctl stop "$WEB_UNIT"
+      ok "stopped $WEB_UNIT (--full)"
+    fi
+  fi
+
+  write_runtime_mode "device"
+  ok "runtime mode set to $(c_amber device)"
+
+  if (( persist )); then
+    if sudo touch "$BOOT_MARKER"; then
+      ok "persisted across reboot via $(c_dim "$BOOT_MARKER")"
+    else
+      warn "could not write $BOOT_MARKER (boot partition not writable?)"
+    fi
+  else
+    note "this is one-shot. run with $(c_cyan '--persist') to survive reboots"
+  fi
+
+  # Make tty1 reflect the new mode RIGHT NOW. .profile is the single source
+  # of truth for what runs on tty1: in device mode it execs the dashboard,
+  # in console mode it execs startx. Restarting the getty re-runs autologin
+  # → .profile → the right thing. Without this, switching modes leaves the
+  # screen showing whatever was on it before (often: a black X session).
+  refresh_tty1 "device"
+
+  echo
+  free -h | sed 's/^/    /'
+}
+
+# refresh_tty1 — make tty1 catch up to the current runtime mode without a
+# reboot. Idempotent. Caller passes the target mode name purely for logging.
+refresh_tty1() {
+  local target="${1:-?}"
+  # If a desktop X session is currently squatting tty1 (vt1), tear it down
+  # first so getty can grab the vt back. Xorg runs as root so we need sudo.
+  if pgrep -x Xorg >/dev/null 2>&1; then
+    sudo -n pkill -9 -x Xorg 2>/dev/null || sudo pkill -9 -x Xorg 2>/dev/null || true
+  fi
+  if pgrep -u "$(id -un)" -x openbox >/dev/null 2>&1; then
+    pkill -u "$(id -un)" -9 -x openbox 2>/dev/null || true
+  fi
+  if sudo -n systemctl restart getty@tty1.service 2>/dev/null \
+     || sudo systemctl restart getty@tty1.service 2>/dev/null; then
+    ok "tty1 refreshed for $(c_amber "$target") mode"
+  else
+    warn "could not restart getty@tty1.service (try: sudo systemctl restart getty@tty1)"
+  fi
+}
+
+# ── mode console (was: kiosk) ────────────────────────────────────────────────
+
+mode_console() {
+  local persist=0
+  for arg in "$@"; do
+    [[ "$arg" == "--persist" ]] && persist=1
+  done
+
+  note "entering $(c_green 'console mode') — restoring interactive UI"
+
+  if ! systemctl is-active --quiet "$PICO_UNIT"; then
+    sudo systemctl start "$PICO_UNIT"
+    ok "started $PICO_UNIT"
+  fi
+  if ! systemctl is-active --quiet "$WEB_UNIT"; then
+    sudo systemctl start "$WEB_UNIT"
+    ok "started $WEB_UNIT"
+  fi
+
+  write_runtime_mode "console"
+  ok "runtime mode set to $(c_green console)"
+
+  if (( persist )); then
+    if [[ -f "$BOOT_MARKER" ]]; then
+      sudo rm -f "$BOOT_MARKER" && ok "removed boot marker"
+    fi
+  fi
+
+  # Console mode releases the TTY from the device dashboard service (no-op
+  # if it wasn't running) and refreshes getty so .profile re-runs and starts
+  # X. If openbox is already up we just re-fire the autostart in-place to
+  # avoid the visible flash of restarting Xorg.
+  if systemctl is-active --quiet hosaka-device-dashboard.service 2>/dev/null; then
+    sudo systemctl stop hosaka-device-dashboard.service 2>/dev/null || true
+  fi
+
+  if pgrep -x Xorg >/dev/null && pgrep -u "$(id -un)" -x openbox >/dev/null; then
+    # Existing X session — just (re)fire the kiosk autostart in place.
+    if ! pgrep -u "$(id -un)" -f '/.config/openbox/autostart' >/dev/null; then
+      DISPLAY=:0 XAUTHORITY="${HOME}/.Xauthority" \
+        nohup setsid /bin/sh "$KIOSK_AUTOSTART" \
+        </dev/null >/tmp/hosaka-autostart.log 2>&1 &
+      disown
+      ok "relaunched openbox autostart (chromium will follow)"
+    else
+      note "openbox autostart already running"
+    fi
+  else
+    refresh_tty1 "console"
+  fi
+}
+
+# ── status ────────────────────────────────────────────────────────────────────
+
+cmd_status() {
+  local mode
+  mode="$(read_runtime_mode)"
+  echo
+  echo "  hosaka mode        : $(c_amber "$mode")"
+  echo "  boot marker        : $([[ -f $BOOT_MARKER ]] && c_amber present || c_dim absent)"
+  echo "  $WEB_UNIT  : $(systemctl is-active "$WEB_UNIT" 2>/dev/null || echo inactive)"
+  echo "  $PICO_UNIT : $(systemctl is-active "$PICO_UNIT" 2>/dev/null || echo inactive)"
+  if pgrep -u "$(id -un)" -f 'chromium.*hosaka-kiosk-profile' >/dev/null; then
+    echo "  chromium kiosk     : $(c_green running)"
+  else
+    echo "  chromium kiosk     : $(c_dim stopped)"
+  fi
+  echo
+  free -h | sed 's/^/    /'
+  echo
+  uptime | sed 's/^/    /'
+}
+
+# ── build / deploy ────────────────────────────────────────────────────────────
+
+cmd_build() {
+  local target="build"
+  [[ "${1:-}" == "--check" ]] && target="build:check"
+  [[ -d "$REPO_ROOT/frontend" ]] || die "no frontend at $REPO_ROOT/frontend"
+  note "running $(c_cyan "npm run $target") in $REPO_ROOT/frontend"
+  if [[ "$(read_runtime_mode)" != "device" ]]; then
+    warn "not in device mode — run $(c_cyan 'hosaka mode device') first if this OOMs"
+  fi
+  ( cd "$REPO_ROOT/frontend" && npm run "$target" )
+  ok "build done — output at $REPO_ROOT/hosaka/web/ui"
+}
+
+cmd_deploy() {
+  cmd_build "$@"
+  if [[ -d "$DEPLOY_ROOT/hosaka/web/ui" ]]; then
+    note "syncing into $(c_cyan "$DEPLOY_ROOT/hosaka/web/ui")"
+    sudo rsync -a --delete \
+      "$REPO_ROOT/hosaka/web/ui/" "$DEPLOY_ROOT/hosaka/web/ui/"
+    ok "rsync done"
+  else
+    warn "deploy root $DEPLOY_ROOT/hosaka/web/ui missing — skipped rsync"
+  fi
+  if systemctl is-enabled --quiet "$WEB_UNIT" 2>/dev/null; then
+    sudo systemctl restart "$WEB_UNIT"
+    ok "restarted $WEB_UNIT"
+  fi
+}
+
+# ── logs / reboot ─────────────────────────────────────────────────────────────
+
+cmd_logs() {
+  local unit="${1:-$WEB_UNIT}"
+  case "$unit" in
+    web|webserver|www) unit="$WEB_UNIT" ;;
+    pico|picoclaw|gateway) unit="$PICO_UNIT" ;;
+  esac
+  exec journalctl -u "$unit" -f --no-pager
+}
+
+cmd_reboot() {
+  note "syncing disks and rebooting in 3 s — current mode: $(c_amber "$(read_runtime_mode)")"
+  sleep 3
+  sync
+  sudo systemctl reboot
+}
+
+# ── dispatch ──────────────────────────────────────────────────────────────────
+
+usage() {
+  cat <<USAGE
+hosaka — operator CLI for the Hosaka Field Terminal Pi
+
+  hosaka mode                       show current mode (console|device)
+  hosaka mode console [--persist]   interactive UI on the touchscreen
+                                    --persist  remove boot marker
+  hosaka mode device  [--persist] [--full]
+                                    diagnostic + ssh-friendly. Stops kiosk,
+                                    pauses picoclaw, shows device dashboard
+                                    (IPs/ports/RAM/battery) on tty1.
+                                    --persist  survive reboots
+                                    --full     also stop hosaka-webserver
+
+  Aliases (legacy): \`hosaka mode kiosk\` → console, \`hosaka mode build\` → device
+
+  hosaka status                     what's running + memory snapshot
+  hosaka dashboard                  print the device dashboard once and exit
+  hosaka build [--check]            npm run build (--check runs tsc gate first)
+  hosaka deploy [--check]           build + rsync into $DEPLOY_ROOT + restart web
+  hosaka logs [unit]                follow journalctl for web/pico/<custom>
+  hosaka reboot                     sync + reboot
+
+Typical SSH-then-deploy flow:
+  hosaka mode device                 # frees RAM
+  cd ~/Hosaka && git pull
+  hosaka deploy
+  hosaka mode console                # touchscreen back
+USAGE
+}
+
+main() {
+  local cmd="${1:-status}"
+  shift || true
+  case "$cmd" in
+    mode)
+      local sub="${1:-show}"
+      shift || true
+      case "$sub" in
+        device|build) mode_device "$@" ;;
+        console|kiosk) mode_console "$@" ;;
+        show|status|"") echo "  current mode: $(c_amber "$(read_runtime_mode)")" ;;
+        *) die "unknown mode: $sub (try console|device|show)" ;;
+      esac
+      ;;
+    status)    cmd_status "$@" ;;
+    dashboard) exec /usr/local/bin/hosaka-device-dashboard --once ;;
+    build)     cmd_build "$@" ;;
+    deploy)    cmd_deploy "$@" ;;
+    logs)      cmd_logs "$@" ;;
+    reboot)    cmd_reboot "$@" ;;
+    -h|--help|help) usage ;;
+    *) usage; die "unknown command: $cmd" ;;
+  esac
+}
+
+main "$@"

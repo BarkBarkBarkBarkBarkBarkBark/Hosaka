@@ -1,0 +1,1143 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Hosaka Appliance",
+    "description": "API for the Hosaka Field Terminal Pi. The `/api/v1/*` surface is the public, versioned contract that hosakactl (Mac/Linux client) and the kiosk SPA both consume. See the published reference at https://<your-gh-user>.github.io/Hosaka/ for static docs.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Liveness ping",
+        "operationId": "v1_health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/system/info": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "One-shot snapshot of everything device-mode shows",
+        "operationId": "v1_system_info_api_v1_system_info_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemInfoOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/mode": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Get current operating mode",
+        "operationId": "v1_mode_get_api_v1_mode_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Switch operating mode (console|device)",
+        "operationId": "v1_mode_set_api_v1_mode_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/wifi/networks": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Saved + visible wifi networks (nmcli)",
+        "operationId": "v1_wifi_list_api_v1_wifi_networks_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WifiList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Add or join a wifi network",
+        "operationId": "v1_wifi_add_api_v1_wifi_networks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WifiAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/wifi/networks/{ssid}": {
+      "delete": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Forget a saved wifi network",
+        "operationId": "v1_wifi_forget_api_v1_wifi_networks__ssid__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ssid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Ssid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/services": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Status of the Hosaka systemd units",
+        "operationId": "v1_services_api_v1_services_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceInfo"
+                  },
+                  "type": "array",
+                  "title": "Response V1 Services Api V1 Services Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/services/{name}/restart": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Restart one of the known Hosaka units",
+        "operationId": "v1_service_restart_api_v1_services__name__restart_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/device": {
+      "get": {
+        "summary": "Device Page",
+        "description": "Same info as the tty1 dashboard, viewable from any browser on the LAN.\n\nAuto-refreshes the JSON every 4 s. Has a \"Switch to console mode\" button\nand a wifi add form so an operator with only a phone can fix connectivity.",
+        "operationId": "device_page_device_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/video/next": {
+      "get": {
+        "summary": "Video Next",
+        "description": "The VideoPanel polls this to pick up injected URLs.",
+        "operationId": "video_next_api_video_next_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/video": {
+      "post": {
+        "summary": "Video Inject",
+        "description": "Terminal injects a video URL; the web panel picks it up on next poll.",
+        "operationId": "video_inject_api_video_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat": {
+      "post": {
+        "summary": "Chat",
+        "description": "OpenAI-compatible single-turn chat endpoint.",
+        "operationId": "chat_api_chat_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gemini": {
+      "post": {
+        "summary": "Gemini Alias",
+        "description": "Drop-in alias: the frontend calls /api/gemini; we route to local LLM.\n\nAccepts both Gemini wire format ({contents: [...]}) and plain chat format\n({messages: [...]}) so the same endpoint works for both the cloud SPA and\nthe appliance build.",
+        "operationId": "gemini_alias_api_gemini_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/setup/": {
+      "get": {
+        "summary": "Setup Home",
+        "operationId": "setup_home_setup__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/setup": {
+      "get": {
+        "summary": "Setup Home",
+        "operationId": "setup_home_setup_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/setup/network": {
+      "get": {
+        "summary": "Network Status",
+        "operationId": "network_status_setup_network_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/setup/identity": {
+      "get": {
+        "summary": "Device Identity",
+        "operationId": "device_identity_setup_identity_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Save Identity",
+        "operationId": "save_identity_setup_identity_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_save_identity_setup_identity_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/setup/backend": {
+      "get": {
+        "summary": "Backend Config",
+        "operationId": "backend_config_setup_backend_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Save Backend",
+        "operationId": "save_backend_setup_backend_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_save_backend_setup_backend_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/setup/picoclaw": {
+      "get": {
+        "summary": "Picoclaw Config",
+        "operationId": "picoclaw_config_setup_picoclaw_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Save Picoclaw",
+        "operationId": "save_picoclaw_setup_picoclaw_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_save_picoclaw_setup_picoclaw_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/setup/progress": {
+      "get": {
+        "summary": "Progress Status",
+        "operationId": "progress_status_setup_progress_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ActionResult": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "title": "ActionResult"
+      },
+      "Body_save_backend_setup_backend_post": {
+        "properties": {
+          "backend_endpoint": {
+            "type": "string",
+            "title": "Backend Endpoint",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "Body_save_backend_setup_backend_post"
+      },
+      "Body_save_identity_setup_identity_post": {
+        "properties": {
+          "hostname": {
+            "type": "string",
+            "title": "Hostname"
+          }
+        },
+        "type": "object",
+        "required": [
+          "hostname"
+        ],
+        "title": "Body_save_identity_setup_identity_post"
+      },
+      "Body_save_picoclaw_setup_picoclaw_post": {
+        "properties": {
+          "picoclaw_enabled": {
+            "type": "string",
+            "title": "Picoclaw Enabled",
+            "default": "yes"
+          }
+        },
+        "type": "object",
+        "title": "Body_save_picoclaw_setup_picoclaw_post"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthOut": {
+        "properties": {
+          "web": {
+            "type": "string",
+            "title": "Web",
+            "default": "ok"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "console",
+              "device"
+            ],
+            "title": "Mode"
+          },
+          "hostname": {
+            "type": "string",
+            "title": "Hostname"
+          },
+          "uptime_seconds": {
+            "type": "integer",
+            "title": "Uptime Seconds"
+          },
+          "timestamp": {
+            "type": "integer",
+            "title": "Timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode",
+          "hostname",
+          "uptime_seconds",
+          "timestamp"
+        ],
+        "title": "HealthOut"
+      },
+      "MemInfo": {
+        "properties": {
+          "total_mb": {
+            "type": "integer",
+            "title": "Total Mb"
+          },
+          "used_mb": {
+            "type": "integer",
+            "title": "Used Mb"
+          },
+          "available_mb": {
+            "type": "integer",
+            "title": "Available Mb"
+          },
+          "swap_used_mb": {
+            "type": "integer",
+            "title": "Swap Used Mb"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_mb",
+          "used_mb",
+          "available_mb",
+          "swap_used_mb"
+        ],
+        "title": "MemInfo"
+      },
+      "ModeIn": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "console",
+              "device"
+            ],
+            "title": "Mode"
+          },
+          "persist": {
+            "type": "boolean",
+            "title": "Persist",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "title": "ModeIn"
+      },
+      "ModeOut": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "console",
+              "device"
+            ],
+            "title": "Mode"
+          },
+          "boot_marker": {
+            "type": "boolean",
+            "title": "Boot Marker"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode",
+          "boot_marker"
+        ],
+        "title": "ModeOut"
+      },
+      "NetInfo": {
+        "properties": {
+          "ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip"
+          },
+          "iface": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iface"
+          },
+          "ssid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ssid"
+          },
+          "mac": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mac"
+          },
+          "tailscale_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tailscale Ip"
+          }
+        },
+        "type": "object",
+        "title": "NetInfo"
+      },
+      "ServiceInfo": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "sub": {
+            "type": "string",
+            "title": "Sub"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "active",
+          "sub",
+          "enabled"
+        ],
+        "title": "ServiceInfo"
+      },
+      "SystemInfoOut": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "console",
+              "device"
+            ],
+            "title": "Mode"
+          },
+          "boot_marker": {
+            "type": "boolean",
+            "title": "Boot Marker"
+          },
+          "hostname": {
+            "type": "string",
+            "title": "Hostname"
+          },
+          "uptime_seconds": {
+            "type": "integer",
+            "title": "Uptime Seconds"
+          },
+          "cpu_temp_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Temp C"
+          },
+          "mem": {
+            "$ref": "#/components/schemas/MemInfo"
+          },
+          "net": {
+            "$ref": "#/components/schemas/NetInfo"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceInfo"
+            },
+            "type": "array",
+            "title": "Services"
+          },
+          "urls": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Urls"
+          },
+          "listening_ports": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Listening Ports"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode",
+          "boot_marker",
+          "hostname",
+          "uptime_seconds",
+          "mem",
+          "net",
+          "services",
+          "urls",
+          "listening_ports"
+        ],
+        "title": "SystemInfoOut"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WifiAdd": {
+        "properties": {
+          "ssid": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Ssid"
+          },
+          "psk": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 8
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Psk",
+            "description": "omit for open networks"
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "ssid"
+        ],
+        "title": "WifiAdd"
+      },
+      "WifiList": {
+        "properties": {
+          "networks": {
+            "items": {
+              "$ref": "#/components/schemas/WifiNetwork"
+            },
+            "type": "array",
+            "title": "Networks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "networks"
+        ],
+        "title": "WifiList"
+      },
+      "WifiNetwork": {
+        "properties": {
+          "ssid": {
+            "type": "string",
+            "title": "Ssid"
+          },
+          "saved": {
+            "type": "boolean",
+            "title": "Saved",
+            "default": false
+          },
+          "in_range": {
+            "type": "boolean",
+            "title": "In Range",
+            "default": false
+          },
+          "signal": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal",
+            "description": "0\u2013100 from nmcli"
+          },
+          "security": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Security"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "ssid"
+        ],
+        "title": "WifiNetwork"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

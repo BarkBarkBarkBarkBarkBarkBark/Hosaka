@@ -1,0 +1,41 @@
+site_name: Hosaka
+site_description: Field terminal Pi — single source of truth for the API and client.
+site_url: https://example.github.io/Hosaka/
+repo_url: https://github.com/example/Hosaka
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: amber
+      accent: amber
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - toc.integrate
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - API reference: api.md
+  - Client (hosakactl): client.md
+  - Modes (console / device): modes.md
+  - Wifi setup: wifi.md
+  - Claims audit: claims.md
+
+plugins:
+  - search
+  - render_swagger:
+      allow_arbitrary_locations: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true

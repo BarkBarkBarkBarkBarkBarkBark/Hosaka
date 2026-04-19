@@ -2,6 +2,10 @@ import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+// Co-located with the panel so xterm CSS only ships in the lazy terminal chunk
+// (it's ~6 KB on its own). The panel is React.lazy'd from App.tsx, so first
+// paint of the kiosk doesn't pay this cost.
+import "@xterm/xterm/css/xterm.css";
 import { HosakaShell } from "../shell/HosakaShell";
 
 type Props = { active: boolean };

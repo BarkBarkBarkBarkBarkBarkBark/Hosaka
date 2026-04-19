@@ -1,5 +1,5 @@
 import type { Terminal } from "@xterm/xterm";
-import i18next from "i18next";
+import i18next from "../i18n";
 import {
   BANNER,
   PLANT_STATES,

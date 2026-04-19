@@ -1,8 +1,13 @@
-import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import i18next from "i18next";
+import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "../i18n";
+import { marked } from "marked";
+import i18next from "../i18n";
+
+// Marked is configured once at module load. GFM is on (tables, strikethrough,
+// task-list checkboxes, autolinks); breaks: false to match commonmark prose.
+// We intentionally do NOT install a sanitizer — library content is authored
+// in this repo, not user-supplied, so there's nothing to sanitize against.
+marked.setOptions({ gfm: true, breaks: false });
 
 type LibraryEntry = {
   slug: string;
@@ -75,6 +80,9 @@ export function ReadingPanel({ active }: Props) {
 
   const entry = entries.find((e) => e.slug === selected);
 
+  // marked is sync in our config (no async extensions); the cast is safe.
+  const html = useMemo(() => (content ? (marked.parse(content) as string) : ""), [content]);
+
   return (
     <div className="reading-wrap">
       <div className="reading-sidebar">
@@ -122,9 +130,7 @@ export function ReadingPanel({ active }: Props) {
                 ))}
               </div>
             )}
-            <div className="reading-md">
-              <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
-            </div>
+            <div className="reading-md" dangerouslySetInnerHTML={{ __html: html }} />
           </>
         )}
         {!loading && !content && (

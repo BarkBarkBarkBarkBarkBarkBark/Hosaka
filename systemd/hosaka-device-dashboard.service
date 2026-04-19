@@ -1,0 +1,29 @@
+[Unit]
+Description=Hosaka device-mode dashboard (tty1 info screen)
+# Only ever start when the Pi is in device mode. The boot marker file lives
+# on the FAT boot partition so it can be added/removed from another machine.
+ConditionPathExists=/boot/firmware/hosaka-build-mode
+After=hosaka-mode.service
+Conflicts=getty@tty1.service
+
+[Service]
+# Take over tty1 directly. We don't want a getty AND the dashboard fighting
+# for the screen — Conflicts= above stops getty when this starts.
+Type=simple
+User=operator
+StandardInput=tty
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+ExecStart=/usr/local/bin/hosaka-device-dashboard
+Restart=on-failure
+RestartSec=2
+
+# Bias HIGH for the OOM killer — even the dashboard goes before sshd.
+OOMScoreAdjust=200
+
+[Install]
+WantedBy=multi-user.target

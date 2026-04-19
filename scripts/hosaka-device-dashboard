@@ -1,0 +1,316 @@
+#!/usr/bin/env bash
+# hosaka-device-dashboard — single-screen device info display for tty1.
+#
+# Designed for ≤24 line terminals (PiTFT, framebuffer console, small HDMI).
+# Two-column layout, in-place refresh every REFRESH_SECS so the screen does
+# not scroll between frames.
+#
+# Modes:
+#   --once    print one frame and exit (used by `hosaka dashboard`)
+#   default   loop forever (used by hosaka-device-dashboard.service on tty1)
+#
+# Refresh interval: HOSAKA_DASHBOARD_REFRESH (default 5 s).
+
+set -u
+
+ONCE=0
+[[ "${1:-}" == "--once" ]] && ONCE=1
+
+REFRESH_SECS="${HOSAKA_DASHBOARD_REFRESH:-5}"
+
+# ── ANSI ──────────────────────────────────────────────────────────────────────
+RST=$'\033[0m'; DIM=$'\033[2m'; BOLD=$'\033[1m'
+RED=$'\033[31m'; GREEN=$'\033[32m'; AMBER=$'\033[33m'
+CYAN=$'\033[36m'; VIOLET=$'\033[35m'; WHITE=$'\033[97m'
+
+home_clear() { printf '\033[H\033[2J\033[3J'; }   # home + clear screen + clear scrollback
+hide_cursor() { printf '\033[?25l'; }
+show_cursor() { printf '\033[?25h'; }
+
+# ── data collectors ───────────────────────────────────────────────────────────
+
+primary_iface() { ip route show default 2>/dev/null | awk '/^default/ {print $5; exit}'; }
+primary_ip()    { [[ -z "${1:-}" ]] && return; ip -4 -o addr show "$1" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1; }
+mac_for()       { [[ -z "${1:-}" ]] && return; cat "/sys/class/net/$1/address" 2>/dev/null; }
+link_state()    { [[ -z "${1:-}" ]] && { echo "no-iface"; return; }; cat "/sys/class/net/$1/operstate" 2>/dev/null; }
+wifi_ssid()     { iwgetid -r 2>/dev/null; }
+tailscale_ip()  { command -v tailscale >/dev/null 2>&1 && tailscale ip -4 2>/dev/null | head -n1; }
+
+cpu_temp() {
+  local raw
+  [[ -r /sys/class/thermal/thermal_zone0/temp ]] || { echo "?"; return; }
+  raw="$(cat /sys/class/thermal/thermal_zone0/temp)"
+  awk -v r="$raw" 'BEGIN { printf "%.0f°C", r/1000 }'
+}
+
+battery_summary() {
+  local b="/sys/class/power_supply"
+  [[ -d "$b" ]] || { echo "—"; return; }
+  for cell in "$b"/BAT* "$b"/battery* "$b"/axp*; do
+    [[ -d "$cell" ]] || continue
+    printf '%s%% %s' \
+      "$(cat "$cell/capacity" 2>/dev/null || echo ?)" \
+      "$(cat "$cell/status" 2>/dev/null || echo ?)"
+    return
+  done
+  echo "—"
+}
+
+current_mode() {
+  local m=""
+  [[ -r /var/lib/hosaka/mode ]] && m="$(cat /var/lib/hosaka/mode)"
+  case "$m" in
+    device|build) echo device ;;
+    console|kiosk) echo console ;;
+    *) echo "${m:-?}" ;;
+  esac
+}
+
+http_alive() {
+  curl -sf -m 1 http://127.0.0.1:8421/api/health >/dev/null 2>&1 \
+    && echo "up" || echo "down"
+}
+
+# Cache `ss -tlnHp` once per frame so we don't call it twice (slow).
+# When run as root we get all process names; as operator we get just our own.
+ports_raw=""
+collect_ports() {
+  command -v ss >/dev/null 2>&1 || return
+  # Prefer the privileged view (sudo is whitelisted in /etc/sudoers.d/hosaka
+  # for `ss -tlnHp` only — read-only). Fall back to the operator's own
+  # sockets if sudo isn't available (e.g. running on a Pi without our
+  # sudoers drop-in).
+  ports_raw="$(sudo -n ss -tlnHp 2>/dev/null || true)"
+  [[ -z "$ports_raw" ]] && ports_raw="$(ss -tlnHp 2>/dev/null || true)"
+}
+
+# Port table rows: "PORT PROC ADDR" — extracts port from local addr (col 4)
+# and process name from the users:(("name",pid=N,fd=K)) blob (col 6).
+ports_rows() {
+  awk '
+    {
+      # local addr is col 4 like "0.0.0.0:8421" or "[::]:22" or "*:22"
+      la = $4
+      n  = split(la, a, ":")
+      port = a[n]
+      # listen-on label: drop "0.0.0.0", "*", "[::]" → "any"; keep specific
+      addr = la
+      sub(":[0-9]+$", "", addr)
+      gsub(/[\[\]]/, "", addr)
+      if (addr == "0.0.0.0" || addr == "*" || addr == "::" || addr == "") addr = "any"
+
+      proc = "—"
+      # users:(("name",pid=NNN,fd=NN), ...)  → grab the first "name"
+      if (match($0, /users:\(\(\"[^\"]+\"/)) {
+        proc = substr($0, RSTART+9, RLENGTH-9-1)  # strip users:((" and trailing "
+      }
+      printf "%-5s %-12s %s\n", port, proc, addr
+    }
+  ' <<< "$ports_raw" | sort -un | awk '!seen[$1]++' | head -n 6
+}
+
+# /proc/net/dev rate calculation.
+# We persist prev rx/tx counters + timestamp to a tmpfile because this
+# function is called via $(...) — a subshell — so in-process globals get
+# reset every frame. The tmpfile is a few bytes; it lives in /run (tmpfs)
+# so it costs zero SD-card I/O.
+NET_STATE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+[[ -d "$NET_STATE_DIR" && -w "$NET_STATE_DIR" ]] || NET_STATE_DIR="/tmp"
+NET_STATE_FILE="$NET_STATE_DIR/hosaka-dashboard-net"
+net_rate_for() {
+  local iface="${1:-}"
+  [[ -z "$iface" ]] && { echo "—"; return; }
+  local line rx tx now prev_rx=0 prev_tx=0 prev_t=0 drx dtx dt rxr txr
+  line="$(awk -v i="$iface" -F'[: ]+' '$2==i {print $3" "$11; exit}' /proc/net/dev 2>/dev/null)"
+  [[ -z "$line" ]] && { echo "—"; return; }
+  rx="${line% *}"; tx="${line#* }"
+  now="$(date +%s)"
+  if [[ -r "$NET_STATE_FILE" ]]; then
+    read prev_rx prev_tx prev_t < "$NET_STATE_FILE" 2>/dev/null
+  fi
+  printf '%s %s %s\n' "$rx" "$tx" "$now" > "$NET_STATE_FILE" 2>/dev/null
+  if (( prev_t > 0 )) && (( now > prev_t )); then
+    dt=$(( now - prev_t ))
+    drx=$(( rx - prev_rx )); (( drx < 0 )) && drx=0
+    dtx=$(( tx - prev_tx )); (( dtx < 0 )) && dtx=0
+    rxr=$(( drx / dt )); txr=$(( dtx / dt ))
+    printf '↓ %-8s  ↑ %-8s   tot ↓%s ↑%s' \
+      "$(humanb "$rxr")/s" "$(humanb "$txr")/s" \
+      "$(humanb "$rx")" "$(humanb "$tx")"
+  else
+    printf '(measuring…)  tot ↓%s ↑%s' "$(humanb "$rx")" "$(humanb "$tx")"
+  fi
+}
+
+humanb() {
+  awk -v b="${1:-0}" 'BEGIN {
+    split("B KB MB GB TB", u, " ")
+    i=1; while (b>=1024 && i<5) { b/=1024; i++ }
+    if (i==1) printf "%d%s", b, u[i]; else printf "%.1f%s", b, u[i]
+  }'
+}
+
+svc_dot() {
+  local s; s="$(systemctl is-active "$1.service" 2>/dev/null || echo unknown)"
+  case "$s" in
+    active)        printf '%s●%s %-22s %sok%s'      "$GREEN" "$RST" "$1" "$DIM"   "$RST" ;;
+    inactive|dead) printf '%s○%s %-22s %sstopped%s' "$DIM"   "$RST" "$1" "$DIM"   "$RST" ;;
+    failed)        printf '%s✗%s %-22s %sfailed%s'  "$RED"   "$RST" "$1" "$RED"   "$RST" ;;
+    *)             printf '%s?%s %-22s %s%s%s'      "$AMBER" "$RST" "$1" "$AMBER" "$s" "$RST" ;;
+  esac
+}
+
+# Truncate a string to N visible chars (ignoring our colour codes since none
+# are passed in the args we truncate). Used to keep URLs from wrapping.
+trunc() {
+  local s="$1" n="$2"
+  (( ${#s} > n )) && echo "${s:0:n-1}…" || echo "$s"
+}
+
+# ── frame layout (target ≤ 22 lines, ~78 cols) ────────────────────────────────
+
+frame() {
+  collect_ports
+
+  local iface ip mac wifi ts batt cpu mode http_state
+  iface="$(primary_iface)"
+  ip="$(primary_ip "$iface")"
+  mac="$(mac_for "$iface")"
+  wifi="$(wifi_ssid)"
+  ts="$(tailscale_ip)"
+  batt="$(battery_summary)"
+  cpu="$(cpu_temp)"
+  mode="$(current_mode)"
+  http_state="$(http_alive)"
+
+  local link; link="$(link_state "$iface")"
+  local ip_dis="${ip:-(no link)} ${DIM}(${iface:-?},${link})${RST}"
+
+  local web="http://${ip:-127.0.0.1}:8421"
+
+  # System column data (compact)
+  local mem_used mem_total mem_avail swap_used swap_total disk_use disk_tot disk_free load
+  read mem_used mem_total mem_avail < <(free -m | awk '/^Mem:/  {print $3, $2, $7}')
+  read swap_used swap_total          < <(free -m | awk '/^Swap:/ {print $3, $2}')
+  read disk_use disk_tot disk_free   < <(df -h / | awk 'NR==2 {print $3, $2, $4}')
+  load="$(awk '{printf "%s %s %s", $1,$2,$3}' /proc/loadavg)"
+
+  local now; now="$(date '+%a %H:%M:%S')"
+  local up; up="$(uptime -p 2>/dev/null | sed 's/^up //')"
+
+  home_clear
+
+  # Header
+  printf '%s ▓▓▒ HOSAKA ▒▓▓%s  %sdevice mode%s · %s · up %s · %s\n' \
+    "$BOLD$AMBER" "$RST" "$AMBER" "$RST" "$(hostname)" "$up" "$now"
+  printf '%s%s%s\n' "$DIM" \
+    '────────────────────────────────────────────────────────────────────────────' \
+    "$RST"
+
+  # Two-column section: NETWORK | SYSTEM
+  printf ' %sNETWORK%s%34s%sSYSTEM%s\n' "$BOLD$CYAN" "$RST" "" "$BOLD$CYAN" "$RST"
+  col2 "ip   $ip_dis"                                  "mode   ${AMBER}${mode}${RST}   load ${load}"
+  col2 "wifi ${wifi:-—}"                                "ram    ${mem_used}/${mem_total}M  free ${mem_avail}M"
+  col2 "ts   ${VIOLET}${ts:-—}${RST}"                  "swap   ${swap_used}/${swap_total}M   cpu ${cpu}"
+  col2 "mac  ${DIM}${mac:-—}${RST}"                    "disk   ${disk_use}/${disk_tot}  free ${disk_free}"
+
+  # Two-column section: URLS | SERVICES
+  echo
+  printf ' %sURLS%s%37s%sSERVICES%s\n' "$BOLD$CYAN" "$RST" "" "$BOLD$CYAN" "$RST"
+  col2 "ui     ${GREEN}$(trunc "$web" 30)${RST}"        "$(svc_dot hosaka-webserver)"
+  col2 "setup  ${GREEN}$(trunc "${web}/setup" 30)${RST}" "$(svc_dot picoclaw-gateway)"
+  col2 "device ${GREEN}$(trunc "${web}/device" 30)${RST}" "$(svc_dot hosaka-oom-guard)"
+  col2 "ssh    ssh operator@${ip:-?}"                  "$(svc_dot ssh)"
+
+  # Two-column section: PORTS table | TRAFFIC
+  echo
+  printf ' %sPORTS%s   %sport  process      listen%s%14s%sTRAFFIC%s   (%s)\n' \
+    "$BOLD$CYAN" "$RST" "$DIM" "$RST" "" "$BOLD$CYAN" "$RST" "${iface:-—}"
+  local rate; rate="$(net_rate_for "$iface")"
+  local -a port_lines=()
+  while IFS= read -r ln; do port_lines+=("$ln"); done < <(ports_rows)
+  local i
+  for i in 0 1 2 3 4; do
+    local left="${port_lines[$i]:-}"
+    local right=""
+    case "$i" in
+      0) right="$rate" ;;
+      1) right="health: $( [[ $http_state == up ]] && printf '%sup%s' "$GREEN" "$RST" || printf '%sdown%s' "$RED" "$RST" )" ;;
+      2) right="batt:   $batt" ;;
+    esac
+    col2 "$left" "$right"
+  done
+
+  printf '%s%s%s\n' "$DIM" \
+    '────────────────────────────────────────────────────────────────────────────' \
+    "$RST"
+  printf ' %s[c]%s console   %s[w]%s wifi   %s[r]%s refresh   %s[q]%s quit   %srefresh %ss%s\n' \
+    "$AMBER" "$RST" "$AMBER" "$RST" "$AMBER" "$RST" "$AMBER" "$RST" \
+    "$DIM" "$REFRESH_SECS" "$RST"
+}
+
+# Print two columns: left at col 1, right at col 41. Strips ANSI for width
+# math so colours don't shift the divider.
+col2() {
+  local left="${1:-}" right="${2:-}"
+  local plain_left vis_len pad
+  plain_left="$(printf '%s' "$left" | sed -E 's/\x1B\[[0-9;]*[mK]//g')"
+  vis_len=${#plain_left}
+  pad=$(( 40 - vis_len ))
+  (( pad < 1 )) && pad=1
+  printf '   %s%*s%s\n' "$left" "$pad" "" "$right"
+}
+
+# ── inline wifi config ────────────────────────────────────────────────────────
+
+wifi_config() {
+  show_cursor
+  echo
+  printf '  %sWIFI SETUP%s\n' "$BOLD$CYAN" "$RST"
+  if ! command -v nmcli >/dev/null 2>&1; then
+    printf '  %snmcli not installed%s\n' "$RED" "$RST"; sleep 2; hide_cursor; return
+  fi
+  printf '  scanning…\n'
+  nmcli -t -f SSID,SIGNAL,SECURITY device wifi list --rescan yes 2>/dev/null \
+    | awk -F: 'NF>=3 && $1!=""' | sort -t: -k2 -nr | head -8 \
+    | awk -F: '{printf "    %-32s %s%%  %s\n", $1, $2, $3}'
+  echo
+  printf '  ssid (empty=cancel): '; read -r ssid
+  [[ -z "$ssid" ]] && { hide_cursor; return; }
+  printf '  password (empty=open): '; read -rs psk; echo
+  printf '  connecting to %s…\n' "$ssid"
+  if [[ -z "$psk" ]]; then
+    nmcli device wifi connect "$ssid" 2>&1 | sed 's/^/    /'
+  else
+    nmcli device wifi connect "$ssid" password "$psk" 2>&1 | sed 's/^/    /'
+  fi
+  printf '  press enter '; read -r _
+  hide_cursor
+}
+
+# ── main loop ─────────────────────────────────────────────────────────────────
+
+if (( ONCE )); then
+  frame
+  exit 0
+fi
+
+trap 'show_cursor; printf "\n"; exit 0' INT TERM
+hide_cursor
+while true; do
+  frame
+  key=""
+  read -rsn1 -t "$REFRESH_SECS" key 2>/dev/null || true
+  case "$key" in
+    c|C)
+      show_cursor; echo
+      printf '  switching to %sconsole mode%s…\n' "$GREEN" "$RST"
+      hosaka mode console --persist 2>&1 | sed 's/^/    /' || true
+      printf '  reboot now? [y/N] '; read -r ans
+      [[ "$ans" =~ ^[Yy]$ ]] && sudo systemctl reboot
+      hide_cursor ;;
+    w|W) wifi_config ;;
+    r|R) ;;   # falls through, frame redraws immediately
+    q|Q) show_cursor; home_clear; exit 0 ;;
+  esac
+done

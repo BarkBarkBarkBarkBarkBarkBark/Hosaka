@@ -1,7 +1,11 @@
 [Unit]
 Description=Hosaka Web Server (FastAPI — serves SPA + API)
-After=network-online.target
-Wants=network-online.target
+# We bind to 127.0.0.1 only, so we don't actually need the network to be up
+# before we start. Dropping network-online.target shaves 3-8 s off boot on
+# the Pi 3B, which is otherwise spent waiting for a wired NIC that isn't
+# always present.
+After=local-fs.target
+After=hosaka-mode.service
 
 [Service]
 Type=simple
@@ -20,6 +24,13 @@ Restart=always
 RestartSec=3
 StandardOutput=journal
 StandardError=journal
+
+# Resource caps so a runaway request handler can't OOM the whole Pi or
+# starve the kiosk of CPU. Numbers are sized for a Pi 3B (1 GB RAM, 4 cores).
+MemoryMax=300M
+MemoryHigh=240M
+CPUQuota=75%
+TasksMax=64
 
 [Install]
 WantedBy=multi-user.target

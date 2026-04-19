@@ -1,0 +1,50 @@
+# ~/.profile: executed by the command interpreter for login shells.
+# This file is not read by bash(1), if ~/.bash_profile or ~/.bash_login
+# exists.
+# see /usr/share/doc/bash/examples/startup-files for examples.
+# the files are located in the bash-doc package.
+
+# the default umask is set in /etc/profile; for setting the umask
+# for ssh logins, install and configure the libpam-umask package.
+#umask 022
+
+# if running bash
+if [ -n "$BASH_VERSION" ]; then
+    # include .bashrc if it exists
+    if [ -f "$HOME/.bashrc" ]; then
+	. "$HOME/.bashrc"
+    fi
+fi
+
+# set PATH so it includes user's private bin if it exists
+if [ -d "$HOME/bin" ] ; then
+    PATH="$HOME/bin:$PATH"
+fi
+
+# set PATH so it includes user's private bin if it exists
+if [ -d "$HOME/.local/bin" ] ; then
+    PATH="$HOME/.local/bin:$PATH"
+fi
+
+# tty1 boot dispatcher.
+#   console mode (default) → startx → openbox → kiosk Chromium
+#   device  mode           → live dashboard (IPs, ports, RAM, battery)
+#                            so the operator can read what they need before
+#                            SSHing in. No X = no Chromium = ~600 MB free.
+if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+    HOSAKA_MODE=""
+    if [ -r /var/lib/hosaka/mode ]; then
+        HOSAKA_MODE="$(cat /var/lib/hosaka/mode 2>/dev/null)"
+    elif [ -f /boot/firmware/hosaka-build-mode ]; then
+        HOSAKA_MODE="device"
+    fi
+    case "$HOSAKA_MODE" in
+        device|build)
+            if [ -x /usr/local/bin/hosaka-device-dashboard ]; then
+                exec /usr/local/bin/hosaka-device-dashboard
+            fi
+            # fall through if dashboard isn't installed yet
+            ;;
+    esac
+    startx
+fi

@@ -1,0 +1,125 @@
+#!/bin/sh
+# Hosaka kiosk session — launched by openbox-session via ~/.profile -> startx.
+# X is already running when this script executes.
+
+# ── device mode short-circuit ─────────────────────────────────────────────────
+# If the Pi is in "device mode" (boot marker present, or runtime mode file
+# says so), we do NOT launch Chromium. The hosaka-device-dashboard service
+# owns tty1 in this mode, showing IP/ports/RAM live so the operator has
+# something to look at while they SSH in. `hosaka mode console` flips back.
+HOSAKA_MODE_FILE="/var/lib/hosaka/mode"
+HOSAKA_BOOT_MARK="/boot/firmware/hosaka-build-mode"
+read_mode() {
+    local m=""
+    [ -f "$HOSAKA_MODE_FILE" ] && m="$(cat "$HOSAKA_MODE_FILE" 2>/dev/null)"
+    case "$m" in
+        device|build) echo device ;;
+        console|kiosk) echo console ;;
+        *) [ -f "$HOSAKA_BOOT_MARK" ] && echo device || echo console ;;
+    esac
+}
+if [ "$(read_mode)" = "device" ]; then
+    xsetroot -solid "#0b0b14" 2>/dev/null
+    xset s off -dpms s noblank 2>/dev/null &
+    if command -v xmessage >/dev/null 2>&1; then
+        (xmessage -timeout 6 -center \
+            "Hosaka device mode — kiosk is paused. SSH in and run \`hosaka mode console\`." \
+            >/dev/null 2>&1 &)
+    fi
+    exit 0
+fi
+
+# Background dim until Chromium paints
+xsetroot -solid "#0b0b14" &
+
+# Quiet down power management so the screen never blanks on the wall
+xset s off -dpms s noblank 2>/dev/null &
+
+# Hide mouse cursor after 1s idle
+(command -v unclutter >/dev/null && unclutter -idle 1 -root >/dev/null 2>&1 &) || true
+
+# Wait until the FastAPI server is actually answering before we open the page,
+# otherwise Chromium caches an "unable to connect" error screen.
+for i in $(seq 1 60); do
+    if curl -sf http://127.0.0.1:8421/api/health >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
+
+# Pick whichever Chromium binary is installed on this Debian/RPi build
+CHROMIUM=""
+for name in chromium chromium-browser /usr/local/bin/hosaka-kiosk-chromium; do
+    if command -v "$name" >/dev/null 2>&1; then
+        CHROMIUM="$(command -v "$name")"
+        break
+    fi
+done
+
+if [ -z "$CHROMIUM" ]; then
+    # Fall back to a terminal so the operator isn't stuck with a black screen
+    exec lxterminal -e "echo 'no chromium installed — run: sudo apt install chromium'; bash"
+fi
+
+# Use a dedicated profile dir so a previous "unclean shutdown" infobar never appears
+PROFILE_DIR="${HOME}/.cache/hosaka-kiosk-profile"
+mkdir -p "$PROFILE_DIR"
+# Clear the "exited cleanly" flag so Chromium never shows the restore-tabs prompt
+sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' "$PROFILE_DIR/Default/Preferences" 2>/dev/null || true
+sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/'   "$PROFILE_DIR/Default/Preferences" 2>/dev/null || true
+
+# Keep the kiosk alive: if Chromium dies, relaunch it after a short backoff
+# rather than dropping to a bare openbox root window.
+#
+# Bias chromium HIGH for the OOM killer (the inverse of what we do for
+# sshd). When the Pi 3B starts thrashing swap during a build, the kernel
+# will reach for chromium first instead of taking out the SSH session.
+#   echo > /proc/self/oom_score_adj affects the *next* exec'd process
+#   from this shell, so we set it just before the chromium loop.
+echo 800 > /proc/self/oom_score_adj 2>/dev/null || true
+
+while true; do
+    # NOTE on rendering flags:
+    #   Chromium 147 on this Pi3 / Trixie keeps crashing the viz/GPU process with
+    #     "GLES3 is unsupported and ES version fallback is disabled"
+    #     "Exiting GPU process due to errors during initialization"
+    #   When viz dies, the page DOM still mounts but Chromium can't composite
+    #   anything to the X window — you get a white screen with a cursor.
+    #   --disable-gpu forces the software compositor, which is plenty fast for
+    #   an 800x480 mostly-static terminal UI and is the documented Pi workaround.
+    #
+    # Memory: --memory-pressure-off keeps Chromium from purging caches on a
+    # Pi that's already swap-heavy (the purges thrash the SD card). The disk-
+    # cache cap stops Chromium silently filling /home with HTTP cache.
+    "$CHROMIUM" \
+        --kiosk \
+        --user-data-dir="$PROFILE_DIR" \
+        --window-size=800,480 \
+        --window-position=0,0 \
+        --noerrdialogs \
+        --disable-infobars \
+        --no-first-run \
+        --disable-session-crashed-bubble \
+        --disable-restore-session-state \
+        --disable-background-networking \
+        --disable-sync \
+        --no-default-browser-check \
+        --autoplay-policy=no-user-gesture-required \
+        --check-for-update-interval=31536000 \
+        --disable-gpu \
+        --disable-features=Vulkan,UseChromeOSDirectVideoDecoder \
+        --memory-pressure-off \
+        --disk-cache-size=10000000 \
+        --media-cache-size=10000000 \
+        --remote-debugging-port=9222 \
+        --remote-allow-origins=http://127.0.0.1:9222 \
+        --app=http://127.0.0.1:8421 2>>/tmp/hosaka-kiosk-chromium.log
+    sleep 3
+
+    # Re-check device mode between restarts so `hosaka mode device` can
+    # take effect without killing the autostart shell — the next chromium
+    # respawn will see the flag and exit the loop.
+    if [ "$(read_mode)" = "device" ]; then
+        exit 0
+    fi
+done &

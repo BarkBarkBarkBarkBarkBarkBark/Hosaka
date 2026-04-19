@@ -8,10 +8,59 @@
     <meta name="color-scheme" content="dark" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b0d10'/%3E%3Ctext x='32' y='42' text-anchor='middle' font-family='monospace' font-size='32' fill='%23ffbf46'%3E%E2%80%B9%E2%80%BA%3C/text%3E%3C/svg%3E" />
     <title>Hosaka Web Desktop — Signal Steady</title>
+    <style>
+      /* Boot splash — painted immediately so the operator never sees a flash
+         of white between Chromium opening and React mounting. The splash sits
+         on top of everything until React signals ready (or 12 s passes). */
+      html, body { margin: 0; background: #0b0d10; color: #f3e9c1; }
+      #boot-splash {
+        position: fixed; inset: 0; z-index: 99999;
+        display: flex; align-items: center; justify-content: center;
+        background: #0b0d10 url('/splash.png') center / contain no-repeat;
+        transition: opacity .8s ease;
+        pointer-events: none;
+      }
+      #boot-splash.fade { opacity: 0; }
+      #boot-splash::after {
+        content: 'signal steady …';
+        position: absolute; bottom: 6vh; left: 0; right: 0;
+        text-align: center;
+        font: 14px ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+        color: #d54646; letter-spacing: .15em; text-transform: uppercase;
+        opacity: .55;
+        animation: pulse 1.4s ease-in-out infinite alternate;
+      }
+      @keyframes pulse { from { opacity: .25 } to { opacity: .85 } }
+    </style>
   </head>
   <body>
+    <div id="boot-splash" aria-hidden="true"></div>
     <div id="root"></div>
     <noscript>This terminal needs JavaScript. Signal lost. 📡</noscript>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Hide the splash as soon as React has mounted at least one child into
+      // #root, or after a hard 12 s ceiling so a JS error never traps us on
+      // the splash forever.
+      (function () {
+        var splash = document.getElementById('boot-splash');
+        if (!splash) return;
+        var hide = function () {
+          if (splash.classList.contains('fade')) return;
+          splash.classList.add('fade');
+          setTimeout(function () { splash.remove(); }, 900);
+        };
+        var root = document.getElementById('root');
+        var mo = new MutationObserver(function () {
+          if (root && root.childNodes.length > 0) {
+            mo.disconnect();
+            // Give React one paint to settle before fading.
+            setTimeout(hide, 250);
+          }
+        });
+        if (root) mo.observe(root, { childList: true });
+        setTimeout(function () { mo.disconnect(); hide(); }, 12000);
+      })();
+    </script>
   </body>
 </html>

@@ -25,6 +25,50 @@ There is no wrong way.
 
 ---
 
+## Documentation
+
+Full reference site (auto-built from this commit on every push to `main`):
+
+**→ https://&lt;your-gh-user&gt;.github.io/Hosaka/**
+
+What lives there:
+
+- **API reference** — the live `/api/v1/*` OpenAPI spec, rendered via Swagger UI.
+- **`hosakactl`** — the single-file laptop client that talks to that API.
+- **Modes** — what `console` / `device` actually do under the hood.
+- **Wifi setup** — every way to add a network (kiosk button, `/device` page,
+  `hosakactl wifi add`, TTY hotkey).
+- **Claims audit** — what the codebase actually does vs. what older docs claim.
+
+Build it locally:
+
+```bash
+pip install -r docs/requirements.txt
+python scripts/dump_openapi.py docs/openapi.json
+mkdocs serve              # http://127.0.0.1:8000
+```
+
+## Remote configuration from your laptop
+
+After `install_hosaka_lean.sh` runs on the Pi it generates
+`/etc/hosaka/api-token` (group-readable by the operator). Drop the
+single-file client on your laptop:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<you>/Hosaka/main/scripts/hosakactl \
+  -o /usr/local/bin/hosakactl && chmod +x /usr/local/bin/hosakactl
+
+hosakactl link http://hosaka.local:8421       # prompts for token
+hosakactl status                              # full snapshot
+hosakactl mode device --persist -y            # SSH-friendly
+hosakactl wifi add "Cafe Free WiFi"           # prompts for password
+hosakactl test                                # smoke-test all endpoints
+```
+
+Stdlib only, no install. Works on Mac, Linux, and the Pi itself.
+
+---
+
 ## Install
 
 ### 1. Install Picoclaw
@@ -74,6 +118,64 @@ python -m hosaka
 ```
 
 One command. Installs everything, enables systemd services, starts onboarding.
+
+After install you'll have a `hosaka` command on the path — see "Operator CLI"
+below for the build/kiosk mode toggle and one-shot deploys.
+
+---
+
+## Operator CLI
+
+Once installed, the Pi exposes a `hosaka` command for day-to-day operations:
+
+```bash
+hosaka status                  # what's running, RAM/CPU snapshot, current mode
+hosaka mode build [--persist]  # stop kiosk, free RAM/CPU for SSH workflows
+hosaka mode kiosk [--persist]  # restore the touchscreen kiosk
+hosaka build [--check]         # cd frontend && npm run build (--check runs tsc gate)
+hosaka deploy [--check]        # build + rsync into /opt + restart webserver
+hosaka logs [web|pico|<unit>]  # tail journalctl
+hosaka reboot                  # safe sync + reboot
+```
+
+### Why "build mode"?
+
+The Pi 3B has **906 MiB RAM**. With Chromium kiosk + uvicorn + picoclaw +
+the Cursor remote server all loaded, there is no headroom left for
+`npm run build` and the OOM killer takes the build (or, worse, the SSH
+session). `hosaka mode build` shuts down the kiosk and the picoclaw gateway
+to free ~700 MiB before you build. `--persist` writes a marker to
+`/boot/firmware/hosaka-build-mode` so the Pi stays in build mode across
+reboots until you flip back with `hosaka mode kiosk --persist`.
+
+A typical SSH-then-deploy session looks like:
+
+```bash
+ssh operator@hosaka
+hosaka mode build
+cd ~/Hosaka && git pull
+hosaka deploy
+hosaka mode kiosk
+```
+
+### Why is the build so much lighter now?
+
+We aggressively stripped the frontend in 2026-04 (see
+`.cursor/plans/hosaka_lean_&_build_mode_*.plan.md`):
+
+- `tsc -b` is no longer in the default build path — `npm run build` is just
+  `vite build` (~250 MB peak vs. ~750 MB before). Use `npm run build:check`
+  on a dev machine for the type-safety gate.
+- Sourcemaps off by default (`HOSAKA_SOURCEMAP=1` to re-enable).
+- All panels are `React.lazy`'d so first paint is just the shell.
+- `react-markdown` + `remark-gfm` (~1 MB of `node_modules`, 15 transitive
+  deps) replaced with `marked` (~50 KB, zero deps).
+- The whole `i18next` + `react-i18next` + http-backend + language-detector
+  stack (~2 MB) replaced with a 200-line in-house hook in
+  [`frontend/src/i18n.ts`](frontend/src/i18n.ts) that bundles all 6 locales
+  via `import.meta.glob`.
+
+Net bundle: **~4.8 MB → ~700 KB**. Build memory peak: **~750 MB → ~250 MB**.
 
 ---
 
@@ -152,6 +254,7 @@ Hours of inactivity drain it. Reach colony state and it records a birth.
 |---|---|---|
 | `HOSAKA_STATE_PATH` | `~/.hosaka/state.json` | Persistent state |
 | `HOSAKA_BOOT_MODE` | `console` | `console` (Python tty shell), `headless` / `web` (API+SPA only), `kiosk` (same + Chromium; use `./scripts/switch_boot_mode.sh`) |
+| `HOSAKA_SOURCEMAP` | unset | Set to `1` to emit sourcemaps from `vite build` (off by default to halve the build's RAM peak on the Pi) |
 | `HOSAKA_WEB_PORT` | `8421` | LAN setup web server port |
 | `PICOCLAW_SESSION` | `hosaka:main` | Agent session key |
 | `PICOCLAW_MODEL` | *(default)* | Override model |

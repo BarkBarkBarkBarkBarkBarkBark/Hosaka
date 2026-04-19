@@ -1,0 +1,48 @@
+# /etc/sudoers.d/hosaka — installed 0440 root:root
+#
+# Tight whitelist so the operator (and the hosaka-oom-guard daemon, which
+# runs as root anyway but uses sudo to keep audit trails) can perform the
+# specific privileged actions the appliance needs WITHOUT a password.
+#
+# We do NOT grant blanket sudo. Each entry pins the exact binary path AND
+# the exact arguments allowed. Anything else still prompts.
+
+Cmnd_Alias HOSAKA_SYSTEMCTL = \
+    /bin/systemctl start  hosaka-webserver.service, \
+    /bin/systemctl stop   hosaka-webserver.service, \
+    /bin/systemctl restart hosaka-webserver.service, \
+    /bin/systemctl start  picoclaw-gateway.service, \
+    /bin/systemctl stop   picoclaw-gateway.service, \
+    /bin/systemctl restart picoclaw-gateway.service, \
+    /bin/systemctl start  hosaka-device-dashboard.service, \
+    /bin/systemctl stop   hosaka-device-dashboard.service, \
+    /bin/systemctl restart hosaka-device-dashboard.service, \
+    /bin/systemctl reboot, \
+    /usr/bin/systemctl start  hosaka-webserver.service, \
+    /usr/bin/systemctl stop   hosaka-webserver.service, \
+    /usr/bin/systemctl restart hosaka-webserver.service, \
+    /usr/bin/systemctl start  picoclaw-gateway.service, \
+    /usr/bin/systemctl stop   picoclaw-gateway.service, \
+    /usr/bin/systemctl restart picoclaw-gateway.service, \
+    /usr/bin/systemctl start  hosaka-device-dashboard.service, \
+    /usr/bin/systemctl stop   hosaka-device-dashboard.service, \
+    /usr/bin/systemctl restart hosaka-device-dashboard.service, \
+    /usr/bin/systemctl reboot
+
+Cmnd_Alias HOSAKA_BOOT_MARKER = \
+    /usr/bin/touch /boot/firmware/hosaka-build-mode, \
+    /bin/touch /boot/firmware/hosaka-build-mode, \
+    /bin/rm -f /boot/firmware/hosaka-build-mode, \
+    /usr/bin/rm -f /boot/firmware/hosaka-build-mode
+
+Cmnd_Alias HOSAKA_DEPLOY = \
+    /usr/bin/rsync -a --delete /home/operator/Hosaka/hosaka/web/ui/ /opt/hosaka-field-terminal/hosaka/web/ui/
+
+# Read-only diagnostics that need root to see other users' processes.
+# These are pure reads — no state changes possible.
+Cmnd_Alias HOSAKA_DIAG = \
+    /usr/bin/ss -tlnHp, \
+    /usr/sbin/ss -tlnHp, \
+    /bin/ss -tlnHp
+
+operator ALL=(root) NOPASSWD: HOSAKA_SYSTEMCTL, HOSAKA_BOOT_MARKER, HOSAKA_DEPLOY, HOSAKA_DIAG

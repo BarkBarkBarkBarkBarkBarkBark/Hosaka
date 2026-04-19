@@ -31,6 +31,10 @@ sudo rsync -a           "$REPO_ROOT/README.md"           "$APP_ROOT/"
 sudo rsync -a           "$REPO_ROOT/requirements-hosaka.txt" "$APP_ROOT/"
 
 sudo install -m 755 "$REPO_ROOT/scripts/kiosk-chromium.sh" /usr/local/bin/hosaka-kiosk-chromium
+# Operator CLI (build/kiosk mode toggle, deploy, status) and the boot-mode
+# arbiter that the hosaka-mode.service runs at startup.
+sudo install -m 755 "$REPO_ROOT/scripts/hosaka"            /usr/local/bin/hosaka
+sudo install -m 755 "$REPO_ROOT/scripts/hosaka-mode-init"  /usr/local/bin/hosaka-mode-init
 
 # ── Tailscale ────────────────────────────────────────────────────────────────
 if [[ "$INSTALL_TAILSCALE" == "1" ]]; then
@@ -140,10 +144,18 @@ mkdir -p "$HOME/.hosaka"
 # ── systemd units ─────────────────────────────────────────────────────────────
 info "Installing systemd units..."
 PICOCLAW_SERVICE_NAME="picoclaw-gateway.service"
-for unit in "$SERVICE_CONSOLE" "$SERVICE_HEADLESS" "$SERVICE_WEBSERVER" "$SERVICE_KIOSK" "$PICOCLAW_SERVICE_NAME"; do
+HOSAKA_MODE_SERVICE="hosaka-mode.service"
+for unit in "$SERVICE_CONSOLE" "$SERVICE_HEADLESS" "$SERVICE_WEBSERVER" "$SERVICE_KIOSK" "$PICOCLAW_SERVICE_NAME" "$HOSAKA_MODE_SERVICE"; do
   if [[ -f "$REPO_ROOT/systemd/$unit" ]]; then
     sudo cp "$REPO_ROOT/systemd/$unit" "/etc/systemd/system/$unit"
   fi
+done
+
+# Mask noisy units that don't apply on this headless Pi (no sound card → ALSA
+# spam in the journal every boot, slow boot from waiting on dnf-makecache-style
+# refreshes, etc.). Best-effort; ignore failures on hosts where they're absent.
+for unit in alsa-restore.service alsa-state.service; do
+  sudo systemctl mask "$unit" 2>/dev/null || true
 done
 
 # Patch picoclaw service user to match whoever is running the install
@@ -159,8 +171,9 @@ fi
 
 sudo systemctl daemon-reload
 
-# Always enable picoclaw gateway
+# Always enable picoclaw gateway and the boot-mode arbiter
 sudo systemctl enable "$PICOCLAW_SERVICE_NAME"
+sudo systemctl enable "$HOSAKA_MODE_SERVICE" 2>/dev/null || true
 
 # ── disable all hosaka modes, then enable the right one ───────────────────────
 for unit in "$SERVICE_CONSOLE" "$SERVICE_HEADLESS" "$SERVICE_WEBSERVER" "$SERVICE_KIOSK"; do

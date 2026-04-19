@@ -1,14 +1,31 @@
-import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { TerminalPanel } from "./panels/TerminalPanel";
-import { MessagesPanel } from "./panels/MessagesPanel";
-import { ReadingPanel } from "./panels/ReadingPanel";
-import { TodoPanel } from "./panels/TodoPanel";
-import { VideoPanel } from "./panels/VideoPanel";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "./i18n";
 import { PlantBadge } from "./components/PlantBadge";
 import { SignalBadge } from "./components/SignalBadge";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { LangPicker } from "./components/LangPicker";
+import { ModeSwitch } from "./components/ModeSwitch";
+
+// Each panel becomes its own chunk so first paint of the kiosk only ships
+// the shell (header + dock + footer + the active panel). Big panels — xterm
+// (~500 KB), marked + reading content, video player — only load when their
+// tab is first tapped. We then KEEP them mounted via the `visited` set below
+// so panel state (typing buffers, scrollback) survives tab switching.
+const TerminalPanel = lazy(() =>
+  import("./panels/TerminalPanel").then((m) => ({ default: m.TerminalPanel })),
+);
+const MessagesPanel = lazy(() =>
+  import("./panels/MessagesPanel").then((m) => ({ default: m.MessagesPanel })),
+);
+const ReadingPanel = lazy(() =>
+  import("./panels/ReadingPanel").then((m) => ({ default: m.ReadingPanel })),
+);
+const TodoPanel = lazy(() =>
+  import("./panels/TodoPanel").then((m) => ({ default: m.TodoPanel })),
+);
+const VideoPanel = lazy(() =>
+  import("./panels/VideoPanel").then((m) => ({ default: m.VideoPanel })),
+);
 
 export type PanelId = "terminal" | "messages" | "reading" | "todo" | "video";
 
@@ -20,12 +37,23 @@ export function App() {
   const [bootMessage, setBootMessage] = useState(t("boot.waking"));
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const panels: { id: PanelId; label: string; glyph: string }[] = [
-    { id: "terminal", label: t("tabs.terminal"), glyph: "›_" },
-    { id: "reading", label: t("tabs.reading"), glyph: "❑" },
-    { id: "todo", label: t("tabs.openLoops"), glyph: "▣" },
-    { id: "video", label: t("tabs.video", "video"), glyph: "▶" },
-  ];
+  // Track which panels the operator has actually visited so far. We only
+  // render (and therefore only load the chunk for) panels they've tapped.
+  // The terminal is in the set from the start because it's the default tab.
+  const [visited, setVisited] = useState<Set<PanelId>>(() => new Set(["terminal"]));
+  useEffect(() => {
+    setVisited((s) => (s.has(active) ? s : new Set(s).add(active)));
+  }, [active]);
+
+  const panels = useMemo<{ id: PanelId; label: string; glyph: string }[]>(
+    () => [
+      { id: "terminal", label: t("tabs.terminal"), glyph: "›_" },
+      { id: "reading", label: t("tabs.reading"), glyph: "❑" },
+      { id: "todo", label: t("tabs.openLoops"), glyph: "▣" },
+      { id: "video", label: t("tabs.video", "video"), glyph: "▶" },
+    ],
+    [t],
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => setBootMessage(t("boot.steady")), 900);
@@ -57,6 +85,7 @@ export function App() {
           <LangPicker />
           <SignalBadge label={bootMessage} />
           <PlantBadge />
+          <ModeSwitch />
           {SHOW_SETTINGS && (
             <button
               className="icon-btn"
@@ -86,21 +115,33 @@ export function App() {
       </nav>
 
       <main className="hosaka-stage">
-        <div className="hosaka-panel" hidden={active !== "terminal"}>
-          <TerminalPanel active={active === "terminal"} />
-        </div>
-        <div className="hosaka-panel" hidden={active !== "messages"}>
-          <MessagesPanel />
-        </div>
-        <div className="hosaka-panel" hidden={active !== "reading"}>
-          <ReadingPanel active={active === "reading"} />
-        </div>
-        <div className="hosaka-panel" hidden={active !== "todo"}>
-          <TodoPanel />
-        </div>
-        <div className="hosaka-panel" hidden={active !== "video"}>
-          <VideoPanel active={active === "video"} />
-        </div>
+        <Suspense fallback={null}>
+          {visited.has("terminal") && (
+            <div className="hosaka-panel" hidden={active !== "terminal"}>
+              <TerminalPanel active={active === "terminal"} />
+            </div>
+          )}
+          {visited.has("messages") && (
+            <div className="hosaka-panel" hidden={active !== "messages"}>
+              <MessagesPanel />
+            </div>
+          )}
+          {visited.has("reading") && (
+            <div className="hosaka-panel" hidden={active !== "reading"}>
+              <ReadingPanel active={active === "reading"} />
+            </div>
+          )}
+          {visited.has("todo") && (
+            <div className="hosaka-panel" hidden={active !== "todo"}>
+              <TodoPanel />
+            </div>
+          )}
+          {visited.has("video") && (
+            <div className="hosaka-panel" hidden={active !== "video"}>
+              <VideoPanel active={active === "video"} />
+            </div>
+          )}
+        </Suspense>
       </main>
 
       {SHOW_SETTINGS && (

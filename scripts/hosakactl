@@ -1,0 +1,339 @@
+#!/usr/bin/env python3
+"""hosakactl — minimal Hosaka client for your Mac/Linux laptop.
+
+Single file. Stdlib only. ~Python 3.9+.
+
+Why: lets you configure / probe / deploy a Hosaka Pi from your laptop without
+SSHing in. Talks the documented `/api/v1/*` JSON contract — same one the
+kiosk SPA and `/device` page use — so there is exactly one source of truth.
+
+Quickstart on your laptop:
+
+    curl -fsSL https://raw.githubusercontent.com/<you>/Hosaka/main/scripts/hosakactl \
+      -o /usr/local/bin/hosakactl && chmod +x /usr/local/bin/hosakactl
+
+    # On the Pi: cat /etc/hosaka/api-token  (the installer generates it)
+    hosakactl link http://hosaka.local:8421 --token <PASTE>
+
+    hosakactl status
+    hosakactl mode device
+    hosakactl wifi list
+    hosakactl wifi add "Cafe Free WiFi" --psk hunter2
+    hosakactl test          # full smoke test
+
+Config lives at ~/.hosaka/client.json so subsequent commands don't need flags.
+"""
+from __future__ import annotations
+
+import argparse
+import getpass
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any, Optional
+
+CONFIG_PATH = Path(os.environ.get("HOSAKACTL_CONFIG", str(Path.home() / ".hosaka" / "client.json")))
+USER_AGENT = "hosakactl/1.0"
+DEFAULT_TIMEOUT = 15
+
+
+# ── tiny ANSI helpers ─────────────────────────────────────────────────────────
+
+def _color(code: str, s: str) -> str:
+    if not sys.stdout.isatty():
+        return s
+    return f"\033[{code}m{s}\033[0m"
+
+
+def dim(s: str) -> str:    return _color("2", s)
+def red(s: str) -> str:    return _color("31", s)
+def green(s: str) -> str:  return _color("32", s)
+def amber(s: str) -> str:  return _color("33", s)
+def cyan(s: str) -> str:   return _color("36", s)
+def bold(s: str) -> str:   return _color("1", s)
+
+
+# ── config ────────────────────────────────────────────────────────────────────
+
+def load_config() -> dict:
+    if CONFIG_PATH.exists():
+        try:
+            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def save_config(cfg: dict) -> None:
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    try:
+        CONFIG_PATH.chmod(0o600)
+    except OSError:
+        pass
+
+
+# ── http ──────────────────────────────────────────────────────────────────────
+
+class HosakaError(RuntimeError):
+    pass
+
+
+def _request(method: str, path: str, body: Optional[dict] = None, *,
+             host: Optional[str] = None, token: Optional[str] = None,
+             timeout: int = DEFAULT_TIMEOUT) -> Any:
+    cfg = load_config()
+    host = (host or cfg.get("host") or os.environ.get("HOSAKA_HOST") or "").rstrip("/")
+    token = token or cfg.get("token") or os.environ.get("HOSAKA_TOKEN") or ""
+    if not host:
+        raise HosakaError("no host configured. run: hosakactl link http://<pi>:8421 --token <T>")
+    if not path.startswith("/"):
+        path = "/" + path
+    url = f"{host}{path}"
+    data = None
+    headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode("utf-8")
+            if not raw:
+                return None
+            ct = r.headers.get("Content-Type", "")
+            return json.loads(raw) if ct.startswith("application/json") else raw
+    except urllib.error.HTTPError as e:
+        try:
+            payload = e.read().decode("utf-8")
+        except Exception:
+            payload = ""
+        raise HosakaError(f"HTTP {e.code} {e.reason} — {payload[:200]}")
+    except urllib.error.URLError as e:
+        raise HosakaError(f"could not reach {url}: {e.reason}")
+
+
+def get(path: str, **kw: Any) -> Any:    return _request("GET", path, **kw)
+def post(path: str, body: dict, **kw: Any) -> Any: return _request("POST", path, body, **kw)
+def delete(path: str, **kw: Any) -> Any: return _request("DELETE", path, **kw)
+
+
+# ── commands ──────────────────────────────────────────────────────────────────
+
+def cmd_link(args: argparse.Namespace) -> int:
+    host = args.host.rstrip("/")
+    token = args.token
+    if token is None and not args.no_token:
+        try:
+            token = getpass.getpass(f"API token for {host} (blank to skip): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            token = ""
+    cfg = load_config()
+    cfg["host"] = host
+    if token:
+        cfg["token"] = token
+    save_config(cfg)
+    try:
+        h = get("/api/v1/health", host=host, token=token)
+        print(green("✓"), f"linked to {bold(host)} as {h.get('hostname')} (mode: {h.get('mode')})")
+        return 0
+    except HosakaError as e:
+        print(red("✗"), str(e))
+        print(dim(f"  config saved to {CONFIG_PATH} regardless"))
+        return 1
+
+
+def cmd_status(_args: argparse.Namespace) -> int:
+    s = get("/api/v1/system/info")
+    print()
+    print(bold(amber("HOSAKA")), dim("·"), s["hostname"], dim("·"),
+          (amber(s["mode"]) if s["mode"] == "device" else green(s["mode"])))
+    print(dim("─" * 60))
+    n = s["net"]
+    print(f"  ip          {n.get('ip') or '—'}   iface  {n.get('iface') or '—'}")
+    print(f"  ssid        {n.get('ssid') or '—'}")
+    if n.get("tailscale_ip"):
+        print(f"  tailscale   {n['tailscale_ip']}")
+    m = s["mem"]
+    temp = f"{s['cpu_temp_c']} °C" if s.get("cpu_temp_c") is not None else "—"
+    print(f"  ram         {m['used_mb']} / {m['total_mb']} MB   free {m['available_mb']}   swap {m['swap_used_mb']}")
+    print(f"  cpu temp    {temp}    uptime  {s['uptime_seconds']//60} min")
+    print(f"  ports       {', '.join(str(p) for p in s['listening_ports']) or '—'}")
+    print()
+    print(dim("services"))
+    for svc in s["services"]:
+        mark = green("●") if svc["active"] else red("○")
+        print(f"  {mark} {svc['name']:<32} {svc['sub']}")
+    print()
+    print(dim("urls"))
+    for k, v in s["urls"].items():
+        print(f"  {k:<10} {cyan(v)}")
+    print()
+    return 0
+
+
+def cmd_mode(args: argparse.Namespace) -> int:
+    if args.target is None:
+        m = get("/api/v1/mode")
+        print(f"  current mode: {amber(m['mode'])}   (boot marker: {m['boot_marker']})")
+        return 0
+    if args.target not in {"console", "device"}:
+        print(red("✗"), "target must be console|device"); return 2
+    if not args.yes:
+        try:
+            ok = input(f"switch to {amber(args.target)} mode? [y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            ok = "n"
+        if ok not in {"y", "yes"}:
+            print("aborted"); return 1
+    r = post("/api/v1/mode", {"mode": args.target, "persist": args.persist})
+    print(green("✓"), f"mode now: {amber(r['mode'])}   persisted: {r['boot_marker']}")
+    return 0
+
+
+def cmd_wifi_list(_args: argparse.Namespace) -> int:
+    r = get("/api/v1/wifi/networks")
+    nets = r["networks"]
+    if not nets:
+        print(dim("no networks visible or saved")); return 0
+    print()
+    print(f"  {'SSID':<32} {'sig':>4}  {'sec':<10} flags")
+    print(dim("  " + "─" * 60))
+    for n in nets:
+        flags = []
+        if n["active"]: flags.append(green("active"))
+        if n["saved"]:  flags.append(cyan("saved"))
+        if n["in_range"]: flags.append("in-range")
+        sig = f"{n['signal']}%" if n.get("signal") is not None else "—"
+        print(f"  {n['ssid'][:32]:<32} {sig:>4}  {(n.get('security') or '—'):<10} {' '.join(flags)}")
+    print()
+    return 0
+
+
+def cmd_wifi_add(args: argparse.Namespace) -> int:
+    psk = args.psk
+    if psk is None and not args.open:
+        psk = getpass.getpass(f"password for {args.ssid}: ")
+    body = {"ssid": args.ssid, "psk": psk or None, "hidden": args.hidden}
+    r = post("/api/v1/wifi/networks", body, timeout=60)
+    print((green("✓") if r["ok"] else red("✗")), r["message"])
+    return 0 if r["ok"] else 1
+
+
+def cmd_wifi_forget(args: argparse.Namespace) -> int:
+    r = delete(f"/api/v1/wifi/networks/{args.ssid}")
+    print((green("✓") if r["ok"] else red("✗")), r["message"])
+    return 0 if r["ok"] else 1
+
+
+def cmd_services(_args: argparse.Namespace) -> int:
+    for svc in get("/api/v1/services"):
+        mark = green("●") if svc["active"] else red("○")
+        print(f"  {mark} {svc['name']:<32} {svc['sub']:<12} enabled={svc['enabled']}")
+    return 0
+
+
+def cmd_restart(args: argparse.Namespace) -> int:
+    r = post(f"/api/v1/services/{args.unit}/restart", {})
+    print((green("✓") if r["ok"] else red("✗")), r["message"])
+    return 0 if r["ok"] else 1
+
+
+def cmd_test(_args: argparse.Namespace) -> int:
+    """End-to-end smoke test against a Hosaka Pi."""
+    checks = [
+        ("health",          lambda: get("/api/v1/health")),
+        ("system/info",     lambda: get("/api/v1/system/info")),
+        ("mode",            lambda: get("/api/v1/mode")),
+        ("services",        lambda: get("/api/v1/services")),
+        ("wifi list (skip if no nmcli)", lambda: get("/api/v1/wifi/networks")),
+    ]
+    failures = 0
+    for name, fn in checks:
+        t0 = time.monotonic()
+        try:
+            fn()
+            dt = (time.monotonic() - t0) * 1000
+            print(f"  {green('✓')} {name:<35} {dt:6.0f} ms")
+        except HosakaError as e:
+            failures += 1
+            print(f"  {red('✗')} {name:<35} {e}")
+    print()
+    if failures:
+        print(red(f"{failures} check(s) failed")); return 1
+    print(green("all checks passed")); return 0
+
+
+def cmd_open(_args: argparse.Namespace) -> int:
+    cfg = load_config()
+    host = cfg.get("host") or os.environ.get("HOSAKA_HOST")
+    if not host:
+        print(red("not linked")); return 1
+    url = f"{host.rstrip('/')}/device"
+    if sys.platform == "darwin":
+        os.system(f"open {url!r}")
+    elif sys.platform.startswith("linux"):
+        os.system(f"xdg-open {url!r} >/dev/null 2>&1 &")
+    print(cyan(url))
+    return 0
+
+
+# ── argparse ──────────────────────────────────────────────────────────────────
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="hosakactl", description="Hosaka client")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    s = sub.add_parser("link", help="point hosakactl at a Hosaka Pi")
+    s.add_argument("host", help="e.g. http://hosaka.local:8421")
+    s.add_argument("--token", help="bearer token from /etc/hosaka/api-token (will prompt if omitted)")
+    s.add_argument("--no-token", action="store_true", help="skip token prompt (loopback / open API)")
+    s.set_defaults(func=cmd_link)
+
+    sub.add_parser("status", help="full system snapshot").set_defaults(func=cmd_status)
+
+    s = sub.add_parser("mode", help="get/set operating mode")
+    s.add_argument("target", nargs="?", choices=["console", "device"])
+    s.add_argument("--persist", action="store_true", help="survive reboots")
+    s.add_argument("-y", "--yes", action="store_true", help="skip confirmation")
+    s.set_defaults(func=cmd_mode)
+
+    sw = sub.add_parser("wifi", help="wifi management").add_subparsers(dest="wcmd", required=True)
+    sw.add_parser("list", help="show saved + visible networks").set_defaults(func=cmd_wifi_list)
+    a = sw.add_parser("add", help="connect to or save a network")
+    a.add_argument("ssid")
+    a.add_argument("--psk", help="password (will prompt if omitted)")
+    a.add_argument("--open", action="store_true", help="open / no password")
+    a.add_argument("--hidden", action="store_true")
+    a.set_defaults(func=cmd_wifi_add)
+    f = sw.add_parser("forget", help="delete a saved network"); f.add_argument("ssid")
+    f.set_defaults(func=cmd_wifi_forget)
+
+    sub.add_parser("services", help="list known systemd services").set_defaults(func=cmd_services)
+    r = sub.add_parser("restart", help="restart a known service"); r.add_argument("unit")
+    r.set_defaults(func=cmd_restart)
+
+    sub.add_parser("test", help="run smoke tests against the Pi").set_defaults(func=cmd_test)
+    sub.add_parser("open", help="open /device in your browser").set_defaults(func=cmd_open)
+
+    return p
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        return args.func(args)
+    except HosakaError as e:
+        print(red("✗"), e); return 1
+    except KeyboardInterrupt:
+        print(); return 130
+
+
+if __name__ == "__main__":
+    sys.exit(main())

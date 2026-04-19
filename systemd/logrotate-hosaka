@@ -1,0 +1,15 @@
+# /etc/logrotate.d/hosaka — keep diagnosis logs small enough that they can
+# never themselves be the reason the SD card fills up. Read by the system
+# logrotate cron / timer (no extra wiring needed).
+
+/var/log/hosaka/*.log {
+    weekly
+    rotate 4
+    maxsize 2M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 root adm
+}

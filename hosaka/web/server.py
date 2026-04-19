@@ -153,14 +153,19 @@ async def _run_picoclaw(message: str, session_key: str) -> AsyncGenerator[str, N
         env["PICOCLAW_MODEL"] = PICOCLAW_MODEL
 
     try:
+        # Merge stderr into stdout. Picoclaw writes its real errors (LLM 429s,
+        # auth failures, "model not found", Cobra usage text, etc.) to stderr.
+        # If we leave it on a separate pipe we never drain, those errors are
+        # invisible to the operator — they just see blank lines.
         proc = await asyncio.create_subprocess_exec(
             *args,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
             env=env,
         )
         assert proc.stdout is not None
         buffer = b""
+        emitted_any = False
         async with asyncio.timeout(MSG_TIMEOUT_SECONDS):
             while True:
                 chunk = await proc.stdout.read(256)
@@ -172,12 +177,23 @@ async def _run_picoclaw(message: str, session_key: str) -> AsyncGenerator[str, N
                     decoded = line.decode("utf-8", errors="replace")
                     cleaned = _strip_picoclaw_banner(decoded)
                     if cleaned:
+                        emitted_any = True
                         yield cleaned + "\n"
         if buffer:
             cleaned = _strip_picoclaw_banner(buffer.decode("utf-8", errors="replace"))
             if cleaned:
+                emitted_any = True
                 yield cleaned
         await proc.wait()
+        # If picoclaw exited non-zero AND we filtered everything to empty, the
+        # operator would otherwise see nothing. Surface a hint instead.
+        if proc.returncode and not emitted_any:
+            yield (
+                f"[hosaka: picoclaw exited with code {proc.returncode} but produced "
+                "no readable output — check the OpenAI/api-key / model config in "
+                "~/.picoclaw/config.json, or run `picoclaw agent --message hi` "
+                "directly to see the raw error]"
+            )
     except asyncio.TimeoutError:
         yield "[hosaka: picoclaw timed out]"
     except Exception as exc:  # noqa: BLE001
@@ -216,7 +232,154 @@ async def lifespan(app: FastAPI):  # noqa: ANN001
     log.info("Hosaka web server stopping.")
 
 
-app = FastAPI(title="Hosaka Appliance", lifespan=lifespan)
+app = FastAPI(
+    title="Hosaka Appliance",
+    description=(
+        "API for the Hosaka Field Terminal Pi. The `/api/v1/*` surface is the "
+        "public, versioned contract that hosakactl (Mac/Linux client) and the "
+        "kiosk SPA both consume. See the published reference at "
+        "https://<your-gh-user>.github.io/Hosaka/ for static docs."
+    ),
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# ── v1 API (single source of truth for remote clients) ───────────────────────
+from hosaka.web.api_v1 import router as v1_router  # noqa: E402
+
+app.include_router(v1_router)
+
+
+# ── /device — minimal HTML mirror of the TTY device dashboard ─────────────────
+
+@app.get("/device", response_class=HTMLResponse)
+def device_page() -> str:
+    """Same info as the tty1 dashboard, viewable from any browser on the LAN.
+
+    Auto-refreshes the JSON every 4 s. Has a "Switch to console mode" button
+    and a wifi add form so an operator with only a phone can fix connectivity.
+    """
+    return _DEVICE_HTML
+
+
+_DEVICE_HTML = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Hosaka — device mode</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  body { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+         background: #0b0b14; color: #e6e6e6; margin: 0; padding: 16px;
+         max-width: 720px; }
+  h1 { color: #f5b042; font-size: 18px; margin: 0 0 4px; letter-spacing: 1px; }
+  .sub { color: #888; margin-bottom: 16px; }
+  .card { border: 1px solid #222; border-radius: 6px; padding: 12px 14px;
+          margin: 12px 0; background: #11111c; }
+  .card h2 { font-size: 12px; letter-spacing: 1px; color: #6cf;
+             margin: 0 0 8px; text-transform: uppercase; }
+  .row { display: grid; grid-template-columns: 110px 1fr; gap: 4px 12px; }
+  .row span:first-child { color: #777; }
+  .row span.v { color: #fff; word-break: break-all; }
+  .ok { color: #6f6; } .bad { color: #f66; } .warn { color: #fb6; }
+  button, input { font: inherit; }
+  button { background: #1d2630; color: #f5b042; border: 1px solid #2c3a48;
+           padding: 8px 14px; border-radius: 4px; cursor: pointer; }
+  button.danger { color: #f66; border-color: #582; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  input { background: #0a0a12; color: #fff; border: 1px solid #333;
+          padding: 8px 10px; border-radius: 4px; width: 100%; box-sizing: border-box; }
+  form { display: grid; gap: 8px; margin-top: 8px; }
+  ul { padding-left: 16px; margin: 0; }
+  a { color: #6cf; }
+  .hint { color: #888; font-size: 12px; margin-top: 6px; }
+</style></head><body>
+<h1>HOSAKA · device mode</h1>
+<div class="sub" id="ts">loading…</div>
+
+<div class="card"><h2>network</h2><div class="row" id="net"></div></div>
+<div class="card"><h2>system</h2><div class="row" id="sys"></div></div>
+<div class="card"><h2>services</h2><ul id="svcs"></ul></div>
+<div class="card"><h2>urls</h2><ul id="urls"></ul></div>
+
+<div class="card"><h2>wifi — add network</h2>
+  <form id="wifi-form">
+    <input name="ssid" placeholder="SSID (e.g. Cafe Free WiFi)" required>
+    <input name="psk"  placeholder="password (leave blank for open)" type="password">
+    <button type="submit">connect</button>
+    <div class="hint" id="wifi-status"></div>
+  </form>
+</div>
+
+<div class="card"><h2>mode</h2>
+  <button id="to-console" class="danger">switch to console mode</button>
+  <div class="hint">stops this dashboard, starts kiosk on the touchscreen.</div>
+</div>
+
+<script>
+async function j(url, opts) {
+  const r = await fetch(url, Object.assign({headers:{'Accept':'application/json'}}, opts||{}));
+  if (!r.ok) throw new Error(url + ' -> ' + r.status);
+  return r.json();
+}
+function row(el, k, v, cls) {
+  el.insertAdjacentHTML('beforeend',
+    '<span>'+k+'</span><span class="v '+(cls||'')+'">'+(v??'—')+'</span>');
+}
+async function refresh() {
+  try {
+    const s = await j('/api/v1/system/info');
+    document.getElementById('ts').textContent =
+      s.hostname + ' · uptime ' + Math.round(s.uptime_seconds/60) + ' min · ' + new Date().toLocaleTimeString();
+    const net = document.getElementById('net'); net.innerHTML='';
+    row(net,'ip',       s.net.ip);
+    row(net,'iface',    s.net.iface);
+    row(net,'ssid',     s.net.ssid);
+    row(net,'mac',      s.net.mac);
+    row(net,'tailscale',s.net.tailscale_ip);
+    const sys = document.getElementById('sys'); sys.innerHTML='';
+    row(sys,'mode', s.mode, s.mode==='device'?'warn':'ok');
+    row(sys,'cpu temp', s.cpu_temp_c==null?null:(s.cpu_temp_c+' °C'));
+    row(sys,'memory', s.mem.used_mb+' / '+s.mem.total_mb+' MB  (free '+s.mem.available_mb+')');
+    row(sys,'swap',   s.mem.swap_used_mb+' MB');
+    row(sys,'ports',  s.listening_ports.join(', '));
+    const sv = document.getElementById('svcs'); sv.innerHTML='';
+    s.services.forEach(x => sv.insertAdjacentHTML('beforeend',
+      '<li><span class="'+(x.active?'ok':'bad')+'">'+(x.active?'●':'○')+'</span> '+x.name+' — '+x.sub+'</li>'));
+    const u = document.getElementById('urls'); u.innerHTML='';
+    Object.entries(s.urls).forEach(([k,v]) => u.insertAdjacentHTML('beforeend',
+      '<li>'+k+' · <a href="'+v+'">'+v+'</a></li>'));
+  } catch(e) { document.getElementById('ts').textContent = 'error: '+e.message; }
+}
+document.getElementById('wifi-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const f = new FormData(ev.target);
+  const status = document.getElementById('wifi-status');
+  status.textContent = 'connecting…';
+  try {
+    const r = await j('/api/v1/wifi/networks', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      body: JSON.stringify({ssid: f.get('ssid'), psk: f.get('psk') || null}),
+    });
+    status.textContent = (r.ok?'✓ ':'✗ ') + r.message;
+    if (r.ok) ev.target.reset();
+  } catch(e) { status.textContent = '✗ ' + e.message; }
+});
+document.getElementById('to-console').addEventListener('click', async () => {
+  if (!confirm('Switch this Pi to console mode? The kiosk will start and this page will become read-only.')) return;
+  try {
+    await j('/api/v1/mode', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      body: JSON.stringify({mode:'console', persist:true}),
+    });
+    alert('Mode change requested. Reload in ~5 s.');
+  } catch(e) { alert('failed: '+e.message); }
+});
+refresh();
+setInterval(refresh, 4000);
+</script>
+</body></html>"""
 
 
 # ── /api/health ───────────────────────────────────────────────────────────────

@@ -1,0 +1,23 @@
+[Unit]
+Description=Hosaka boot-mode arbiter (kiosk vs build)
+DefaultDependencies=no
+After=local-fs.target
+Before=multi-user.target getty@tty1.service picoclaw-gateway.service hosaka-webserver.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Reads /boot/firmware/hosaka-build-mode (a marker file you can drop on the
+# FAT boot partition from another machine) and mirrors it into the runtime
+# state at /var/lib/hosaka/mode. The kiosk autostart and the `hosaka` CLI
+# both consult this file to decide whether to bring up the touchscreen
+# kiosk on this boot.
+#
+# In build mode we additionally stop picoclaw-gateway (free CPU) and leave
+# hosaka-webserver alone so the LAN UI still answers.
+ExecStart=/usr/local/bin/hosaka-mode-init
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

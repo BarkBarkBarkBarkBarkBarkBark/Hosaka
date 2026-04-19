@@ -1016,3 +1016,34 @@ html, body, #root {
 
   .hosaka-footer { display: none; }
 }
+
+/* ── ModeSwitch ─────────────────────────────────────────────────────────── */
+.mode-switch-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 12px;
+  font: inherit; line-height: 1;
+}
+.mode-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.mode-dot--console { background: #6f6; box-shadow: 0 0 6px #6f6; }
+.mode-dot--device  { background: #f5b042; box-shadow: 0 0 6px #f5b042; }
+.mode-label { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; opacity: 0.85; }
+
+.mode-switch-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+  display: flex; align-items: center; justify-content: center; z-index: 999;
+}
+.mode-switch-modal {
+  background: #11111c; border: 1px solid #2c3a48; border-radius: 8px;
+  padding: 22px 24px; max-width: 440px; color: #e6e6e6;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+}
+.mode-switch-modal h2 { margin: 0 0 8px; color: #f5b042; font-size: 18px; }
+.mode-switch-modal p { margin: 0 0 14px; line-height: 1.5; color: #ccc; }
+.mode-switch-err { color: #f66; }
+.mode-switch-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.mode-switch-actions button {
+  background: #1d2630; color: #e6e6e6; border: 1px solid #2c3a48;
+  padding: 8px 14px; border-radius: 4px; cursor: pointer; font: inherit;
+}
+.mode-switch-actions button.primary { background: #f5b042; color: #0b0b14; border-color: #f5b042; }
+.mode-switch-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
