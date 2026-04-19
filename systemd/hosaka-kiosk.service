@@ -1,0 +1,46 @@
+[Unit]
+Description=Hosaka Kiosk — Chromium fullscreen web UI
+After=hosaka-webserver.service graphical.target
+Wants=hosaka-webserver.service
+
+[Service]
+Type=simple
+User=pi
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+
+# Wait until the web server is actually accepting connections before launching.
+# Retry for up to 30 seconds.
+ExecStartPre=/bin/bash -c '\
+  for i in $(seq 1 30); do \
+    curl -sf http://127.0.0.1:8421/api/health && break; \
+    echo "waiting for hosaka-webserver... ($i/30)"; \
+    sleep 1; \
+  done'
+
+# Hide the mouse cursor immediately
+ExecStartPre=/usr/bin/unclutter -idle 0 -root &
+
+ExecStart=/usr/bin/chromium-browser \
+    --kiosk \
+    --window-size=800,480 \
+    --window-position=0,0 \
+    --noerrdialogs \
+    --disable-infobars \
+    --no-first-run \
+    --disable-session-crashed-bubble \
+    --disable-restore-session-state \
+    --disable-background-networking \
+    --disable-sync \
+    --no-default-browser-check \
+    --autoplay-policy=no-user-gesture-required \
+    --check-for-update-interval=31536000 \
+    --app=http://127.0.0.1:8421
+
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical.target

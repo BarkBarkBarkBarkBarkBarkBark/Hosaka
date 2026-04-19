@@ -1,0 +1,25 @@
+[Unit]
+Description=Hosaka Web Server (FastAPI — serves SPA + API)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/hosaka-field-terminal
+EnvironmentFile=-/opt/hosaka-field-terminal/.env
+Environment=HOSAKA_STATE_PATH=/var/lib/hosaka/state.json
+Environment=HOSAKA_BOOT_MODE=kiosk
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/hosaka-field-terminal/.venv/bin/uvicorn \
+    hosaka.web.server:app \
+    --host 127.0.0.1 \
+    --port 8421 \
+    --workers 1 \
+    --log-level info
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

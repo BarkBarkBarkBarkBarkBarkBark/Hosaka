@@ -1,0 +1,26 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Pi boot config additions for Hosaka cyberdeck — 800×480 5" screen
+#
+# Append these lines to /boot/firmware/config.txt (Pi 4/5) or /boot/config.txt
+# Run: sudo nano /boot/firmware/config.txt   (Pi 4 / Pi 5)
+#      sudo nano /boot/config.txt             (Pi 3 and older)
+# ──────────────────────────────────────────────────────────────────────────────
+
+[all]
+
+# ── 800×480 HDMI display ──────────────────────────────────────────────────────
+hdmi_group=2            # CEA=1, DMT=2 (use DMT for custom resolutions)
+hdmi_mode=87            # mode 87 = custom CVT via hdmi_cvt
+hdmi_cvt=800 480 60 6 0 0 0
+                        # width height refresh aspect margins interlace rb
+hdmi_drive=1            # 1=DVI (no audio over HDMI), 2=HDMI
+hdmi_force_hotplug=1    # output even if no display detected at boot
+
+# ── display rotation (landscape default) ──────────────────────────────────────
+display_rotate=0        # 0=0°, 1=90°, 2=180°, 3=270°
+
+# ── GPU memory ────────────────────────────────────────────────────────────────
+gpu_mem=128             # 128MB minimum for Chromium compositing
+
+# ── disable overscan (most small screens need this) ───────────────────────────
+disable_overscan=1

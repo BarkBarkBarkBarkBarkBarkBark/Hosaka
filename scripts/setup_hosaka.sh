@@ -11,11 +11,11 @@
 #   ./scripts/setup_hosaka.sh
 #
 # Environment variables (all optional):
-#   OPENCLAW_MODEL    LLM model to pull         (default: llama3)
-#   INSTALL_TAILSCALE 1 to install Tailscale     (default: 0)
+#   INSTALL_TAILSCALE 1 to install Tailscale     (default: 1)
 #   INSTALL_CADDY     1 to install Caddy         (default: 0)
-#   SKIP_MODEL_PULL   1 to skip LLM download     (default: 0)
-#   HOSAKA_BOOT_MODE  console or headless         (default: console)
+#   HOSAKA_BOOT_MODE  kiosk | headless | console  (default: kiosk)
+#   OPENAI_API_KEY    OpenAI key (written to .env if set)
+#   SKIP_SMOKE_TEST   1 to skip post-install tests (default: 0)
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -49,42 +49,89 @@ if [[ ! -f "$REPO_ROOT/requirements-hosaka.txt" ]]; then
   exit 1
 fi
 
-# ── step 1: install Hosaka ───────────────────────────────────────────────────
+# ── step 1: install Hosaka (Python env, Node 20, frontend build, systemd) ────
 banner
 info "Step 1/4 — Installing Hosaka Field Terminal..."
 echo ""
-bash "$REPO_ROOT/scripts/install_hosaka.sh"
+HOSAKA_BOOT_MODE="${HOSAKA_BOOT_MODE:-kiosk}" \
+  INSTALL_TAILSCALE="${INSTALL_TAILSCALE:-1}" \
+  INSTALL_CADDY="${INSTALL_CADDY:-0}" \
+  bash "$REPO_ROOT/scripts/install_hosaka.sh"
 echo ""
 ok "Hosaka installed."
 
-# ── step 2: install OpenClaw (Ollama + model) ────────────────────────────────
-info "Step 2/4 — Installing OpenClaw (LLM backend)..."
+# ── step 2: install OpenClaw (picoclaw gateway) ───────────────────────────────
+info "Step 2/4 — Installing OpenClaw (picoclaw gateway)..."
 echo ""
 bash "$REPO_ROOT/scripts/install_openclaw.sh"
 echo ""
 ok "OpenClaw installed."
 
 # ── step 3: configure boot mode ──────────────────────────────────────────────
-BOOT_MODE="${HOSAKA_BOOT_MODE:-console}"
+BOOT_MODE="${HOSAKA_BOOT_MODE:-kiosk}"
 info "Step 3/4 — Configuring boot mode: ${BOOT_MODE}"
 
-if [[ "$BOOT_MODE" == "headless" ]]; then
-  sudo systemctl disable hosaka-field-terminal.service 2>/dev/null || true
-  sudo systemctl enable hosaka-field-terminal-headless.service
-  ok "Headless mode enabled. Setup will happen via web UI."
-else
-  sudo systemctl disable hosaka-field-terminal-headless.service 2>/dev/null || true
-  sudo systemctl enable hosaka-field-terminal.service
-  ok "Console mode enabled. Setup will happen on tty1."
+# Disable legacy service names (safe no-op if they don't exist)
+for svc in hosaka-field-terminal.service hosaka-field-terminal-headless.service; do
+  sudo systemctl disable "$svc" 2>/dev/null || true
+  sudo systemctl stop "$svc" 2>/dev/null || true
+done
+
+case "$BOOT_MODE" in
+  kiosk)
+    sudo systemctl enable hosaka-webserver.service hosaka-kiosk.service
+    sudo systemctl disable hosaka-console.service 2>/dev/null || true
+    ok "Kiosk mode: Chromium on :8421 will auto-start at boot."
+    ;;
+  headless)
+    sudo systemctl enable hosaka-webserver.service
+    sudo systemctl disable hosaka-kiosk.service hosaka-console.service 2>/dev/null || true
+    ok "Headless mode: web UI at :8421, no Chromium."
+    ;;
+  console)
+    sudo systemctl enable hosaka-console.service
+    sudo systemctl disable hosaka-webserver.service hosaka-kiosk.service 2>/dev/null || true
+    ok "Console mode: Python TUI on tty1."
+    ;;
+  *)
+    warn "Unknown boot mode '${BOOT_MODE}'. Defaulting to kiosk."
+    sudo systemctl enable hosaka-webserver.service hosaka-kiosk.service
+    ;;
+esac
+
+# ── write OpenAI key to .env if provided ─────────────────────────────────────
+ENV_FILE="/opt/hosaka-field-terminal/.env"
+if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+  if grep -q "^OPENAI_API_KEY=" "$ENV_FILE" 2>/dev/null; then
+    sudo sed -i "s|^OPENAI_API_KEY=.*|OPENAI_API_KEY=${OPENAI_API_KEY}|" "$ENV_FILE"
+  else
+    echo "OPENAI_API_KEY=${OPENAI_API_KEY}" | sudo tee -a "$ENV_FILE" > /dev/null
+  fi
+  ok "OpenAI API key written to ${ENV_FILE}."
 fi
 
-# ── step 4: start the service ────────────────────────────────────────────────
+# ── step 4: start services ───────────────────────────────────────────────────
 info "Step 4/4 — Starting Hosaka..."
 
-if [[ "$BOOT_MODE" == "headless" ]]; then
-  sudo systemctl start hosaka-field-terminal-headless.service
-else
-  sudo systemctl start hosaka-field-terminal.service
+case "$BOOT_MODE" in
+  kiosk)
+    sudo systemctl restart hosaka-webserver.service
+    sleep 2
+    sudo systemctl restart hosaka-kiosk.service
+    ;;
+  headless)
+    sudo systemctl restart hosaka-webserver.service
+    ;;
+  console)
+    sudo systemctl restart hosaka-console.service
+    ;;
+esac
+
+# ── smoke test ───────────────────────────────────────────────────────────────
+if [[ "${SKIP_SMOKE_TEST:-0}" != "1" ]]; then
+  echo ""
+  info "Running smoke tests (SKIP_SMOKE_TEST=1 to skip)..."
+  bash "$REPO_ROOT/scripts/smoke_test.sh" || warn "Some smoke tests failed — check output above."
 fi
 
 # ── detect IP for the user ───────────────────────────────────────────────────
@@ -97,19 +144,19 @@ echo -e "${CYAN}║                                                  ║${NC}"
 echo -e "${CYAN}║  ${GREEN}✓ Hosaka Field Terminal is live.${CYAN}                ║${NC}"
 echo -e "${CYAN}║                                                  ║${NC}"
 if [[ -n "$LOCAL_IP" ]]; then
-echo -e "${CYAN}║  ${NC}Web setup: http://${LOCAL_IP}:${WEB_PORT}${CYAN}$(printf '%*s' $((18 - ${#LOCAL_IP} - ${#WEB_PORT})) '')║${NC}"
+  PAD=$(( 26 - ${#LOCAL_IP} - ${#WEB_PORT} ))
+  echo -e "${CYAN}║  ${NC}Web UI:  http://${LOCAL_IP}:${WEB_PORT}${CYAN}$(printf '%*s' $PAD '')║${NC}"
 fi
-echo -e "${CYAN}║  ${NC}Console:   switch to tty1 or reboot${CYAN}             ║${NC}"
-echo -e "${CYAN}║  ${NC}Chat:      type 'chat' at the hosaka> prompt${CYAN}    ║${NC}"
+echo -e "${CYAN}║  ${NC}Mode:    ${BOOT_MODE}${CYAN}$(printf '%*s' $(( 39 - ${#BOOT_MODE} )) '')║${NC}"
+echo -e "${CYAN}║  ${NC}Reboot to fully activate kiosk autostart.${CYAN}  ║${NC}"
 echo -e "${CYAN}║                                                  ║${NC}"
 echo -e "${CYAN}║  ${NC}No Wrong Way.${CYAN}                                   ║${NC}"
 echo -e "${CYAN}║                                                  ║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
 
-if [[ "$BOOT_MODE" != "headless" ]] && [[ -t 0 ]]; then
-  echo ""
-  read -rp "Press Enter to start onboarding now (or Ctrl-C to do it later)... "
+if [[ "$BOOT_MODE" == "console" ]] && [[ -t 0 ]]; then
+  read -rp "Press Enter to start Hosaka console now (or Ctrl-C to do it later)... "
   echo ""
   info "Launching Hosaka console..."
   sudo /opt/hosaka-field-terminal/.venv/bin/python -m hosaka
