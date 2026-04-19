@@ -1,4 +1,4 @@
-"""OpenAI API adapter — fallback when OpenClaw is unavailable."""
+"""OpenAI API adapter — fallback when picoclaw / gateway is unavailable."""
 
 from __future__ import annotations
 

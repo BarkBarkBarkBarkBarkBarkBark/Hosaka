@@ -51,7 +51,7 @@ const RED = `${ESC}31m`;
 const BLUE = `${ESC}34m`;
 
 const PROMPT_HOST = "hosaka";
-const PROMPT_CWD = "/web";
+const PROMPT_CWD = "/operator";
 
 function prompt(): string {
   return `${CYAN}${PROMPT_HOST}${R}:${BLUE}${PROMPT_CWD}${R} ${AMBER}›${R} `;
@@ -294,7 +294,7 @@ export class HosakaShell {
 
     if (!raw.startsWith("/")) {
       const normalized = raw.trim().toLowerCase();
-      if (normalized === MAGIC_WORD.toLowerCase()) {
+      if (MAGIC_WORD && normalized === MAGIC_WORD.toLowerCase()) {
         this.magicWord();
         this.writePrompt();
         return;
@@ -478,7 +478,7 @@ export class HosakaShell {
 
     const next: AgentConfig = {
       url: cfg.url || DEFAULT_AGENT_URL,
-      passphrase: MAGIC_WORD,
+      passphrase: MAGIC_WORD || cfg.passphrase,
       enabled: true,
     };
     saveAgentConfig(next);
@@ -645,7 +645,7 @@ export class HosakaShell {
     }
 
     if (sub === "on") {
-      if (!cfg.url || !cfg.passphrase) {
+      if (!cfg.url) {
         this.writeln(
           `  ${RED}${st("agent.cantEnable")}${R}`,
         );
@@ -685,8 +685,8 @@ export class HosakaShell {
       return;
     }
     if (sub === "test") {
-      if (!cfg.url || !cfg.passphrase) {
-        this.writeln(`  ${GRAY}${st("agent.notTuned")} ${VIOLET}${st("agent.speakWord")}${R}${GRAY} first.${R}`);
+      if (!cfg.url) {
+        this.writeln(`  ${GRAY}${st("agent.notTuned")}${R}`);
         return;
       }
       this.writeln(`  ${DARK_GRAY}${st("agent.pinging")}${R}`);
@@ -750,7 +750,7 @@ export class HosakaShell {
 
   private status(): void {
     const now = new Date().toISOString().replace("T", " ").slice(0, 19);
-    this.writeln(`  ${GRAY}${st("status.host")}${R}       ${AMBER}hosaka.web${R}`);
+    this.writeln(`  ${GRAY}${st("status.host")}${R}       ${AMBER}hosaka/operator${R}`);
     this.writeln(`  ${GRAY}${st("status.mode")}${R}       ${AMBER}${st("status.modeHosted")}${R}  ${DARK_GRAY}${st("status.modeComment")}${R}`);
     this.writeln(`  ${GRAY}${st("status.signalLabel")}${R}     ${GREEN}${st("status.signalSteady")}${R}`);
     this.writeln(`  ${GRAY}${st("status.plantLabel")}${R}      ${GREEN}${this.plantState()}${R}`);

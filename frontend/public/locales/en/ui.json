@@ -39,7 +39,7 @@
 
     "agent": {
       "heading": "Agent backend — picoclaw",
-      "desc": "advanced: override the default relay url or passphrase. most visitors should leave these alone — say <code>neuro</code> in the terminal and the channel opens on its own.",
+      "desc": "advanced: override the websocket url or passphrase. on the appliance build, picoclaw is connected by default with no passphrase unless you set <code>HOSAKA_ACCESS_TOKEN</code> on the server.",
       "wsLabel": "websocket url",
       "wsPlaceholder": "wss://hosaka-agent.fly.dev/ws/agent",
       "passLabel": "passphrase",
@@ -48,7 +48,7 @@
       "show": "show",
       "channelLabel": "channel",
       "channelOn": "open — typing goes to picoclaw",
-      "channelOff": "closed — typing is ignored (say neuro to reopen)"
+      "channelOff": "closed — typing is ignored (/agent on or settings to reopen)"
     },
 
     "storage": {

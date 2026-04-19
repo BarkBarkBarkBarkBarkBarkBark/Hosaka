@@ -39,7 +39,7 @@
 
     "agent": {
       "heading": "Backend agent — picoclaw",
-      "desc": "avancé : modifie l'url du relais ou la phrase de passe. la plupart des visiteurs ne devraient rien toucher — tape <code>neuro</code> dans le terminal et le canal s'ouvre tout seul.",
+      "desc": "avancé : url websocket ou phrase de passe. sur l'appliance, picoclaw est actif par défaut sauf si tu configures un token serveur.",
       "wsLabel": "url websocket",
       "wsPlaceholder": "wss://hosaka-agent.fly.dev/ws/agent",
       "passLabel": "phrase de passe",
@@ -48,7 +48,7 @@
       "show": "afficher",
       "channelLabel": "canal",
       "channelOn": "ouvert — ce que tu tapes va à picoclaw",
-      "channelOff": "fermé — ce que tu tapes est ignoré (dis neuro pour rouvrir)"
+      "channelOff": "fermé — ce que tu tapes est ignoré (/agent on pour rouvrir)"
     },
 
     "storage": {

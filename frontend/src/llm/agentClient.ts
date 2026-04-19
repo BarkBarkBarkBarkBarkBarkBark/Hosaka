@@ -13,7 +13,7 @@ export type AgentConfig = {
   enabled: boolean;
 };
 
-const STORAGE_KEY = "hosaka.agent.v1";
+const STORAGE_KEY = "hosaka.agent.v2";
 
 // Baked-in default so users don't have to paste the URL.  Override at build
 // time with `VITE_HOSAKA_AGENT_URL=wss://... npm run build` or at runtime in
@@ -22,22 +22,23 @@ export const DEFAULT_AGENT_URL: string =
   (import.meta.env.VITE_HOSAKA_AGENT_URL as string | undefined) ??
   "wss://hosaka-field-terminal-alpha.fly.dev/ws/agent";
 
-// The "magic word" a visitor can type in the terminal to auto-configure the
-// agent with the default URL + shared passphrase.  Matches server-side
-// HOSAKA_ACCESS_TOKEN.  Override at build with VITE_HOSAKA_MAGIC_WORD.
+// Optional unlock phrase (must match server HOSAKA_ACCESS_TOKEN when set).
+// Empty = no passphrase; local appliance uses open WS auth unless you set a token.
 export const MAGIC_WORD: string =
-  (import.meta.env.VITE_HOSAKA_MAGIC_WORD as string | undefined) ?? "neuro";
+  (import.meta.env.VITE_HOSAKA_MAGIC_WORD as string | undefined) ?? "";
 
-// picoclaw is the heartbeat — but the channel is closed until the visitor
-// says the magic word. The url + passphrase are pre-filled so saying neuro
-// is the only step required to open the door.
+// Picoclaw channel is on by default for the field-terminal appliance build.
 export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   url: DEFAULT_AGENT_URL,
   passphrase: MAGIC_WORD,
-  enabled: false,
+  enabled: true,
 };
 
 export function loadAgentConfig(): AgentConfig {
+  // Field-terminal builds always boot with the channel open. We deliberately
+  // ignore any previously-persisted `enabled: false` so a one-off `/agent off`
+  // (or a stale localStorage entry from an older build) can never lock the
+  // operator out of the prompt on next reload.
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULT_AGENT_CONFIG };
@@ -45,7 +46,7 @@ export function loadAgentConfig(): AgentConfig {
     return {
       url: stored.url || DEFAULT_AGENT_CONFIG.url,
       passphrase: stored.passphrase || DEFAULT_AGENT_CONFIG.passphrase,
-      enabled: stored.enabled ?? DEFAULT_AGENT_CONFIG.enabled,
+      enabled: true,
     };
   } catch {
     return { ...DEFAULT_AGENT_CONFIG };
@@ -92,10 +93,12 @@ export type AgentResult =
   | { ok: false; code: AgentErrorCode };
 
 function buildWsUrl(cfg: AgentConfig): string {
-  // Pass the token in the query string as a fallback for browsers that
-  // refuse custom headers on websocket upgrades. The server accepts both.
   const u = new URL(cfg.url);
-  u.searchParams.set("token", cfg.passphrase);
+  if (cfg.passphrase) {
+    u.searchParams.set("token", cfg.passphrase);
+  } else {
+    u.searchParams.delete("token");
+  }
   return u.toString();
 }
 
@@ -124,7 +127,7 @@ export class AgentClient {
 
   private async ensureOpen(): Promise<AgentErrorCode | null> {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return null;
-    if (!looksLikeWsUrl(this.cfg.url) || !this.cfg.passphrase) {
+    if (!looksLikeWsUrl(this.cfg.url)) {
       return "not_configured";
     }
 

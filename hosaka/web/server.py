@@ -1,7 +1,7 @@
 """Hosaka web server — appliance edition.
 
 Serves three things from a single FastAPI process:
-  1. The static SPA (built frontend/dist → hosaka/web/ui/)
+  1. The static SPA (`frontend` Vite build → hosaka/web/ui/)
   2. API routes for the React shell to call (/api/chat, /ws/agent, /api/health)
   3. The legacy setup-wizard HTML pages (mounted under /setup/)
 
@@ -47,6 +47,11 @@ DEFAULT_PORT = int(os.getenv("HOSAKA_WEB_PORT", "8421"))
 ACCESS_TOKEN = os.environ.get("HOSAKA_ACCESS_TOKEN", "").strip()
 PICOCLAW_BIN = os.environ.get("PICOCLAW_BIN", "picoclaw")
 PICOCLAW_MODEL = os.environ.get("PICOCLAW_MODEL", "").strip()
+# Picoclaw reads its config from $HOME/.picoclaw/config.json. The webserver
+# runs as root under systemd, where HOME=/root and no picoclaw config exists,
+# so we have to point the child explicitly at the operator's home (override
+# with PICOCLAW_HOME in the systemd unit if you ever change kiosk users).
+PICOCLAW_HOME = os.environ.get("PICOCLAW_HOME", "/home/operator")
 MSG_TIMEOUT_SECONDS = int(os.environ.get("HOSAKA_MSG_TIMEOUT", "90"))
 MSG_MAX_CHARS = int(os.environ.get("HOSAKA_MSG_MAX_CHARS", "4000"))
 RATE_LIMIT_PER_MIN = int(os.environ.get("HOSAKA_RATE_PER_MIN", "30"))
@@ -57,6 +62,11 @@ _BANNER_HINTS = (
     "picoclaw", "interactive mode", "goodbye", "ctrl+c",
     "saving config", "checking for updates", "no updates available",
 )
+# Matches Go's default logger prefix, e.g. "2026/04/18 23:25:01 session: ..."
+_GOLOG_RE = re.compile(r"^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\b")
+# Anything in this set is "decorative box-drawing / banner glyphs". A line
+# composed *only* of these (after ANSI strip + whitespace strip) is junk.
+_BANNER_GLYPHS = set("█▓▒░╔╗╚╝║═╠╣╦╩╬─│┌┐└┘├┤┬┴┼ ")
 
 # ── setup-wizard orchestrator ─────────────────────────────────────────────────
 
@@ -94,25 +104,48 @@ def _picoclaw_available() -> bool:
 
 
 def _strip_picoclaw_banner(text: str) -> str:
-    lines = []
+    """Drop picoclaw's startup banner + Go log noise from a chunk of stdout.
+
+    What we filter:
+      - The big PICOCLAW block-letter ASCII banner (any line whose visible
+        characters are all box-drawing glyphs is treated as decoration).
+      - Go-default-logger lines ("2026/04/18 23:25:01 ...") — these are
+        diagnostic, not user-facing.
+      - Lines containing well-known banner phrases (interactive mode, etc.).
+    """
+    lines: list[str] = []
     for raw in text.splitlines():
-        line = _ANSI_RE.sub("", raw).strip()
-        if any(hint in line.lower() for hint in _BANNER_HINTS):
+        visible = _ANSI_RE.sub("", raw).strip()
+        if not visible:
+            lines.append(raw)
+            continue
+        if _GOLOG_RE.match(visible):
+            continue
+        if any(hint in visible.lower() for hint in _BANNER_HINTS):
+            continue
+        if all(ch in _BANNER_GLYPHS for ch in visible):
             continue
         lines.append(raw)
     return "\n".join(lines).strip()
 
 
 async def _run_picoclaw(message: str, session_key: str) -> AsyncGenerator[str, None]:
-    """Run picoclaw as a subprocess and stream its output."""
-    args = [PICOCLAW_BIN]
+    """Run picoclaw as a subprocess and stream its output.
+
+    Picoclaw 0.2+ exposes the non-interactive single-shot path under the
+    `agent` subcommand, not as top-level flags:
+        picoclaw agent --session <key> --message <text> [--model <name>]
+    """
+    args = [PICOCLAW_BIN, "agent", "--session", session_key, "--message", message]
     if PICOCLAW_MODEL:
         args += ["--model", PICOCLAW_MODEL]
-    args += ["--session", session_key, "--message", message]
 
     env = {
         "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
-        "HOME": os.environ.get("HOME", "/root"),
+        "HOME": PICOCLAW_HOME,
+        # Some Go programs (incl. picoclaw) consult these for cache/config dirs.
+        "XDG_CONFIG_HOME": f"{PICOCLAW_HOME}/.config",
+        "XDG_CACHE_HOME": f"{PICOCLAW_HOME}/.cache",
     }
     if os.environ.get("OPENAI_API_KEY"):
         env["OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"]
@@ -191,7 +224,7 @@ app = FastAPI(title="Hosaka Appliance", lifespan=lifespan)
 @app.get("/api/health")
 def health() -> JSONResponse:
     from hosaka.llm.openai_adapter import is_available as openai_ok
-    from hosaka.llm.openclaw import is_gateway_up
+    from hosaka.llm.gateway.client import PicoclawGatewayClient
 
     ui_built = False
     if UI_DIR.exists():
@@ -203,7 +236,7 @@ def health() -> JSONResponse:
     return JSONResponse({
         "web": "ok",
         "picoclaw_bin": _picoclaw_available(),
-        "picoclaw_gateway": is_gateway_up(),
+        "picoclaw_gateway": PicoclawGatewayClient.is_gateway_reachable(),
         "openai_key": openai_ok(),
         "ui_built": ui_built,
     })
@@ -528,7 +561,7 @@ if UI_DIR.exists():
 else:
     log.warning(
         "SPA UI directory not found at %s. "
-        "Run `cd frontend && npm ci && npm run build` then copy dist/ to hosaka/web/ui/. "
+        "Run `cd frontend && npm ci && npm run build` (output goes to hosaka/web/ui/). "
         "Setup wizard available at /setup/",
         UI_DIR,
     )
@@ -537,8 +570,7 @@ else:
     def root_fallback() -> str:
         body = """
         <h1>Hosaka — UI not built yet</h1>
-        <p>Run the frontend build, then copy <code>dist/</code> to
-        <code>hosaka/web/ui/</code>.</p>
+        <p>Run <code>cd frontend &amp;&amp; npm ci &amp;&amp; npm run build</code> (writes <code>hosaka/web/ui/</code>).</p>
         <p><a href='/setup/'>Setup wizard</a> &nbsp;&nbsp; <a href='/api/health'>Health</a></p>
         """
         return _layout("Hosaka", body)

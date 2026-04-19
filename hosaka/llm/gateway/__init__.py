@@ -1,4 +1,4 @@
-"""OpenClaw Gateway adapter — public API.
+"""Picoclaw gateway adapter — public API.
 
 Usage:
     from hosaka.llm.gateway import GatewayAdapter
@@ -19,11 +19,11 @@ from hosaka.llm.gateway.client import (
     AuthError,
     ConnectionState,
     GatewayError,
-    OpenClawGatewayClient,
     PairingRequiredError,
+    PicoclawGatewayClient,
 )
-from hosaka.llm.gateway.runner import OpenClawChatRunner
-from hosaka.llm.gateway.session import OpenClawSessionManager
+from hosaka.llm.gateway.runner import PicoclawChatRunner
+from hosaka.llm.gateway.session import PicoclawSessionManager
 
 log = logging.getLogger("hosaka.gateway")
 
@@ -37,10 +37,7 @@ __all__ = [
 
 
 class GatewayAdapter:
-    """High-level adapter between Hosaka terminal and OpenClaw Gateway.
-
-    Wraps client + session + runner into one interface the terminal can use.
-    """
+    """High-level adapter between Hosaka and the picoclaw WebSocket gateway."""
 
     def __init__(
         self,
@@ -50,11 +47,11 @@ class GatewayAdapter:
         session_key: str | None = None,
         agent_id: str | None = None,
     ):
-        self._client = OpenClawGatewayClient(url=url, token=token, password=password)
-        self._session = OpenClawSessionManager(
+        self._client = PicoclawGatewayClient(url=url, token=token, password=password)
+        self._session = PicoclawSessionManager(
             self._client, session_key=session_key, agent_id=agent_id,
         )
-        self._runner = OpenClawChatRunner(self._client, self._session)
+        self._runner = PicoclawChatRunner(self._client, self._session)
 
     @property
     def state(self) -> ConnectionState:
@@ -137,11 +134,8 @@ class GatewayAdapter:
             import websockets  # noqa: F401
         except ImportError:
             return False
-        url = (
-            os.getenv("OPENCLAW_GATEWAY_URL")
-            or os.getenv("PICOCLAW_GATEWAY_URL")
-        )
-        return OpenClawGatewayClient.is_gateway_reachable(url=url)
+        url = os.getenv("PICOCLAW_GATEWAY_URL")
+        return PicoclawGatewayClient.is_gateway_reachable(url=url)
 
     def __enter__(self):
         self.connect()

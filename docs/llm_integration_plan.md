@@ -175,7 +175,7 @@ httpx>=0.27,<1.0
 ```
 
 No OpenAI SDK needed — raw HTTP keeps the dependency tree small and works
-identically for OpenClaw and OpenAI (both speak the OpenAI chat completions
+identically for the picoclaw gateway path and OpenAI (both speak the OpenAI chat completions
 wire format).
 
 ---

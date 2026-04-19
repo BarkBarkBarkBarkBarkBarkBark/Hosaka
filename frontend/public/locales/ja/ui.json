@@ -39,7 +39,7 @@
 
     "agent": {
       "heading": "エージェントバックエンド — picoclaw",
-      "desc": "上級者向け: リレーURLかパスフレーズを上書きする。普通はそのままでいい — ターミナルで <code>neuro</code> と打てばチャネルは勝手に開く。",
+      "desc": "上級者向け: WebSocket URL かパスフレーズ。アプライアンスではサーバーにトークンがなければ picoclaw は既定で接続。",
       "wsLabel": "websocket url",
       "wsPlaceholder": "wss://hosaka-agent.fly.dev/ws/agent",
       "passLabel": "パスフレーズ",
@@ -48,7 +48,7 @@
       "show": "表示",
       "channelLabel": "チャネル",
       "channelOn": "開通 — 入力は picoclaw に行く",
-      "channelOff": "閉鎖 — 入力は無視される（neuro で再開通）"
+      "channelOff": "閉鎖 — 入力は無視される（/agent on で再開）"
     },
 
     "storage": {

@@ -151,7 +151,7 @@ Hours of inactivity drain it. Reach colony state and it records a birth.
 | Variable | Default | Description |
 |---|---|---|
 | `HOSAKA_STATE_PATH` | `~/.hosaka/state.json` | Persistent state |
-| `HOSAKA_BOOT_MODE` | `console` | `console` or `headless` |
+| `HOSAKA_BOOT_MODE` | `console` | `console` (Python tty shell), `headless` / `web` (API+SPA only), `kiosk` (same + Chromium; use `./scripts/switch_boot_mode.sh`) |
 | `HOSAKA_WEB_PORT` | `8421` | LAN setup web server port |
 | `PICOCLAW_SESSION` | `hosaka:main` | Agent session key |
 | `PICOCLAW_MODEL` | *(default)* | Override model |

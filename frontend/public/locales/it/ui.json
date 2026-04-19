@@ -19,7 +19,7 @@
     "modelLabel": "modello gemini (solo per /ask)",
     "agent": {
       "heading": "Backend agente — picoclaw",
-      "desc": "avanzato: sovrascrivi l'url del relay o la passphrase. la maggior parte dei visitatori dovrebbe lasciarli così — scrivi <code>neuro</code> nel terminale e il canale si apre da solo.",
+      "desc": "avanzato: url websocket o passphrase. sull'appliance picoclaw è attivo di default salvo token sul server.",
       "wsLabel": "url websocket",
       "wsPlaceholder": "wss://hosaka-agent.fly.dev/ws/agent",
       "passLabel": "passphrase",
@@ -28,7 +28,7 @@
       "show": "mostra",
       "channelLabel": "canale",
       "channelOn": "aperto — la digitazione va a picoclaw",
-      "channelOff": "chiuso — la digitazione è ignorata (dì neuro per riaprire)"
+      "channelOff": "chiuso — la digitazione è ignorata (/agent on per riaprire)"
     },
     "storage": {
       "heading": "informazioni sullo storage",

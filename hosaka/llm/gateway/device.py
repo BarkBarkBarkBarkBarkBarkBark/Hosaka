@@ -1,11 +1,11 @@
-"""Device identity and token persistence for OpenClaw Gateway.
+"""Device identity and token persistence for the picoclaw gateway.
 
 Manages:
   - Stable device ID (derived from Ed25519 keypair fingerprint)
   - Device token persistence (issued by gateway after pairing)
   - Challenge nonce signing
 
-State is stored in a JSON file at OPENCLAW_DEVICE_STATE_PATH
+State is stored in a JSON file at PICOCLAW_DEVICE_STATE_PATH
 (default: ~/.hosaka/device_state.json).
 """
 
@@ -21,7 +21,7 @@ DEFAULT_DEVICE_STATE_PATH = Path.home() / ".hosaka" / "device_state.json"
 
 
 def _state_path() -> Path:
-    override = os.getenv("OPENCLAW_DEVICE_STATE_PATH")
+    override = os.getenv("PICOCLAW_DEVICE_STATE_PATH")
     if override:
         return Path(override)
     return DEFAULT_DEVICE_STATE_PATH

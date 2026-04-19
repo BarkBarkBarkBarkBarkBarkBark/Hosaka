@@ -1,8 +1,6 @@
-"""Protocol constants and frame helpers for OpenClaw/Picoclaw Gateway WS.
+"""Protocol constants and frame helpers for the Picoclaw agent gateway WebSocket API.
 
-Source of truth: https://docs.openclaw.ai/gateway/protocol
-Protocol version: 3
-Transport: WebSocket, text frames with JSON payloads.
+Protocol version: 3 — WebSocket transport, JSON text frames (picoclaw gateway).
 """
 
 from __future__ import annotations
@@ -12,21 +10,11 @@ import uuid
 
 PROTOCOL_VERSION = 3
 
-# Default gateway location.
-# Picoclaw's local daemon commonly binds to 18790, while OpenClaw often uses 18789.
+# Picoclaw gateway defaults (see https://github.com/sipeed/picoclaw).
 FALLBACK_GATEWAY_URL = "ws://127.0.0.1:18790"
-LEGACY_GATEWAY_URL = "ws://127.0.0.1:18789"
-DEFAULT_GATEWAY_URL = (
-    os.getenv("OPENCLAW_GATEWAY_URL")
-    or os.getenv("PICOCLAW_GATEWAY_URL")
-    or FALLBACK_GATEWAY_URL
-)
-DEFAULT_GATEWAY_HOST = os.getenv("OPENCLAW_GATEWAY_HOST", "127.0.0.1")
-DEFAULT_GATEWAY_PORT = int(
-    os.getenv("OPENCLAW_GATEWAY_PORT")
-    or os.getenv("PICOCLAW_GATEWAY_PORT")
-    or 18790
-)
+DEFAULT_GATEWAY_URL = os.getenv("PICOCLAW_GATEWAY_URL") or FALLBACK_GATEWAY_URL
+DEFAULT_GATEWAY_HOST = os.getenv("PICOCLAW_GATEWAY_HOST", "127.0.0.1")
+DEFAULT_GATEWAY_PORT = int(os.getenv("PICOCLAW_GATEWAY_PORT", "18790"))
 
 # Client identity
 CLIENT_ID = "hosaka-field-terminal"

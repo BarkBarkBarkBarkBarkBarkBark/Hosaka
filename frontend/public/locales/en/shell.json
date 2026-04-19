@@ -93,23 +93,23 @@
   "banner": {
     "compactSteady": "signal steady",
     "compactHelp": "/help",
-    "compactWhisper": "whisper a word",
-    "compactOpen": "to open the channel",
+    "compactWhisper": "type",
+    "compactOpen": "to talk to picoclaw — channel is open.",
     "online": "Field Terminal Online.",
     "steady": "Signal steady.",
     "hosted": "hosted edition",
     "explore": "/commands to explore  ·  /help to start  ·  /ask the orb anything",
-    "shareWord": "if someone shared a word with you,",
-    "sayIt": "say it",
-    "channelOpens": "and the channel opens."
+    "shareWord": "channel is open —",
+    "sayIt": "just type",
+    "channelOpens": "and picoclaw will answer."
   },
 
   "dispatch": {
     "busy": "...the orb is still thinking. patience.",
     "shellUsage": "usage: !ls, !cat README.md, etc.",
-    "shellChannelQuiet": "the channel is quiet —",
-    "whisperFirst": "whisper the word",
-    "first": "first."
+    "shellChannelQuiet": "channel is off —",
+    "whisperFirst": "/agent on",
+    "first": "to bring it back."
   },
 
   "signal": {
@@ -131,19 +131,19 @@
   "gemini": {
     "rateLimited": "the channel is crowded. breathe. try again in a moment.",
     "proxyDown": "the orb is quiet. the relay is resting.",
-    "proxyDownHint": "whisper the word and try again — picoclaw still listens.",
+    "proxyDownHint": "check the local server and try again — picoclaw still listens.",
     "empty": "the orb heard you but had nothing to say. try again.",
     "unknown": "signal faint. try again in a moment."
   },
 
   "channelClosed": {
-    "line1": "the channel is quiet. behind it:",
+    "line1": "the channel is off. behind it:",
     "picoclaw": "picoclaw",
     "line1b": "— an agent",
     "line2": "that walks a sandboxed workspace and answers in full thoughts.",
-    "line3a": "speak",
-    "magicWord": "the magic word",
-    "line3b": "to open the door."
+    "line3a": "type",
+    "magicWord": "/agent on",
+    "line3b": "to bring it back."
   },
 
   "model": {
@@ -188,7 +188,7 @@
   "agentWake": "… waking the relay",
 
   "agentError": {
-    "notConfigured": "the channel isn't tuned yet. whisper a word to open it.",
+    "notConfigured": "the channel isn't tuned yet. set /agent url or check settings.",
     "unauthorized": "the door didn't recognize the word. try another.",
     "unreachable": "the relay is sleeping. give it a moment and try again.",
     "timeout": "the signal took too long to come back. try again.",
@@ -205,7 +205,7 @@
     "passLabel": "passphrase:",
     "unset": "(unset)",
     "usage": "usage: /agent on | off | url <wss://…> | passphrase <phrase> | test",
-    "cantEnable": "can't enable: need both url and passphrase first.",
+    "cantEnable": "can't enable: need a websocket url first (/agent url …).",
     "modeOn": "agent mode on.",
     "typesToPicoclaw": "typing now goes to picoclaw.",
     "modeOff": "agent mode off. typing now goes to gemini.",
@@ -214,8 +214,8 @@
     "urlSaved": "agent url saved.",
     "passUsage": "usage: /agent passphrase <phrase>",
     "passSaved": "passphrase saved (browser-only).",
-    "notTuned": "the channel isn't tuned.",
-    "speakWord": "speak the word",
+    "notTuned": "the channel isn't tuned — set /agent url first.",
+    "speakWord": "configure the url",
     "pinging": "pinging agent…",
     "reply": "✓ reply:",
     "unknownSub": "unknown /agent subcommand:"

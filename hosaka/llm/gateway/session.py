@@ -1,4 +1,4 @@
-"""OpenClaw session manager.
+"""Picoclaw gateway session manager.
 
 Responsibilities:
   - Resolve or create the active session
@@ -16,26 +16,26 @@ from typing import TYPE_CHECKING
 from hosaka.llm.gateway.protocol import DEFAULT_SESSION_KEY, make_idempotency_key
 
 if TYPE_CHECKING:
-    from hosaka.llm.gateway.client import OpenClawGatewayClient
+    from hosaka.llm.gateway.client import PicoclawGatewayClient
 
 log = logging.getLogger("hosaka.gateway.session")
 
 
-class OpenClawSessionManager:
+class PicoclawSessionManager:
     """Manages the active chat session on the gateway."""
 
     def __init__(
         self,
-        client: OpenClawGatewayClient,
+        client: PicoclawGatewayClient,
         session_key: str | None = None,
         agent_id: str | None = None,
     ):
         self._client = client
         self._session_key = (
             session_key
-            or os.getenv("OPENCLAW_SESSION_KEY", DEFAULT_SESSION_KEY)
+            or os.getenv("PICOCLAW_SESSION_KEY", DEFAULT_SESSION_KEY)
         )
-        self._agent_id = agent_id or os.getenv("OPENCLAW_AGENT_ID")
+        self._agent_id = agent_id or os.getenv("PICOCLAW_AGENT_ID")
         self._resolved_key: str | None = None
         self._subscribed = False
 

@@ -1,4 +1,4 @@
-"""OpenClaw chat runner — send messages and stream responses.
+"""Picoclaw gateway chat runner — send messages and stream responses.
 
 Responsibilities:
   - Send user message into active session via chat.send
@@ -18,8 +18,8 @@ from typing import Generator, TYPE_CHECKING
 from hosaka.llm.gateway.protocol import make_idempotency_key, make_req
 
 if TYPE_CHECKING:
-    from hosaka.llm.gateway.client import OpenClawGatewayClient
-    from hosaka.llm.gateway.session import OpenClawSessionManager
+    from hosaka.llm.gateway.client import PicoclawGatewayClient
+    from hosaka.llm.gateway.session import PicoclawSessionManager
 
 log = logging.getLogger("hosaka.gateway.runner")
 
@@ -72,13 +72,13 @@ class ChatRunState:
             yield frame
 
 
-class OpenClawChatRunner:
+class PicoclawChatRunner:
     """Sends messages and streams responses from the gateway."""
 
     def __init__(
         self,
-        client: OpenClawGatewayClient,
-        session_mgr: OpenClawSessionManager,
+        client: PicoclawGatewayClient,
+        session_mgr: PicoclawSessionManager,
     ):
         self._client = client
         self._session = session_mgr

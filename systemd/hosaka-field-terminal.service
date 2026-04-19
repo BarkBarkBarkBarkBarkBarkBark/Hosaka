@@ -8,13 +8,12 @@ After=getty@tty1.service
 
 [Service]
 Type=simple
+User=operator
+Group=pi
 WorkingDirectory=/opt/hosaka-field-terminal
-# State path readable/writable without root
 Environment=HOSAKA_STATE_PATH=/home/operator/.hosaka/state.json
 Environment=PYTHONUNBUFFERED=1
 Environment=HOSAKA_BOOT_MODE=console
-# Picoclaw config lives in operator's home; pass it through when running as root
-Environment=HOME=/home/operator
 ExecStartPre=/usr/bin/clear
 ExecStart=/opt/hosaka-field-terminal/.venv/bin/python -m hosaka
 Restart=always

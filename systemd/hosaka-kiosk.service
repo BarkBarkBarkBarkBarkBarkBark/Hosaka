@@ -5,9 +5,9 @@ Wants=hosaka-webserver.service
 
 [Service]
 Type=simple
-User=pi
+User=operator
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/pi/.Xauthority
+Environment=XAUTHORITY=/home/operator/.Xauthority
 
 # Wait until the web server is actually accepting connections before launching.
 # Retry for up to 30 seconds.
@@ -18,10 +18,10 @@ ExecStartPre=/bin/bash -c '\
     sleep 1; \
   done'
 
-# Hide the mouse cursor immediately
-ExecStartPre=/usr/bin/unclutter -idle 0 -root &
+# Hide the mouse cursor (shell-wrap so "&" is not a systemd argv; "-" = ignore if X11 missing)
+ExecStartPre=-/bin/sh -c 'nohup unclutter -idle 1 -root >/dev/null 2>&1 &'
 
-ExecStart=/usr/bin/chromium-browser \
+ExecStart=/usr/local/bin/hosaka-kiosk-chromium \
     --kiosk \
     --window-size=800,480 \
     --window-position=0,0 \

@@ -17,6 +17,8 @@ WEB_HOST = os.getenv("HOSAKA_WEB_HOST", "0.0.0.0")
 WEB_PORT = int(os.getenv("HOSAKA_WEB_PORT", "8421"))
 BOOT_MODE = os.getenv("HOSAKA_BOOT_MODE", "console")
 PICOCLAW_GATEWAY_PORT = int(os.getenv("PICOCLAW_GATEWAY_PORT", "18790"))
+# Skip the Python ANSI shell; keep the FastAPI/JS UI as the only interactive surface.
+_WEB_PRIMARY_MODES = frozenset({"headless", "kiosk", "web"})
 
 
 def is_port_in_use(host: str, port: int) -> bool:
@@ -96,9 +98,15 @@ def launch() -> None:
 
     start_picoclaw_gateway()
 
-    if BOOT_MODE == "headless" or not sys.stdin.isatty():
-        if BOOT_MODE != "headless":
+    web_primary = BOOT_MODE in _WEB_PRIMARY_MODES
+    if web_primary or not sys.stdin.isatty():
+        if not web_primary and not sys.stdin.isatty():
             print("Hosaka warning: no TTY detected; falling back to headless web setup mode.")
+        if BOOT_MODE == "kiosk":
+            print(
+                "Hosaka kiosk/web-primary mode: use the browser UI (systemd hosaka-kiosk.service), "
+                f"not this TTY — {web_url}",
+            )
         print(f"Hosaka web setup available at: {web_url}")
         while True:
             if web_process and web_process.poll() is not None:

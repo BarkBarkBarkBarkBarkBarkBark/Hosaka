@@ -11,6 +11,8 @@ build/
 frontend/node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo
+# Vite build output (run: cd frontend && npm run build)
+hosaka/web/ui/
 
 # env
 .env*

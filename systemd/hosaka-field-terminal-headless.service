@@ -5,11 +5,12 @@ Wants=network-online.target picoclaw-gateway.service
 
 [Service]
 Type=simple
+User=operator
+Group=pi
 WorkingDirectory=/opt/hosaka-field-terminal
 Environment=HOSAKA_STATE_PATH=/home/operator/.hosaka/state.json
 Environment=PYTHONUNBUFFERED=1
 Environment=HOSAKA_BOOT_MODE=headless
-Environment=HOME=/home/operator
 ExecStart=/opt/hosaka-field-terminal/.venv/bin/python -m hosaka
 Restart=always
 RestartSec=2

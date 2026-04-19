@@ -163,10 +163,34 @@ fi
 # ── chromium (kiosk) ──────────────────────────────────────────────────────────
 section "chromium kiosk"
 
-if command -v chromium-browser >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
-  pass "chromium found"
+hosaka_chromium_bin() {
+  local c
+  for c in hosaka-kiosk-chromium chromium-browser chromium; do
+    if command -v "$c" >/dev/null 2>&1; then
+      command -v "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+CH="$(hosaka_chromium_bin 2>/dev/null || true)"
+if [[ -n "$CH" ]]; then
+  pass "chromium launcher found at $CH"
+  ver="$("$CH" --version 2>&1 | head -1 || true)"
+  if [[ -n "$ver" ]]; then
+    pass "chromium --version: $ver"
+  else
+    warn "chromium --version returned empty"
+  fi
+  # Headless launch is fragile on some ARM images; timeout + no-sandbox keeps this diagnostic-only.
+  if timeout 25s "$CH" --headless=new --disable-gpu --no-sandbox --virtual-time-budget=3000 about:blank >/dev/null 2>&1; then
+    pass "chromium headless smoke OK (about:blank)"
+  else
+    warn "chromium headless smoke failed or timed out — kiosk may still work on a real DISPLAY"
+  fi
 else
-  warn "chromium not installed — run: sudo apt-get install -y chromium-browser"
+  warn "no chromium — try: sudo apt-get install -y chromium  OR  chromium-browser"
 fi
 
 if command -v unclutter >/dev/null 2>&1; then

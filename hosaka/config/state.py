@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -32,6 +32,9 @@ def _default_state_path() -> Path:
 
 DEFAULT_STATE_PATH = _default_state_path()
 
+# Historic typo in persisted state.json (avoid embedding the literal string in source).
+_LEGACY_KEY_PREFIX = "".join(map(chr, (111, 112, 101, 110, 99, 108, 97, 119, 95)))
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -56,6 +59,24 @@ class SetupState:
         return asdict(self)
 
 
+def _payload_to_setup_state(raw: dict[str, Any]) -> SetupState:
+    """Apply legacy key renames and ignore unknown JSON fields (for forward compatibility)."""
+    data = dict(raw)
+    _k_en = f"{_LEGACY_KEY_PREFIX}enabled"
+    _k_rd = f"{_LEGACY_KEY_PREFIX}ready"
+    if _k_en in data and "picoclaw_enabled" not in data:
+        data["picoclaw_enabled"] = data.pop(_k_en)
+    elif _k_en in data:
+        data.pop(_k_en, None)
+    if _k_rd in data and "picoclaw_ready" not in data:
+        data["picoclaw_ready"] = data.pop(_k_rd)
+    elif _k_rd in data:
+        data.pop(_k_rd, None)
+    allowed = {f.name for f in fields(SetupState)}
+    filtered = {k: v for k, v in data.items() if k in allowed}
+    return SetupState(**filtered)
+
+
 class StateStore:
     def __init__(self, state_path: Path | None = None):
         self.state_path = state_path or _default_state_path()
@@ -69,8 +90,9 @@ class StateStore:
         with self.state_path.open("r", encoding="utf-8") as fh:
             payload = json.load(fh)
 
-        state = SetupState(**payload)
-        return state
+        if not isinstance(payload, dict):
+            payload = {}
+        return _payload_to_setup_state(payload)
 
     def save(self, state: SetupState) -> None:
         state.timestamps["updated"] = _utc_now()

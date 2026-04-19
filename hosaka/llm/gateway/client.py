@@ -1,4 +1,4 @@
-"""OpenClaw Gateway WebSocket client.
+"""Picoclaw gateway WebSocket client.
 
 Responsibilities:
   - Open/close WebSocket to local gateway
@@ -87,8 +87,8 @@ class AuthError(GatewayError):
 EventCallback = Callable[[dict], None]
 
 
-class OpenClawGatewayClient:
-    """Synchronous WebSocket client for the OpenClaw Gateway."""
+class PicoclawGatewayClient:
+    """Synchronous WebSocket client for the local picoclaw gateway."""
 
     def __init__(
         self,
@@ -96,15 +96,9 @@ class OpenClawGatewayClient:
         token: str | None = None,
         password: str | None = None,
     ):
-        self._url = url or os.getenv("OPENCLAW_GATEWAY_URL", DEFAULT_GATEWAY_URL)
-        if not url and not os.getenv("OPENCLAW_GATEWAY_URL"):
-            self._url = os.getenv("PICOCLAW_GATEWAY_URL", self._url)
-        self._token = token or os.getenv("OPENCLAW_GATEWAY_TOKEN")
-        if not self._token:
-            self._token = os.getenv("PICOCLAW_GATEWAY_TOKEN")
-        self._password = password or os.getenv("OPENCLAW_GATEWAY_PASSWORD")
-        if not self._password:
-            self._password = os.getenv("PICOCLAW_GATEWAY_PASSWORD")
+        self._url = url or os.getenv("PICOCLAW_GATEWAY_URL", DEFAULT_GATEWAY_URL)
+        self._token = token or os.getenv("PICOCLAW_GATEWAY_TOKEN")
+        self._password = password or os.getenv("PICOCLAW_GATEWAY_PASSWORD")
         self._ws: Any = None
         self._state = ConnectionState.DISCONNECTED
         self._hello_payload: dict = {}
@@ -219,9 +213,7 @@ class OpenClawGatewayClient:
             self._state = ConnectionState.PAIRING_REQUIRED
             raise PairingRequiredError(
                 f"Device pairing required: {error_msg}\n"
-                "Run these commands to approve:\n"
-                "  openclaw devices list\n"
-                "  openclaw devices approve <requestId>",
+                "Approve the device from the gateway host (see picoclaw docs / gateway UI).",
                 code=error_code,
                 details=details,
             )
@@ -235,9 +227,9 @@ class OpenClawGatewayClient:
         self._state = ConnectionState.ERROR
         hint = ""
         if rec == "update_auth_credentials":
-            hint = "\nFix: check OPENCLAW_GATEWAY_TOKEN in your .env"
+            hint = "\nFix: check PICOCLAW_GATEWAY_TOKEN in your .env"
         elif rec == "update_auth_configuration":
-            hint = "\nFix: check gateway auth config with 'openclaw config get gateway.auth'"
+            hint = "\nFix: check picoclaw gateway auth in ~/.picoclaw/config.json"
         raise AuthError(f"Auth failed: {error_msg}{hint}", code=error_code, details=details)
 
     def _build_connect_params(self, challenge_nonce: str | None = None) -> dict:

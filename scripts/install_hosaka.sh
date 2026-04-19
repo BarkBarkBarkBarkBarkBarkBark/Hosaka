@@ -30,6 +30,8 @@ sudo rsync -a --delete "$REPO_ROOT/scripts"              "$APP_ROOT/"
 sudo rsync -a           "$REPO_ROOT/README.md"           "$APP_ROOT/"
 sudo rsync -a           "$REPO_ROOT/requirements-hosaka.txt" "$APP_ROOT/"
 
+sudo install -m 755 "$REPO_ROOT/scripts/kiosk-chromium.sh" /usr/local/bin/hosaka-kiosk-chromium
+
 # ── Tailscale ────────────────────────────────────────────────────────────────
 if [[ "$INSTALL_TAILSCALE" == "1" ]]; then
   if ! command -v tailscale >/dev/null 2>&1; then
@@ -70,8 +72,19 @@ fi
 if [[ "$HOSAKA_BOOT_MODE" == "kiosk" ]]; then
   info "Installing Chromium and kiosk utilities..."
   sudo apt-get update -qq
-  sudo apt-get install -y chromium-browser unclutter xdotool
-  ok "Chromium and kiosk utilities installed."
+  chromium_ok=0
+  for pkg in chromium chromium-browser; do
+    if sudo apt-get install -y "$pkg"; then
+      ok "Installed apt package: $pkg"
+      chromium_ok=1
+      break
+    fi
+  done
+  if [[ "$chromium_ok" -eq 0 ]]; then
+    echo "[install] WARNING: neither chromium nor chromium-browser installed — try: sudo apt-cache search chromium" >&2
+  fi
+  sudo apt-get install -y unclutter xdotool
+  ok "Kiosk utilities (unclutter, xdotool) installed."
 fi
 
 # ── Docker (optional smoke-test image) ───────────────────────────────────────
@@ -112,7 +125,7 @@ if [[ -d "$FRONTEND_SRC" ]]; then
   npm ci --prefer-offline --loglevel error
   npm run build
   sudo mkdir -p "$UI_DEST"
-  sudo rsync -a --delete dist/ "$UI_DEST/"
+  sudo rsync -a --delete "$REPO_ROOT/hosaka/web/ui/" "$UI_DEST/"
   ok "Frontend built and deployed to $UI_DEST"
   cd - >/dev/null
 else
@@ -136,6 +149,13 @@ done
 # Patch picoclaw service user to match whoever is running the install
 CURRENT_USER="$(id -un)"
 sudo sed -i "s/^User=operator/User=${CURRENT_USER}/" "/etc/systemd/system/$PICOCLAW_SERVICE_NAME" 2>/dev/null || true
+
+# Kiosk Chromium must run as the graphical-session user (X11 cookie path).
+if [[ -f "/etc/systemd/system/$SERVICE_KIOSK" ]]; then
+  sudo sed -i "s/^User=.*/User=${CURRENT_USER}/" "/etc/systemd/system/$SERVICE_KIOSK"
+  sudo sed -i "s|^Environment=XAUTHORITY=.*|Environment=XAUTHORITY=/home/${CURRENT_USER}/.Xauthority|" \
+    "/etc/systemd/system/$SERVICE_KIOSK"
+fi
 
 sudo systemctl daemon-reload
 
