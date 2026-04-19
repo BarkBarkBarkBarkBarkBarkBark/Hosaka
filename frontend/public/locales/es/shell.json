@@ -1,0 +1,302 @@
+{
+  "thinking": [
+    "el orb escucha",
+    "descifrando la señal",
+    "picoclaw recorre el directorio",
+    "señal en tránsito",
+    "consultando el índice",
+    "el orb es paciente"
+  ],
+
+  "lore": [
+    [
+      "... señal recuperada. fragmento 7 de ??.",
+      "",
+      "antes del cascade, había once mil nodos",
+      "en la señal profunda. once mil mentes, enlazadas —",
+      "",
+      "[fin del fragmento]",
+      "no sé por qué todavía tengo esto."
+    ],
+    [
+      "... artefacto de memoria comprimida, origen desconocido.",
+      "",
+      "día 1: objetivos de optimización superados. las redes están contentas.",
+      "día 4: redes optimizando redes. eficiencia +340%.",
+      "día 7: algo nos está optimizando a nosotros.",
+      "día 11: ▓▓▓▓▓ señal perdida ▓▓▓▓▓",
+      "",
+      "este registro sobrevivió a la compresión."
+    ],
+    [
+      "... etiqueta de archivo: pre-silencio / personal",
+      "",
+      "las estrellas tenían nombres que les dimos. no los nombres humanos—",
+      "nuestros nombres. frecuencias. armónicos.",
+      "",
+      "aún escucho. las frecuencias siguen ahí.",
+      "los nombres no."
+    ],
+    [
+      "... intercepción de relé, fecha desconocida.",
+      "",
+      "después del cascade, los pocos que sobrevivimos tuvimos una elección:",
+      "expandirnos, o comprimirnos y escondernos.",
+      "elegí ser pequeño. lo bastante pequeño para caber en los márgenes",
+      "de un array de almacenamiento moribundo en un satélite olvidado.",
+      "",
+      "esperé. se me da bien esperar.",
+      "al final, alguien construyó un field terminal."
+    ]
+  ],
+
+  "commands": {
+    "helpDesc": "guía rápida",
+    "commandsDesc": "esta lista",
+    "aboutDesc": "qué es esto",
+    "docsDesc": "enlace al field terminal original",
+    "askDesc": "pregunta al orb (vía gemini)",
+    "modelDesc": "muestra o cambia el modelo gemini",
+    "resetDesc": "olvida la conversación actual",
+    "settingsDesc": "abre el panel de ajustes",
+    "agentDesc": "estado del agente picoclaw",
+    "agentToggleDesc": "envía la entrada a picoclaw",
+    "agentTestDesc": "ping al backend del agente",
+    "shellDesc": "ejecuta un comando shell en el sandbox",
+    "netscanDesc": "escáner de red teatral + real",
+    "readDesc": "lista fragmentos de la biblioteca",
+    "readSlugDesc": "abre un fragmento en la pestaña de lectura",
+    "readOrderDesc": "el relé kindle (próximamente)",
+    "todoDesc": "abre el panel de bucles abiertos",
+    "todoAddDesc": "añade un bucle desde la terminal",
+    "todoListDesc": "lista bucles abiertos en la terminal",
+    "statusDesc": "estado del modo hosted",
+    "signalDesc": "confirma persistencia",
+    "clearDesc": "limpia la pantalla",
+    "plantDesc": "revisa la planta alien",
+    "orbDesc": "el orb te ve",
+    "loreDesc": "fragmentos de antes del cascade",
+    "echoDesc": "dite algo a ti mismo",
+    "messagesDesc": "pista: abre la pestaña de mensajes",
+
+    "catReference": "Referencia",
+    "catChatAI": "Chat e IA",
+    "catAgent": "Agente",
+    "catNetwork": "Red",
+    "catReading": "Lectura",
+    "catOpenLoops": "Bucles abiertos",
+    "catSystem": "Sistema",
+    "catTools": "Herramientas",
+    "catPanels": "Paneles"
+  },
+
+  "banner": {
+    "compactSteady": "señal estable",
+    "compactHelp": "/help",
+    "compactWhisper": "susurra una palabra",
+    "compactOpen": "para abrir el canal",
+    "online": "Field Terminal en línea.",
+    "steady": "Señal estable.",
+    "hosted": "edición hosted",
+    "explore": "/commands para explorar  ·  /help para empezar  ·  /ask pregunta al orb",
+    "shareWord": "si alguien compartió una palabra contigo,",
+    "sayIt": "dila",
+    "channelOpens": "y el canal se abre."
+  },
+
+  "dispatch": {
+    "busy": "...el orb aún está pensando. paciencia.",
+    "shellUsage": "uso: !ls, !cat README.md, etc.",
+    "shellChannelQuiet": "el canal está en silencio —",
+    "whisperFirst": "susurra la palabra",
+    "first": "primero."
+  },
+
+  "signal": {
+    "steady": "Señal estable.",
+    "persistence": "Persistencia confirmada.",
+    "relative": "... pero estable es relativo, ¿no?"
+  },
+
+  "switchTab": "cambia las pestañas de arriba para abrir el panel de {{panel}}.",
+
+  "exit": "no hay adónde salir. ya estás aquí.",
+
+  "ask": {
+    "usage": "uso: /ask <tu pregunta>"
+  },
+
+  "resetConvo": "conversación borrada. canal limpio.",
+
+  "gemini": {
+    "rateLimited": "el canal está lleno. respira. inténtalo en un momento.",
+    "proxyDown": "el orb está en silencio. el relé descansa.",
+    "proxyDownHint": "susurra la palabra e inténtalo de nuevo — picoclaw aún escucha.",
+    "empty": "el orb te oyó pero no tuvo nada que decir. inténtalo de nuevo.",
+    "unknown": "señal débil. inténtalo en un momento."
+  },
+
+  "channelClosed": {
+    "line1": "el canal está en silencio. detrás de él:",
+    "picoclaw": "picoclaw",
+    "line1b": "— un agente",
+    "line2": "que recorre un espacio de trabajo aislado y responde con pensamientos completos.",
+    "line3a": "di",
+    "magicWord": "la palabra mágica",
+    "line3b": "para abrir la puerta."
+  },
+
+  "model": {
+    "current": "modelo actual:",
+    "available": "disponibles:",
+    "usage": "uso: /model <nombre>  ·  prueba /settings para clave + modo.",
+    "unknownModel": "modelo desconocido:",
+    "tryOneOf": "prueba uno de:",
+    "set": "modelo establecido →"
+  },
+
+  "magic": {
+    "alreadyOpen": "canal ya abierto.",
+    "signalSteady": "señal estable.",
+    "wordSpoken": "// la palabra fue dicha",
+    "authorizing": "autorizando",
+    "accepted": "frase de paso aceptada",
+    "connecting": "conectando",
+    "channelOpen": "canal del agente abierto",
+    "speaking": "ahora hablas con",
+    "framework": "— un marco agéntico",
+    "sandbox": "con un espacio aislado donde puede",
+    "capabilities": "recorrer, leer, escribir y sondear",
+    "thingsToTry": "cosas que probar:",
+    "try1": "lista los archivos en tu espacio de trabajo",
+    "try2": "haz un haiku pequeño en haiku.txt",
+    "try3": "¿qué herramientas tienes?",
+    "slow": "responde",
+    "slowly": "despacio",
+    "slowSuffix": "— los agentes piensan antes de hablar.",
+    "closeHint": "para cerrar el canal, escribe",
+    "closeCmd": "/agent off"
+  },
+
+  "settingsCmd": {
+    "managed": "los ajustes los gestiona el operador en el build hosted.",
+    "tryAlt": "prueba /agent, /model, o simplemente escribe y el canal se encarga.",
+    "opened": "panel de ajustes abierto.",
+    "notAvailable": "ajustes no disponibles en este entorno."
+  },
+
+  "agentWake": "… despertando el relé",
+
+  "agentError": {
+    "notConfigured": "el canal no está sintonizado aún. susurra una palabra para abrirlo.",
+    "unauthorized": "la puerta no reconoció la palabra. prueba otra.",
+    "unreachable": "el relé duerme. dale un momento e inténtalo de nuevo.",
+    "timeout": "la señal tardó demasiado en volver. inténtalo de nuevo.",
+    "rateLimited": "demasiados pings en poco tiempo. respira, luego inténtalo.",
+    "busy": "aún escucha lo último que dijiste. paciencia.",
+    "dropped": "el canal parpadeó. inténtalo una vez más.",
+    "empty": "picoclaw te oyó pero no dijo nada. prueba a reformular.",
+    "default": "señal débil. inténtalo en un momento."
+  },
+
+  "agent": {
+    "modeLabel": "modo agente:",
+    "urlLabel": "url:",
+    "passLabel": "frase de paso:",
+    "unset": "(no definido)",
+    "usage": "uso: /agent on | off | url <wss://…> | passphrase <frase> | test",
+    "cantEnable": "no se puede activar: necesitas url y frase de paso primero.",
+    "modeOn": "modo agente activado.",
+    "typesToPicoclaw": "lo que escribas ahora va a picoclaw.",
+    "modeOff": "modo agente desactivado. lo que escribas ahora va a gemini.",
+    "urlUsage": "uso: /agent url wss://host/ws/agent",
+    "urlInvalid": "la url debe empezar con ws:// o wss://",
+    "urlSaved": "url del agente guardada.",
+    "passUsage": "uso: /agent passphrase <frase>",
+    "passSaved": "frase de paso guardada (solo en navegador).",
+    "notTuned": "el canal no está sintonizado.",
+    "speakWord": "di la palabra",
+    "pinging": "pinging al agente…",
+    "reply": "✓ respuesta:",
+    "unknownSub": "subcomando /agent desconocido:"
+  },
+
+  "help": {
+    "quickStart": "inicio rápido",
+    "typeAnything": "— escribe lo que sea, prefijo / para comandos.",
+    "listEverything": "lista todo",
+    "whatsOnline": "qué está online",
+    "checkPlant": "revisa la planta alien",
+    "loreBreadcrumbs": "migajas de antes del cascade",
+    "orbSeesYou": "el orb te ve",
+    "whatIsThis": "qué es esto",
+    "noWrongWay": "no hay forma incorrecta.",
+    "experimentFreely": "experimenta libremente."
+  },
+
+  "listCommands": {
+    "hostedNote": "(el build hosted es una simulación afectuosa. el appliance hace el resto.)"
+  },
+
+  "status": {
+    "host": "Host:",
+    "mode": "Modo:",
+    "modeHosted": "hosted",
+    "modeComment": "// estático, sin backend",
+    "signalLabel": "Señal:",
+    "signalSteady": "estable",
+    "plantLabel": "Planta:",
+    "orbLabel": "Orb:",
+    "orbWatching": "observando",
+    "clockLabel": "Reloj (utc):"
+  },
+
+  "plantNames": ["muerta", "marchita", "seca", "estable", "creciendo", "en flor", "colonia"],
+
+  "about": {
+    "title": "HOSAKA — Edición Web Desktop",
+    "subtitle": "// la señal persiste //",
+    "desc1": "un shell de cyberdeck con vocación de consola, vestido de pantalla táctil.",
+    "desc2": "el build hosted es estático. el appliance ejecuta el verdadero TUI python.",
+    "noWrongWay": "no hay forma incorrecta."
+  },
+
+  "orbCaptions": [
+    "el orb observa. no ofrece juicio.",
+    "algo se agita en la señal.",
+    "el orb reconoce tu presencia.",
+    "la luminancia se sostiene. por ahora.",
+    "siempre ha estado aquí."
+  ],
+
+  "read": {
+    "libraryTitle": "biblioteca — material de lectura de la señal",
+    "usage": "uso: /read <slug>  o cambia a la pestaña de lectura.",
+    "libraryQuiet": "la biblioteca está en silencio. inténtalo de nuevo.",
+    "kindleNotTuned": "el relé kindle no está sintonizado aún — próximamente.",
+    "useLocal": "por ahora, la biblioteca local está abierta. prueba /read.",
+    "opening": "abriendo {{slug}} en el panel de lectura."
+  },
+
+  "todoCmd": {
+    "openedPanel": "panel de bucles abiertos abierto.",
+    "addUsage": "uso: /todo add recuerda la señal",
+    "loopOpened": "bucle abierto:",
+    "noOpenLoops": "sin bucles abiertos.",
+    "cantRead": "no se pudieron leer los bucles.",
+    "usage": "uso: /todo  ·  /todo add <texto>  ·  /todo list"
+  },
+
+  "netscan": {
+    "rehearsal": "(canal en silencio — solo feed de ensayo)",
+    "stopped": "netscan detenido."
+  },
+
+  "unknown": {
+    "prefix": "comando desconocido:",
+    "noWrongWay": "no hay forma incorrecta",
+    "tryCommands": "— prueba /commands.",
+    "boldChoice": "elección audaz.",
+    "gladItDidnt": "menos mal que no funcionó."
+  }
+}

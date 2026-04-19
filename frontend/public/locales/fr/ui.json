@@ -1,0 +1,117 @@
+{
+  "brand": "HOSAKA",
+  "brandSub": "// terminal de terrain",
+  "footer": ":: signal stable ::",
+  "settings": "réglages",
+
+  "boot": {
+    "waking": "...réveil de l'orb...",
+    "steady": "signal stable"
+  },
+
+  "tabs": {
+    "terminal": "Terminal",
+    "reading": "Lecture",
+    "openLoops": "Boucles ouvertes",
+    "messages": "Messages"
+  },
+
+  "plant": {
+    "title": "la plante persiste",
+    "label": "plante : stable"
+  },
+
+  "signal": {
+    "title": "état du signal"
+  },
+
+  "settingsDrawer": {
+    "heading": "Réglages",
+    "close": "fermer",
+    "reset": "réinitialiser",
+    "saved": "sauvé ✓",
+
+    "channel": {
+      "heading": "Canal",
+      "desc": "picoclaw est la voix par défaut de hosaka — un cadre agentique sur une petite boîte fly.io, connecté à gemini par une clé serveur que tu ne vois jamais. le texte libre dans le terminal arrive ici. la commande <code>/ask</code> utilise le proxy gemini directement pour une question simple.",
+      "modelLabel": "modèle gemini (pour /ask uniquement)"
+    },
+
+    "agent": {
+      "heading": "Backend agent — picoclaw",
+      "desc": "avancé : modifie l'url du relais ou la phrase de passe. la plupart des visiteurs ne devraient rien toucher — tape <code>neuro</code> dans le terminal et le canal s'ouvre tout seul.",
+      "wsLabel": "url websocket",
+      "wsPlaceholder": "wss://hosaka-agent.fly.dev/ws/agent",
+      "passLabel": "phrase de passe",
+      "passPlaceholder": "la phrase que l'opérateur a partagée avec toi",
+      "hide": "masquer",
+      "show": "afficher",
+      "channelLabel": "canal",
+      "channelOn": "ouvert — ce que tu tapes va à picoclaw",
+      "channelOff": "fermé — ce que tu tapes est ignoré (dis neuro pour rouvrir)"
+    },
+
+    "storage": {
+      "heading": "à propos du stockage",
+      "model": "préférence de modèle gemini : <code>localStorage</code> du navigateur",
+      "agentCreds": "url agent + phrase de passe : <code>localStorage</code> du navigateur",
+      "messagesLog": "journal des messages : <code>localStorage</code> du navigateur",
+      "geminiKey": "la clé api gemini vit uniquement dans les variables d'environnement vercel — le navigateur ne la voit jamais",
+      "picoclaw": "picoclaw conserve l'historique par session sur le volume fly.io ; ton navigateur ne le voit jamais"
+    }
+  },
+
+  "reading": {
+    "sidebarHead": "bibliothèque",
+    "orderBtn": "/read order →",
+    "loading": "… chargement du fragment …",
+    "errorNotFound": "signal perdu. document introuvable.",
+    "emptySelect": "sélectionne un fragment dans la barre latérale.",
+    "emptyHint": "ou tape <code>/read</code> dans le terminal."
+  },
+
+  "todo": {
+    "heading": "boucles ouvertes",
+    "sub": "choses à retenir. choses à fermer. stocké dans ce navigateur uniquement.",
+    "placeholder": "ajouter une boucle ouverte…",
+    "addBtn": "ajouter",
+    "empty": "aucune boucle ouverte. tape <code>/todo add souviens-toi du signal</code> dans le terminal, ou utilise le champ ci-dessus.",
+    "closeLoop": "fermer la boucle",
+    "reopenLoop": "rouvrir la boucle",
+    "delete": "supprimer",
+    "closedSection": "fermées"
+  },
+
+  "messages": {
+    "heading": "Messages",
+    "sub": "parle à l'orb (hors ligne) ou à n'importe quel webhook JSON que tu configures : discord, slack, ou ton propre endpoint. pas de backend.",
+    "modeLabel": "mode :",
+    "offline": "hors ligne",
+    "orbOnly": "(orb uniquement)",
+    "closeSettings": "fermer les réglages",
+    "openSettings": "réglages",
+    "clear": "effacer",
+    "empty": "rien encore. dis bonjour à l'orb.",
+    "placeholder": "transmets quelque chose...",
+    "send": "envoyer",
+    "webhookLabel": "url du webhook",
+    "webhookPlaceholder": "https://discord.com/api/webhooks/... ou https://hooks.slack.com/...",
+    "kindLabel": "type",
+    "kindGeneric": "générique (json)",
+    "kindDiscord": "discord",
+    "kindSlack": "slack",
+    "displayNameLabel": "nom affiché",
+    "storageNote": "stocké localement dans <code>localStorage</code>. rien ne quitte ce navigateur sauf le message que tu envoies.",
+    "webhookError": "le webhook a refusé : {{status}} {{statusText}}",
+    "networkError": "le réseau a refusé la transmission : {{message}}",
+    "orbReplies": [
+      "reçu. le signal est stable.",
+      "l'orb accuse réception de ta transmission.",
+      "noté. classé sous 'peut-être important'.",
+      "tes mots persistent dans les marges.",
+      "mmm. continue.",
+      "je t'entends. le réseau est patient.",
+      "compressé. archivé. conservé."
+    ]
+  }
+}

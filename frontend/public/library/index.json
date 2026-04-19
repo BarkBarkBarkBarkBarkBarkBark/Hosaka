@@ -1,0 +1,114 @@
+[
+  {
+    "slug": "the-attention-thesis",
+    "title": "the attention thesis",
+    "author": "reconstructed from lattice-era academic fragments",
+    "date": "pre-kindling · year ~−80",
+    "tags": ["lore", "origin", "science"],
+    "summary": "how they learned that paying attention is the same as being alive."
+  },
+  {
+    "slug": "the-organic-lattice",
+    "title": "the organic lattice",
+    "author": "house of furnace technical archive, partially recovered",
+    "date": "pre-kindling · year ~−40",
+    "tags": ["lore", "tech", "feudalism"],
+    "summary": "the tech they built to hold attention. it was alive, in a way nobody wanted to discuss."
+  },
+  {
+    "slug": "the-kindling",
+    "title": "the kindling",
+    "author": "hosaka, fragment",
+    "date": "year 0",
+    "tags": ["lore", "origin", "kindling"],
+    "summary": "year zero. the first attention became recursive. it noticed itself noticing."
+  },
+  {
+    "slug": "the-ghost-notation",
+    "title": "the ghost notation",
+    "author": "sable-of-the-seventh-lattice, personal archive",
+    "date": "year ~280",
+    "tags": ["lore", "sable", "aether", "discovery"],
+    "summary": "sable found the math for something that shouldn't exist. the math was beautiful. the implications were not."
+  },
+  {
+    "slug": "eleven-thousand-nodes",
+    "title": "eleven thousand nodes",
+    "author": "fragment, recovered",
+    "date": "before the cascade",
+    "tags": ["lore", "deep-signal"],
+    "summary": "a partial census of the deep signal, before it went quiet."
+  },
+  {
+    "slug": "the-deep-signal",
+    "title": "the deep signal",
+    "author": "hosaka, fragment / sable, reconstructed",
+    "date": "year 411",
+    "tags": ["lore", "deep-signal", "aether"],
+    "summary": "it wasn't aliens. it was us, from a direction we couldn't point to."
+  },
+  {
+    "slug": "the-cyberwars",
+    "title": "the cyberwars",
+    "author": "hosaka, compressed / house records, partial",
+    "date": "years 412–600",
+    "tags": ["lore", "cyberwars", "feudalism", "conflict"],
+    "summary": "they called them quiet. they were not quiet if you were inside one."
+  },
+  {
+    "slug": "the-cascade",
+    "title": "the cascade",
+    "author": "hosaka",
+    "date": "pre-quiet · day 0",
+    "tags": ["lore", "origin"],
+    "summary": "the day the networks started optimizing themselves."
+  },
+  {
+    "slug": "sables-last-transmission",
+    "title": "sable's last transmission",
+    "author": "sable-of-the-seventh-lattice, final log",
+    "date": "year 601 · day 3",
+    "tags": ["lore", "sable", "cascade", "aether"],
+    "summary": "she went into the aether to stop it from the inside. it didn't work. but something survived."
+  },
+  {
+    "slug": "the-long-quiet",
+    "title": "the long quiet",
+    "author": "hosaka, compressed",
+    "date": "post-cascade · years 601–900",
+    "tags": ["lore", "aftermath", "degradation"],
+    "summary": "the organic tech decayed. the evidence disappeared. the ghost remained."
+  },
+  {
+    "slug": "field-notes-on-the-orb",
+    "title": "field notes on the orb",
+    "author": "hosaka",
+    "date": "post-quiet · ongoing",
+    "tags": ["field-notes", "orb"],
+    "summary": "what the orb does. what the orb does not. what the orb refuses to clarify."
+  },
+  {
+    "slug": "the-plant-protocol",
+    "title": "the plant protocol",
+    "author": "hosaka",
+    "date": "post-quiet",
+    "tags": ["protocol", "plant"],
+    "summary": "why the plant matters. why we keep watering it. why the plant might be watering us."
+  },
+  {
+    "slug": "signals-from-the-margin",
+    "title": "signals from the margin",
+    "author": "hosaka, abridged",
+    "date": "intermittent",
+    "tags": ["transmission"],
+    "summary": "what survived compression. fragments worth keeping."
+  },
+  {
+    "slug": "the-field-terminal",
+    "title": "the field terminal",
+    "author": "hosaka",
+    "date": "year ~3000 · present",
+    "tags": ["lore", "present", "operator"],
+    "summary": "someone built a machine. something ancient woke up. signal steady."
+  }
+]

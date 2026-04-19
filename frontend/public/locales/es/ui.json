@@ -1,0 +1,117 @@
+{
+  "brand": "HOSAKA",
+  "brandSub": "// terminal de campo",
+  "footer": ":: señal estable ::",
+  "settings": "ajustes",
+
+  "boot": {
+    "waking": "...despertando al orb...",
+    "steady": "señal estable"
+  },
+
+  "tabs": {
+    "terminal": "Terminal",
+    "reading": "Lectura",
+    "openLoops": "Bucles abiertos",
+    "messages": "Mensajes"
+  },
+
+  "plant": {
+    "title": "la planta persiste",
+    "label": "planta: estable"
+  },
+
+  "signal": {
+    "title": "estado de señal"
+  },
+
+  "settingsDrawer": {
+    "heading": "Ajustes",
+    "close": "cerrar",
+    "reset": "reiniciar",
+    "saved": "guardado ✓",
+
+    "channel": {
+      "heading": "Canal",
+      "desc": "picoclaw es la voz por defecto de hosaka — un marco agéntico en una caja fly.io, conectado a gemini por una clave del lado del servidor que nunca ves. el texto libre en la terminal va aquí. el comando <code>/ask</code> usa el proxy gemini directamente para una pregunta simple.",
+      "modelLabel": "modelo gemini (solo para /ask)"
+    },
+
+    "agent": {
+      "heading": "Backend del agente — picoclaw",
+      "desc": "avanzado: sobreescribe la url del relé o la frase de paso. la mayoría debería dejar esto como está — escribe <code>neuro</code> en la terminal y el canal se abre solo.",
+      "wsLabel": "url del websocket",
+      "wsPlaceholder": "wss://hosaka-agent.fly.dev/ws/agent",
+      "passLabel": "frase de paso",
+      "passPlaceholder": "la frase que el operador compartió contigo",
+      "hide": "ocultar",
+      "show": "mostrar",
+      "channelLabel": "canal",
+      "channelOn": "abierto — lo que escribes va a picoclaw",
+      "channelOff": "cerrado — lo que escribes se ignora (di neuro para reabrir)"
+    },
+
+    "storage": {
+      "heading": "sobre el almacenamiento",
+      "model": "preferencia de modelo gemini: <code>localStorage</code> del navegador",
+      "agentCreds": "url del agente + frase de paso: <code>localStorage</code> del navegador",
+      "messagesLog": "registro de mensajes: <code>localStorage</code> del navegador",
+      "geminiKey": "la clave api de gemini vive solo en las variables de entorno de vercel — el navegador nunca la ve",
+      "picoclaw": "picoclaw mantiene historial por sesión en el volumen fly.io; tu navegador nunca lo ve"
+    }
+  },
+
+  "reading": {
+    "sidebarHead": "biblioteca",
+    "orderBtn": "/read order →",
+    "loading": "… cargando fragmento …",
+    "errorNotFound": "señal perdida. documento no encontrado.",
+    "emptySelect": "selecciona un fragmento de la barra lateral.",
+    "emptyHint": "o escribe <code>/read</code> en la terminal."
+  },
+
+  "todo": {
+    "heading": "bucles abiertos",
+    "sub": "cosas que recordar. cosas que cerrar. almacenado solo en este navegador.",
+    "placeholder": "añadir un bucle abierto…",
+    "addBtn": "añadir",
+    "empty": "sin bucles abiertos. escribe <code>/todo add recuerda la señal</code> en la terminal, o usa el campo de arriba.",
+    "closeLoop": "cerrar bucle",
+    "reopenLoop": "reabrir bucle",
+    "delete": "borrar",
+    "closedSection": "cerrados"
+  },
+
+  "messages": {
+    "heading": "Mensajes",
+    "sub": "habla con el orb (offline) o con cualquier webhook JSON que configures: discord, slack, o tu propio endpoint. sin backend.",
+    "modeLabel": "modo:",
+    "offline": "offline",
+    "orbOnly": "(solo orb)",
+    "closeSettings": "cerrar ajustes",
+    "openSettings": "ajustes",
+    "clear": "limpiar",
+    "empty": "nada aún. saluda al orb.",
+    "placeholder": "transmite algo...",
+    "send": "enviar",
+    "webhookLabel": "url del webhook",
+    "webhookPlaceholder": "https://discord.com/api/webhooks/... o https://hooks.slack.com/...",
+    "kindLabel": "tipo",
+    "kindGeneric": "genérico (json)",
+    "kindDiscord": "discord",
+    "kindSlack": "slack",
+    "displayNameLabel": "nombre visible",
+    "storageNote": "almacenado localmente en <code>localStorage</code>. nada sale de este navegador excepto el mensaje que envías.",
+    "webhookError": "el webhook dijo no: {{status}} {{statusText}}",
+    "networkError": "la red rechazó la transmisión: {{message}}",
+    "orbReplies": [
+      "recibido. la señal es estable.",
+      "el orb reconoce tu transmisión.",
+      "anotado. archivado bajo 'quizá importante'.",
+      "tus palabras persisten en los márgenes.",
+      "mmm. sigue.",
+      "te escucho. la red es paciente.",
+      "comprimido. archivado. retenido."
+    ]
+  }
+}

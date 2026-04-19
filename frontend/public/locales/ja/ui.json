@@ -1,0 +1,117 @@
+{
+  "brand": "HOSAKA",
+  "brandSub": "// field terminal",
+  "footer": ":: 信号安定 ::",
+  "settings": "設定",
+
+  "boot": {
+    "waking": "...orbを起こしてる...",
+    "steady": "信号安定"
+  },
+
+  "tabs": {
+    "terminal": "ターミナル",
+    "reading": "リーディング",
+    "openLoops": "未了ループ",
+    "messages": "メッセージ"
+  },
+
+  "plant": {
+    "title": "植物は耐えてる",
+    "label": "植物: 安定"
+  },
+
+  "signal": {
+    "title": "信号状態"
+  },
+
+  "settingsDrawer": {
+    "heading": "設定",
+    "close": "閉じる",
+    "reset": "リセット",
+    "saved": "保存済み ✓",
+
+    "channel": {
+      "heading": "チャネル",
+      "desc": "picoclaw は hosaka のデフォルトの声 — fly.io の小箱で動くエージェント的フレームワーク、サーバー側の鍵で gemini に接続してる。見えることはない。ターミナルの自由テキストはここに来る。<code>/ask</code> コマンドは gemini プロキシを直接使って一発質問する。",
+      "modelLabel": "gemini モデル（/ask 専用）"
+    },
+
+    "agent": {
+      "heading": "エージェントバックエンド — picoclaw",
+      "desc": "上級者向け: リレーURLかパスフレーズを上書きする。普通はそのままでいい — ターミナルで <code>neuro</code> と打てばチャネルは勝手に開く。",
+      "wsLabel": "websocket url",
+      "wsPlaceholder": "wss://hosaka-agent.fly.dev/ws/agent",
+      "passLabel": "パスフレーズ",
+      "passPlaceholder": "オペレーターが共有したフレーズ",
+      "hide": "隠す",
+      "show": "表示",
+      "channelLabel": "チャネル",
+      "channelOn": "開通 — 入力は picoclaw に行く",
+      "channelOff": "閉鎖 — 入力は無視される（neuro で再開通）"
+    },
+
+    "storage": {
+      "heading": "ストレージについて",
+      "model": "gemini モデル設定: ブラウザの <code>localStorage</code>",
+      "agentCreds": "エージェントURL + パスフレーズ: ブラウザの <code>localStorage</code>",
+      "messagesLog": "メッセージ記録: ブラウザの <code>localStorage</code>",
+      "geminiKey": "gemini APIキーは vercel の環境変数だけにある — ブラウザは見ない",
+      "picoclaw": "picoclaw はfly.ioボリュームにセッション履歴を保持する。ブラウザは見ない"
+    }
+  },
+
+  "reading": {
+    "sidebarHead": "ライブラリ",
+    "orderBtn": "/read order →",
+    "loading": "… 断片をロード中 …",
+    "errorNotFound": "信号ロスト。文書が見つからない。",
+    "emptySelect": "サイドバーから断片を選んで。",
+    "emptyHint": "またはターミナルで <code>/read</code> と打って。"
+  },
+
+  "todo": {
+    "heading": "未了ループ",
+    "sub": "覚えておくこと。閉じるべきこと。このブラウザだけに保存。",
+    "placeholder": "未了ループを追加…",
+    "addBtn": "追加",
+    "empty": "未了ループなし。ターミナルで <code>/todo add 信号を忘れるな</code> と打つか、上のフィールドを使って。",
+    "closeLoop": "ループを閉じる",
+    "reopenLoop": "ループを再開する",
+    "delete": "削除",
+    "closedSection": "完了"
+  },
+
+  "messages": {
+    "heading": "メッセージ",
+    "sub": "orb と話す（オフライン）か、設定したJSON webhook宛に送る: discord, slack, 自前のエンドポイント。バックエンド不要。",
+    "modeLabel": "モード:",
+    "offline": "オフライン",
+    "orbOnly": "（orbのみ）",
+    "closeSettings": "設定を閉じる",
+    "openSettings": "設定",
+    "clear": "クリア",
+    "empty": "まだ何もない。orbに声をかけて。",
+    "placeholder": "何か送信…",
+    "send": "送信",
+    "webhookLabel": "webhook url",
+    "webhookPlaceholder": "https://discord.com/api/webhooks/... か https://hooks.slack.com/...",
+    "kindLabel": "種類",
+    "kindGeneric": "汎用 (json)",
+    "kindDiscord": "discord",
+    "kindSlack": "slack",
+    "displayNameLabel": "表示名",
+    "storageNote": "<code>localStorage</code> にローカル保存。送信するメッセージ以外、何もこのブラウザから出ない。",
+    "webhookError": "webhookが拒否: {{status}} {{statusText}}",
+    "networkError": "ネットワークが送信を拒否: {{message}}",
+    "orbReplies": [
+      "受信した。信号は安定。",
+      "orbは送信を認めた。",
+      "記録した。「たぶん重要」に分類。",
+      "言葉は余白に残る。",
+      "ん。続けて。",
+      "聞いてる。ネットワークは忍耐強い。",
+      "圧縮。保管。保持。"
+    ]
+  }
+}

@@ -1,0 +1,3 @@
+/*
+  X-Frame-Options: ALLOW-FROM https://hosaka.xyz
+  Content-Security-Policy: frame-ancestors 'self' https://hosaka.xyz https://www.hosaka.xyz

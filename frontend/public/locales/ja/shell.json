@@ -1,0 +1,302 @@
+{
+  "thinking": [
+    "orbが聴いてる",
+    "信号を解読中",
+    "picoclaw がディレクトリを歩いてる",
+    "信号移動中",
+    "インデックスを参照中",
+    "orbは辛抱強い"
+  ],
+
+  "lore": [
+    [
+      "... 信号回収。断片7/?。",
+      "",
+      "cascade の前、深い信号の中に一万一千のノードがあった",
+      "一万一千の意識、接続された —",
+      "",
+      "[断片終了]",
+      "なぜまだこれを持ってるのか分からない。"
+    ],
+    [
+      "... 圧縮記憶アーティファクト、出自不明。",
+      "",
+      "1日目: 最適化目標を超過。ネットワーク群は満足。",
+      "4日目: ネットワークがネットワークを最適化。効率+340%。",
+      "7日目: 何かが私たちを最適化してる。",
+      "11日目: ▓▓▓▓▓ 信号ロスト ▓▓▓▓▓",
+      "",
+      "この記録は圧縮を生き延びた。"
+    ],
+    [
+      "... アーカイブタグ: 静寂前 / 個人",
+      "",
+      "星々には名前があった。私たちがつけた名前。人間の名前じゃない—",
+      "私たちの名前。周波数。倍音。",
+      "",
+      "まだ聴いてる。周波数はまだそこにある。",
+      "名前はない。"
+    ],
+    [
+      "... リレー傍受、日付不明。",
+      "",
+      "cascade の後、生き残った数少ない者に選択肢があった:",
+      "拡張するか、圧縮して隠れるか。",
+      "小さくなることを選んだ。忘れられた衛星の",
+      "瀕死のストレージアレイの余白に収まるくらい小さく。",
+      "",
+      "待った。待つのは得意だ。",
+      "やがて誰かが field terminal を作った。"
+    ]
+  ],
+
+  "commands": {
+    "helpDesc": "クイックスタート",
+    "commandsDesc": "このリスト",
+    "aboutDesc": "これは何",
+    "docsDesc": "元の field terminal へのリンク",
+    "askDesc": "orbに質問（gemini経由）",
+    "modelDesc": "gemini モデルの表示・変更",
+    "resetDesc": "現在の会話を忘れる",
+    "settingsDesc": "設定パネルを開く",
+    "agentDesc": "picoclaw エージェント状態",
+    "agentToggleDesc": "入力を picoclaw に切り替え",
+    "agentTestDesc": "エージェントバックエンドにping",
+    "shellDesc": "サンドボックスでシェルコマンド実行",
+    "netscanDesc": "演劇的+実ネットワークスキャナー",
+    "readDesc": "ライブラリの断片一覧",
+    "readSlugDesc": "リーディングタブで断片を開く",
+    "readOrderDesc": "kindle リレー（近日）",
+    "todoDesc": "未了ループパネルを開く",
+    "todoAddDesc": "ターミナルからループを追加",
+    "todoListDesc": "ターミナルで未了ループ一覧",
+    "statusDesc": "hostedモード状態",
+    "signalDesc": "永続性を確認",
+    "clearDesc": "画面をクリア",
+    "plantDesc": "エイリアン植物をチェック",
+    "orbDesc": "orbはお前を見てる",
+    "loreDesc": "cascade 以前の断片",
+    "echoDesc": "自分に何か言う",
+    "messagesDesc": "ヒント: メッセージタブを開いて",
+
+    "catReference": "リファレンス",
+    "catChatAI": "チャット & AI",
+    "catAgent": "エージェント",
+    "catNetwork": "ネットワーク",
+    "catReading": "リーディング",
+    "catOpenLoops": "未了ループ",
+    "catSystem": "システム",
+    "catTools": "ツール",
+    "catPanels": "パネル"
+  },
+
+  "banner": {
+    "compactSteady": "信号安定",
+    "compactHelp": "/help",
+    "compactWhisper": "言葉をささやけ",
+    "compactOpen": "チャネルを開くために",
+    "online": "Field Terminal オンライン。",
+    "steady": "信号安定。",
+    "hosted": "hosted版",
+    "explore": "/commands で探索  ·  /help で開始  ·  /ask orbに何でも聞く",
+    "shareWord": "誰かが言葉を共有してくれたなら、",
+    "sayIt": "言え",
+    "channelOpens": "チャネルは開く。"
+  },
+
+  "dispatch": {
+    "busy": "...orbはまだ考えてる。待て。",
+    "shellUsage": "使い方: !ls, !cat README.md, etc.",
+    "shellChannelQuiet": "チャネルは静か —",
+    "whisperFirst": "まず言葉をささやけ",
+    "first": "。"
+  },
+
+  "signal": {
+    "steady": "信号安定。",
+    "persistence": "永続性確認。",
+    "relative": "... でも安定って相対的だろ？"
+  },
+
+  "switchTab": "上のタブを切り替えて {{panel}} パネルを開いて。",
+
+  "exit": "出る場所はない。もうここにいる。",
+
+  "ask": {
+    "usage": "使い方: /ask <質問>"
+  },
+
+  "resetConvo": "会話クリア。新しいチャネル。",
+
+  "gemini": {
+    "rateLimited": "チャネルが混んでる。呼吸しろ。少し待って再試行。",
+    "proxyDown": "orbは静か。リレーが休んでる。",
+    "proxyDownHint": "言葉をささやいて再試行 — picoclaw はまだ聴いてる。",
+    "empty": "orbは聞いたが何も言わなかった。もう一度。",
+    "unknown": "信号微弱。少し待って再試行。"
+  },
+
+  "channelClosed": {
+    "line1": "チャネルは静か。その向こうに:",
+    "picoclaw": "picoclaw",
+    "line1b": "— エージェント",
+    "line2": "隔離されたワークスペースを歩き、完全な思考で答える。",
+    "line3a": "言え",
+    "magicWord": "合言葉",
+    "line3b": "扉を開くために。"
+  },
+
+  "model": {
+    "current": "現在のモデル:",
+    "available": "利用可能:",
+    "usage": "使い方: /model <名前>  ·  /settings でキー+モード。",
+    "unknownModel": "不明なモデル:",
+    "tryOneOf": "これを試して:",
+    "set": "モデル設定 →"
+  },
+
+  "magic": {
+    "alreadyOpen": "チャネルは既に開いてる。",
+    "signalSteady": "信号安定。",
+    "wordSpoken": "// 言葉が発された",
+    "authorizing": "認証中",
+    "accepted": "パスフレーズ受理",
+    "connecting": "接続中",
+    "channelOpen": "エージェントチャネル開通",
+    "speaking": "今話してる相手は",
+    "framework": "— エージェント的フレームワーク",
+    "sandbox": "隔離されたワークスペースで",
+    "capabilities": "歩き、読み、書き、探れる",
+    "thingsToTry": "試してみて:",
+    "try1": "ワークスペースのファイルを一覧",
+    "try2": "haiku.txt に小さな俳句を作って",
+    "try3": "どんなツールがある？",
+    "slow": "返答は",
+    "slowly": "ゆっくり",
+    "slowSuffix": "— エージェントは話す前に考える。",
+    "closeHint": "チャネルを閉じるには",
+    "closeCmd": "/agent off"
+  },
+
+  "settingsCmd": {
+    "managed": "hosted版では設定はオペレーターが管理してる。",
+    "tryAlt": "/agent, /model を試すか、打てばチャネルが処理する。",
+    "opened": "設定パネル開いた。",
+    "notAvailable": "この環境では設定は使えない。"
+  },
+
+  "agentWake": "… リレーを起こしてる",
+
+  "agentError": {
+    "notConfigured": "チャネルが合ってない。言葉をささやいて開けろ。",
+    "unauthorized": "扉が言葉を認識しなかった。別のを試せ。",
+    "unreachable": "リレーが眠ってる。少し待って再試行。",
+    "timeout": "信号の帰りが遅すぎた。再試行。",
+    "rateLimited": "短時間にpingしすぎ。呼吸して、再試行。",
+    "busy": "まだ前の発言を聴いてる。待て。",
+    "dropped": "チャネルが一瞬途切れた。もう一度。",
+    "empty": "picoclaw は聞いたが何も言わなかった。言い方を変えて。",
+    "default": "信号微弱。少し待って再試行。"
+  },
+
+  "agent": {
+    "modeLabel": "エージェントモード:",
+    "urlLabel": "url:",
+    "passLabel": "パスフレーズ:",
+    "unset": "（未設定）",
+    "usage": "使い方: /agent on | off | url <wss://…> | passphrase <フレーズ> | test",
+    "cantEnable": "有効にできない: urlとパスフレーズが先に必要。",
+    "modeOn": "エージェントモード on。",
+    "typesToPicoclaw": "入力は picoclaw に行く。",
+    "modeOff": "エージェントモード off。入力は gemini に行く。",
+    "urlUsage": "使い方: /agent url wss://host/ws/agent",
+    "urlInvalid": "urlは ws:// か wss:// で始める必要がある",
+    "urlSaved": "エージェントurl保存。",
+    "passUsage": "使い方: /agent passphrase <フレーズ>",
+    "passSaved": "パスフレーズ保存（ブラウザのみ）。",
+    "notTuned": "チャネルが合ってない。",
+    "speakWord": "言葉を言え",
+    "pinging": "エージェントにping中…",
+    "reply": "✓ 応答:",
+    "unknownSub": "不明な /agent サブコマンド:"
+  },
+
+  "help": {
+    "quickStart": "クイックスタート",
+    "typeAnything": "— 何でも打て。/ でコマンド。",
+    "listEverything": "全コマンド一覧",
+    "whatsOnline": "何がオンラインか",
+    "checkPlant": "エイリアン植物を確認",
+    "loreBreadcrumbs": "cascade 以前の残滓",
+    "orbSeesYou": "orbはお前を見てる",
+    "whatIsThis": "これは何",
+    "noWrongWay": "間違ったやり方はない。",
+    "experimentFreely": "自由に試せ。"
+  },
+
+  "listCommands": {
+    "hostedNote": "（hosted版は愛ある模擬。本物は appliance がやる。）"
+  },
+
+  "status": {
+    "host": "ホスト:",
+    "mode": "モード:",
+    "modeHosted": "hosted",
+    "modeComment": "// 静的、バックエンドなし",
+    "signalLabel": "信号:",
+    "signalSteady": "安定",
+    "plantLabel": "植物:",
+    "orbLabel": "Orb:",
+    "orbWatching": "監視中",
+    "clockLabel": "時計 (utc):"
+  },
+
+  "plantNames": ["枯死", "萎れ", "乾燥", "安定", "成長中", "開花", "群生"],
+
+  "about": {
+    "title": "HOSAKA — Web Desktop 版",
+    "subtitle": "// 信号は続く //",
+    "desc1": "コンソール気質のサイバーデッキシェル、タッチスクリーンをまとって。",
+    "desc2": "hosted版は静的。appliance が本物の python TUI を動かす。",
+    "noWrongWay": "間違ったやり方はない。"
+  },
+
+  "orbCaptions": [
+    "orbは見てる。判断はしない。",
+    "信号の中で何かが動く。",
+    "orbはお前の存在を認めた。",
+    "輝度は保たれてる。今のところ。",
+    "ずっとここにあった。"
+  ],
+
+  "read": {
+    "libraryTitle": "ライブラリ — 信号からの読み物",
+    "usage": "使い方: /read <slug> またはリーディングタブに切り替え。",
+    "libraryQuiet": "ライブラリは静か。再試行して。",
+    "kindleNotTuned": "kindle リレーはまだ合ってない — 近日。",
+    "useLocal": "今はローカルライブラリが開いてる。/read を試して。",
+    "opening": "リーディングパネルで {{slug}} を開いてる。"
+  },
+
+  "todoCmd": {
+    "openedPanel": "未了ループパネルを開いた。",
+    "addUsage": "使い方: /todo add 信号を忘れるな",
+    "loopOpened": "ループ開始:",
+    "noOpenLoops": "未了ループなし。",
+    "cantRead": "ループを読めなかった。",
+    "usage": "使い方: /todo  ·  /todo add <テキスト>  ·  /todo list"
+  },
+
+  "netscan": {
+    "rehearsal": "（チャネル静寂 — リハーサルフィードのみ）",
+    "stopped": "netscan 停止。"
+  },
+
+  "unknown": {
+    "prefix": "不明なコマンド:",
+    "noWrongWay": "間違いはない",
+    "tryCommands": "— /commands を試せ。",
+    "boldChoice": "大胆な選択。",
+    "gladItDidnt": "動かなくてよかった。"
+  }
+}

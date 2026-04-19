@@ -1,0 +1,117 @@
+{
+  "brand": "HOSAKA",
+  "brandSub": "// field terminal",
+  "footer": ":: signal steady ::",
+  "settings": "settings",
+
+  "boot": {
+    "waking": "...waking the orb...",
+    "steady": "signal steady"
+  },
+
+  "tabs": {
+    "terminal": "Terminal",
+    "reading": "Reading",
+    "openLoops": "Open Loops",
+    "messages": "Messages"
+  },
+
+  "plant": {
+    "title": "the plant persists",
+    "label": "plant: stable"
+  },
+
+  "signal": {
+    "title": "signal status"
+  },
+
+  "settingsDrawer": {
+    "heading": "Settings",
+    "close": "close",
+    "reset": "reset",
+    "saved": "saved ✓",
+
+    "channel": {
+      "heading": "Channel",
+      "desc": "picoclaw is the default voice of hosaka — an agentic framework running on a tiny fly.io box, wired to gemini by a server-side key you never see. free text in the terminal goes here. the <code>/ask</code> command uses the gemini proxy directly for a plain one-shot question.",
+      "modelLabel": "gemini model (for /ask only)"
+    },
+
+    "agent": {
+      "heading": "Agent backend — picoclaw",
+      "desc": "advanced: override the default relay url or passphrase. most visitors should leave these alone — say <code>neuro</code> in the terminal and the channel opens on its own.",
+      "wsLabel": "websocket url",
+      "wsPlaceholder": "wss://hosaka-agent.fly.dev/ws/agent",
+      "passLabel": "passphrase",
+      "passPlaceholder": "the phrase the operator shared with you",
+      "hide": "hide",
+      "show": "show",
+      "channelLabel": "channel",
+      "channelOn": "open — typing goes to picoclaw",
+      "channelOff": "closed — typing is ignored (say neuro to reopen)"
+    },
+
+    "storage": {
+      "heading": "about storage",
+      "model": "gemini model preference: browser <code>localStorage</code>",
+      "agentCreds": "agent url + passphrase: browser <code>localStorage</code>",
+      "messagesLog": "messages log: browser <code>localStorage</code>",
+      "geminiKey": "the gemini api key lives only in vercel env vars — the browser never sees it",
+      "picoclaw": "picoclaw persists per-session history on the fly.io volume; your browser never sees it"
+    }
+  },
+
+  "reading": {
+    "sidebarHead": "library",
+    "orderBtn": "/read order →",
+    "loading": "… loading fragment …",
+    "errorNotFound": "signal lost. document not found.",
+    "emptySelect": "select a fragment from the sidebar.",
+    "emptyHint": "or type <code>/read</code> in the terminal."
+  },
+
+  "todo": {
+    "heading": "open loops",
+    "sub": "things to remember. things to close. stored in this browser only.",
+    "placeholder": "add an open loop…",
+    "addBtn": "add",
+    "empty": "no open loops. type <code>/todo add remember the signal</code> in the terminal, or use the field above.",
+    "closeLoop": "close loop",
+    "reopenLoop": "reopen loop",
+    "delete": "delete",
+    "closedSection": "closed"
+  },
+
+  "messages": {
+    "heading": "Messages",
+    "sub": "talk to the orb (offline) or to any JSON webhook you configure: discord, slack, or your own endpoint. no backend required.",
+    "modeLabel": "mode:",
+    "offline": "offline",
+    "orbOnly": "(orb only)",
+    "closeSettings": "close settings",
+    "openSettings": "settings",
+    "clear": "clear",
+    "empty": "nothing yet. say hi to the orb.",
+    "placeholder": "transmit something...",
+    "send": "send",
+    "webhookLabel": "webhook url",
+    "webhookPlaceholder": "https://discord.com/api/webhooks/... or https://hooks.slack.com/...",
+    "kindLabel": "kind",
+    "kindGeneric": "generic (json)",
+    "kindDiscord": "discord",
+    "kindSlack": "slack",
+    "displayNameLabel": "display name",
+    "storageNote": "stored locally in <code>localStorage</code>. nothing leaves this browser except the message you send.",
+    "webhookError": "webhook said no: {{status}} {{statusText}}",
+    "networkError": "network refused the transmission: {{message}}",
+    "orbReplies": [
+      "received. the signal is steady.",
+      "the orb acknowledges your transmission.",
+      "noted. filed under 'maybe important'.",
+      "your words persist in the margins.",
+      "mmm. go on.",
+      "i hear you. the network is patient.",
+      "compressed. archived. held."
+    ]
+  }
+}

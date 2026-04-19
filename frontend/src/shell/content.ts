@@ -1,0 +1,115 @@
+import i18next from "i18next";
+
+export const BANNER: readonly string[] = [
+  "  ██╗  ██╗ ██████╗ ███████╗ █████╗ ██╗  ██╗ █████╗",
+  "  ██║  ██║██╔═══██╗██╔════╝██╔══██╗██║ ██╔╝██╔══██╗",
+  "  ███████║██║   ██║███████╗███████║█████╔╝ ███████║",
+  "  ██╔══██║██║   ██║╚════██║██╔══██║██╔═██╗ ██╔══██║",
+  "  ██║  ██║╚██████╔╝███████║██║  ██║██║  ██╗██║  ██║",
+  "  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝",
+];
+
+export const BANNER_COMPACT: readonly string[] = [
+  "  ▓▓▒ HOSAKA ▒▓▓",
+  "  field terminal",
+];
+
+export function getThinkingFrames(): string[] {
+  return i18next.t("thinking", { ns: "shell", returnObjects: true }) as string[];
+}
+
+// Ordered from "dead" → "colony". Lifted from the original TUI plant set.
+export const PLANT_STATES: readonly (readonly string[])[] = [
+  [
+    "              ",
+    "              ",
+    "              ",
+    "   .          ",
+    "   |          ",
+    "  .|.         ",
+    " [___]        ",
+  ],
+  [
+    "   ,          ",
+    "   |\\         ",
+    "   | )        ",
+    "   |/         ",
+    "   |          ",
+    " __|__        ",
+    "[_____]       ",
+  ],
+  [
+    "  \\ |         ",
+    "   \\|         ",
+    "    |         ",
+    "    |         ",
+    "    |         ",
+    "  __|__       ",
+    " [_____]      ",
+  ],
+  [
+    "   _          ",
+    "  ( )         ",
+    "  \\|/         ",
+    "   |          ",
+    "   |          ",
+    " __|__        ",
+    "[_____]       ",
+  ],
+  [
+    "  \\ _ /       ",
+    "  -( )-       ",
+    "  / \\|        ",
+    " (_) |        ",
+    "     |        ",
+    "   __|__      ",
+    "  [_____]     ",
+  ],
+  [
+    " * \\ _ /      ",
+    "   @( )@      ",
+    " */\\|/\\*    ",
+    " (@)|  /\\    ",
+    "   \\ | /(_)   ",
+    "    _|_/_     ",
+    "   [_____]    ",
+  ],
+  [
+    "*@* _ *@*     ",
+    " \\@(*)@/ *    ",
+    "*/\\\\|//\\@*  ",
+    " (@)|  /\\(@   ",
+    "  *\\|*/(_)*   ",
+    "  __|_/__|_   ",
+    "  [___][__]   ",
+  ],
+];
+
+// Short ASCII orbs. Keep them small for terminal comfort.
+export const ORBS: readonly (readonly string[])[] = [
+  [
+    "   _____   ",
+    "  /     \\  ",
+    " | ◉   ◉ | ",
+    "  \\_____/  ",
+  ],
+  [
+    "   ░░░░░   ",
+    "  ░◆◇◆◇◆░  ",
+    "   ░░░░░   ",
+  ],
+  [
+    "    ○     ",
+    "  ◯ ◉ ◯   ",
+    "    ○     ",
+  ],
+  [
+    "   .·✦·.   ",
+    "   ( * )   ",
+    "   ·✦·     ",
+  ],
+];
+
+export function getLoreFragments(): string[][] {
+  return i18next.t("lore", { ns: "shell", returnObjects: true }) as string[][];
+}

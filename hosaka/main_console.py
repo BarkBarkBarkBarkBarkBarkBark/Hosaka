@@ -26,6 +26,7 @@ from hosaka.tui.style import (
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_DOC = APP_ROOT / "docs" / "no_wrong_way_manifest.md"
+LIBRARY_DIR  = APP_ROOT / "docs" / "library"
 
 # ── command registry ─────────────────────────────────────────────────────
 # Each entry: (command, short description, [category])
@@ -44,7 +45,8 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("/update",         "Pull latest code, reinstall, restart services", "System"),
     ("/uptime",         "Show system uptime",                            "System"),
     # ── Files & Navigation ──
-    ("/read <file>",    "Paginate a file (also: /read manifest)",       "Files & Navigation"),
+    ("/read <file>",    "Paginate a file (also: /read manifest, /read <slug>)", "Files & Navigation"),
+    ("/library",        "Browse the lore archive — list all entries",    "Files & Navigation"),
     ("/cd <path>",      "Change working directory",                      "Files & Navigation"),
     ("/pwd",            "Print working directory",                       "Files & Navigation"),
     ("/ls [path]",      "List directory contents",                       "Files & Navigation"),
@@ -79,7 +81,7 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("/commands",       "This list — every available command",           "Reference"),
     ("/manifest",       "Open the No Wrong Way operator manual",        "Reference"),
     ("/about",          "About this system",                             "Reference"),
-    ("/lore",           "...",                                           "Reference"),
+    ("/lore",           "...  (see also: /library)",                    "Reference"),
     ("/exit",           "Exit the Hosaka console",                       "Reference"),
     # ── Shell passthrough ──
     ("!<command>",      "Run any shell command (e.g. !sudo apt update)", "Shell"),
@@ -179,6 +181,11 @@ def _resolve_read_target(argument: str, current_dir: Path) -> Path:
     cleaned = argument.strip()
     if cleaned in {"manifest", "guide", "manual"}:
         return MANIFEST_DOC
+    # Try as a library slug first (no path separators, no extension)
+    if cleaned and "/" not in cleaned and not cleaned.endswith(".md"):
+        slug_path = LIBRARY_DIR / f"{cleaned}.md"
+        if slug_path.exists():
+            return slug_path
     candidate = Path(cleaned)
     if not candidate.is_absolute():
         candidate = (current_dir / candidate).resolve()
@@ -738,6 +745,40 @@ def _show_lore() -> None:
     print()
 
 
+def _show_library() -> None:
+    """List the lore archive entries from index.json, paginated."""
+    index_path = LIBRARY_DIR / "index.json"
+    if not index_path.exists():
+        print(f"  {GRAY}Library index not found.{R}")
+        return
+    try:
+        entries = json.loads(index_path.read_text())
+    except Exception as exc:
+        print(f"  {err_style('Could not read library index:')} {exc}")
+        return
+
+    print()
+    print(f"  {AMBER}── lore archive ──{R}")
+    print(f"  {DARK_GRAY}signal preserved. fragments worth keeping.{R}")
+    print()
+    for entry in entries:
+        slug    = entry.get("slug", "")
+        title   = entry.get("title", slug)
+        author  = entry.get("author", "")
+        date    = entry.get("date", "")
+        summary = entry.get("summary", "")
+        meta    = "  ·  ".join(x for x in [author, date] if x)
+        print(f"  {CYAN}{title}{R}")
+        if meta:
+            print(f"    {DARK_GRAY}{meta}{R}")
+        if summary:
+            print(f"    {GRAY}{summary}{R}")
+        print(f"    {DARK_GRAY}/read {slug}{R}")
+        print()
+    print(f"  {GRAY}type  /read <slug>  to open an entry{R}")
+    print()
+
+
 def _show_history() -> None:
     if not _session_history:
         print(f"  {GRAY}No commands yet this session.{R}")
@@ -928,6 +969,8 @@ def run_main_console() -> None:
             _show_uptime()
 
         # ── Files & Navigation ──
+        elif raw == "/library":
+            _show_library()
         elif raw.startswith("/read "):
             _read_file(raw[6:], current_dir=current_dir)
         elif raw == "/pwd":

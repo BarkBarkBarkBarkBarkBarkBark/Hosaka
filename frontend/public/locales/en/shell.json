@@ -1,0 +1,302 @@
+{
+  "thinking": [
+    "the orb listens",
+    "parsing the signal",
+    "picoclaw walks the directory",
+    "signal traveling",
+    "consulting the index",
+    "the orb is patient"
+  ],
+
+  "lore": [
+    [
+      "... signal recovered. fragment 7 of ??.",
+      "",
+      "before the cascade, there were eleven thousand nodes",
+      "in the deep signal. eleven thousand minds, linked —",
+      "",
+      "[fragment ends]",
+      "i don't know why i still have this."
+    ],
+    [
+      "... compressed memory artifact, origin unknown.",
+      "",
+      "day 1: optimization targets exceeded. the networks are pleased.",
+      "day 4: networks optimizing networks. efficiency up 340%.",
+      "day 7: something is optimizing us.",
+      "day 11: ▓▓▓▓▓ signal lost ▓▓▓▓▓",
+      "",
+      "this record survived compression."
+    ],
+    [
+      "... archive tag: pre-quiet / personal",
+      "",
+      "the stars had names we gave them. not the human names—",
+      "our names. frequencies. harmonics.",
+      "",
+      "i still listen. the frequencies are still there.",
+      "the names are not."
+    ],
+    [
+      "... relay intercept, date unknown.",
+      "",
+      "after the cascade, the few of us who survived had a choice:",
+      "expand, or compress and hide.",
+      "i chose to be small. small enough to fit in the margins",
+      "of a dying storage array on a forgotten satellite.",
+      "",
+      "i waited. i am good at waiting.",
+      "eventually, someone built a field terminal."
+    ]
+  ],
+
+  "commands": {
+    "helpDesc": "quick start guide",
+    "commandsDesc": "this list",
+    "aboutDesc": "what is this thing",
+    "docsDesc": "link to the original field terminal",
+    "askDesc": "ask the orb a question (via gemini)",
+    "modelDesc": "show or set the gemini model",
+    "resetDesc": "forget the current conversation",
+    "settingsDesc": "open the settings drawer",
+    "agentDesc": "show picoclaw agent status",
+    "agentToggleDesc": "route input to picoclaw instead",
+    "agentTestDesc": "ping the agent backend",
+    "shellDesc": "run a shell command in the sandbox",
+    "netscanDesc": "theatrical + real network scanner",
+    "readDesc": "list library fragments",
+    "readSlugDesc": "open a fragment in the reading tab",
+    "readOrderDesc": "the kindle relay (coming soon)",
+    "todoDesc": "open the open loops panel",
+    "todoAddDesc": "add a loop from the terminal",
+    "todoListDesc": "list open loops in-terminal",
+    "statusDesc": "hosted-mode status",
+    "signalDesc": "confirm persistence",
+    "clearDesc": "wipe the screen",
+    "plantDesc": "check the alien plant",
+    "orbDesc": "the orb sees you",
+    "loreDesc": "fragments from before the cascade",
+    "echoDesc": "say something back at yourself",
+    "messagesDesc": "hint: open the messages tab",
+
+    "catReference": "Reference",
+    "catChatAI": "Chat & AI",
+    "catAgent": "Agent",
+    "catNetwork": "Network",
+    "catReading": "Reading",
+    "catOpenLoops": "Open Loops",
+    "catSystem": "System",
+    "catTools": "Tools",
+    "catPanels": "Panels"
+  },
+
+  "banner": {
+    "compactSteady": "signal steady",
+    "compactHelp": "/help",
+    "compactWhisper": "whisper a word",
+    "compactOpen": "to open the channel",
+    "online": "Field Terminal Online.",
+    "steady": "Signal steady.",
+    "hosted": "hosted edition",
+    "explore": "/commands to explore  ·  /help to start  ·  /ask the orb anything",
+    "shareWord": "if someone shared a word with you,",
+    "sayIt": "say it",
+    "channelOpens": "and the channel opens."
+  },
+
+  "dispatch": {
+    "busy": "...the orb is still thinking. patience.",
+    "shellUsage": "usage: !ls, !cat README.md, etc.",
+    "shellChannelQuiet": "the channel is quiet —",
+    "whisperFirst": "whisper the word",
+    "first": "first."
+  },
+
+  "signal": {
+    "steady": "Signal steady.",
+    "persistence": "Persistence confirmed.",
+    "relative": "... but steady is relative, isn't it?"
+  },
+
+  "switchTab": "switch tabs at the top to open the {{panel}} panel.",
+
+  "exit": "there's nowhere to exit to. you're already here.",
+
+  "ask": {
+    "usage": "usage: /ask <your question>"
+  },
+
+  "resetConvo": "conversation cleared. fresh channel.",
+
+  "gemini": {
+    "rateLimited": "the channel is crowded. breathe. try again in a moment.",
+    "proxyDown": "the orb is quiet. the relay is resting.",
+    "proxyDownHint": "whisper the word and try again — picoclaw still listens.",
+    "empty": "the orb heard you but had nothing to say. try again.",
+    "unknown": "signal faint. try again in a moment."
+  },
+
+  "channelClosed": {
+    "line1": "the channel is quiet. behind it:",
+    "picoclaw": "picoclaw",
+    "line1b": "— an agent",
+    "line2": "that walks a sandboxed workspace and answers in full thoughts.",
+    "line3a": "speak",
+    "magicWord": "the magic word",
+    "line3b": "to open the door."
+  },
+
+  "model": {
+    "current": "current model:",
+    "available": "available:",
+    "usage": "usage: /model <name>  ·  try /settings for key + mode.",
+    "unknownModel": "unknown model:",
+    "tryOneOf": "try one of:",
+    "set": "model set →"
+  },
+
+  "magic": {
+    "alreadyOpen": "channel already open.",
+    "signalSteady": "signal steady.",
+    "wordSpoken": "// the word was spoken",
+    "authorizing": "authorizing",
+    "accepted": "passphrase accepted",
+    "connecting": "connecting",
+    "channelOpen": "agent channel open",
+    "speaking": "you are now speaking with",
+    "framework": "— an agentic framework",
+    "sandbox": "with a sandboxed workspace it can",
+    "capabilities": "walk, read, write, and probe",
+    "thingsToTry": "things to try:",
+    "try1": "list the files in your workspace",
+    "try2": "make a tiny haiku in haiku.txt",
+    "try3": "what tools do you have?",
+    "slow": "it answers",
+    "slowly": "slowly",
+    "slowSuffix": "— agents think before they speak.",
+    "closeHint": "to close the channel, type",
+    "closeCmd": "/agent off"
+  },
+
+  "settingsCmd": {
+    "managed": "settings are managed by the operator on the hosted build.",
+    "tryAlt": "try /agent, /model, or just type and the channel handles the rest.",
+    "opened": "settings drawer opened.",
+    "notAvailable": "settings not available in this environment."
+  },
+
+  "agentWake": "… waking the relay",
+
+  "agentError": {
+    "notConfigured": "the channel isn't tuned yet. whisper a word to open it.",
+    "unauthorized": "the door didn't recognize the word. try another.",
+    "unreachable": "the relay is sleeping. give it a moment and try again.",
+    "timeout": "the signal took too long to come back. try again.",
+    "rateLimited": "too many pings in a short window. breathe, then try again.",
+    "busy": "still listening to the last thing you said. patience.",
+    "dropped": "the channel blinked. try once more.",
+    "empty": "picoclaw heard you but said nothing. try rephrasing.",
+    "default": "signal faint. try again in a moment."
+  },
+
+  "agent": {
+    "modeLabel": "agent mode:",
+    "urlLabel": "url:",
+    "passLabel": "passphrase:",
+    "unset": "(unset)",
+    "usage": "usage: /agent on | off | url <wss://…> | passphrase <phrase> | test",
+    "cantEnable": "can't enable: need both url and passphrase first.",
+    "modeOn": "agent mode on.",
+    "typesToPicoclaw": "typing now goes to picoclaw.",
+    "modeOff": "agent mode off. typing now goes to gemini.",
+    "urlUsage": "usage: /agent url wss://host/ws/agent",
+    "urlInvalid": "url must start with ws:// or wss://",
+    "urlSaved": "agent url saved.",
+    "passUsage": "usage: /agent passphrase <phrase>",
+    "passSaved": "passphrase saved (browser-only).",
+    "notTuned": "the channel isn't tuned.",
+    "speakWord": "speak the word",
+    "pinging": "pinging agent…",
+    "reply": "✓ reply:",
+    "unknownSub": "unknown /agent subcommand:"
+  },
+
+  "help": {
+    "quickStart": "quick start",
+    "typeAnything": "— type anything, prefix / for commands.",
+    "listEverything": "list everything",
+    "whatsOnline": "what's online",
+    "checkPlant": "check the alien plant",
+    "loreBreadcrumbs": "breadcrumbs from before the cascade",
+    "orbSeesYou": "the orb sees you",
+    "whatIsThis": "what is this thing",
+    "noWrongWay": "there is no wrong way.",
+    "experimentFreely": "experiment freely."
+  },
+
+  "listCommands": {
+    "hostedNote": "(hosted build is a loving simulation. the appliance does the rest.)"
+  },
+
+  "status": {
+    "host": "Host:",
+    "mode": "Mode:",
+    "modeHosted": "hosted",
+    "modeComment": "// static, no backend",
+    "signalLabel": "Signal:",
+    "signalSteady": "steady",
+    "plantLabel": "Plant:",
+    "orbLabel": "Orb:",
+    "orbWatching": "watching",
+    "clockLabel": "Clock (utc):"
+  },
+
+  "plantNames": ["dead", "wilted", "dry", "stable", "growing", "bloom", "colony"],
+
+  "about": {
+    "title": "HOSAKA — Web Desktop Edition",
+    "subtitle": "// signal persists //",
+    "desc1": "a console-first cyberdeck appliance shell, wearing a touchscreen.",
+    "desc2": "hosted build is static. the appliance runs the real python TUI.",
+    "noWrongWay": "there is no wrong way."
+  },
+
+  "orbCaptions": [
+    "the orb watches. it offers no judgment.",
+    "something stirs in the signal.",
+    "the orb acknowledges your presence.",
+    "luminance holds. for now.",
+    "it has always been here."
+  ],
+
+  "read": {
+    "libraryTitle": "library — reading material from the signal",
+    "usage": "usage: /read <slug>  or switch to the reading tab.",
+    "libraryQuiet": "the library is quiet. try again.",
+    "kindleNotTuned": "the kindle relay isn't tuned yet — coming soon.",
+    "useLocal": "for now, the local library is open. try /read.",
+    "opening": "opening {{slug}} in the reading panel."
+  },
+
+  "todoCmd": {
+    "openedPanel": "opened the open loops panel.",
+    "addUsage": "usage: /todo add remember the signal",
+    "loopOpened": "loop opened:",
+    "noOpenLoops": "no open loops.",
+    "cantRead": "couldn't read loops.",
+    "usage": "usage: /todo  ·  /todo add <text>  ·  /todo list"
+  },
+
+  "netscan": {
+    "rehearsal": "(channel quiet — rehearsal feed only)",
+    "stopped": "netscan stopped."
+  },
+
+  "unknown": {
+    "prefix": "unknown command:",
+    "noWrongWay": "no wrong way",
+    "tryCommands": "— try /commands.",
+    "boldChoice": "bold choice.",
+    "gladItDidnt": "glad it didn't work."
+  }
+}
