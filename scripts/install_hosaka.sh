@@ -120,19 +120,29 @@ else
   echo "Clone hosaka_field-terminal/frontend alongside this repo, or build manually." >&2
 fi
 
-# ── state directory ───────────────────────────────────────────────────────────
+# ── state directories ─────────────────────────────────────────────────────────
 sudo install -d -m 755 /var/lib/hosaka
+mkdir -p "$HOME/.hosaka"
 
-# ── systemd units ────────────────────────────────────────────────────────────
+# ── systemd units ─────────────────────────────────────────────────────────────
 info "Installing systemd units..."
-for unit in "$SERVICE_CONSOLE" "$SERVICE_HEADLESS" "$SERVICE_WEBSERVER" "$SERVICE_KIOSK"; do
+PICOCLAW_SERVICE_NAME="picoclaw-gateway.service"
+for unit in "$SERVICE_CONSOLE" "$SERVICE_HEADLESS" "$SERVICE_WEBSERVER" "$SERVICE_KIOSK" "$PICOCLAW_SERVICE_NAME"; do
   if [[ -f "$REPO_ROOT/systemd/$unit" ]]; then
     sudo cp "$REPO_ROOT/systemd/$unit" "/etc/systemd/system/$unit"
   fi
 done
+
+# Patch picoclaw service user to match whoever is running the install
+CURRENT_USER="$(id -un)"
+sudo sed -i "s/^User=operator/User=${CURRENT_USER}/" "/etc/systemd/system/$PICOCLAW_SERVICE_NAME" 2>/dev/null || true
+
 sudo systemctl daemon-reload
 
-# ── disable all, then enable the right set ───────────────────────────────────
+# Always enable picoclaw gateway
+sudo systemctl enable "$PICOCLAW_SERVICE_NAME"
+
+# ── disable all hosaka modes, then enable the right one ───────────────────────
 for unit in "$SERVICE_CONSOLE" "$SERVICE_HEADLESS" "$SERVICE_WEBSERVER" "$SERVICE_KIOSK"; do
   sudo systemctl disable "$unit" 2>/dev/null || true
 done

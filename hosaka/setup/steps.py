@@ -10,7 +10,7 @@ SETUP_STEPS: list[str] = [
     "configure_backend_endpoint_optional",
     "configure_workspace_root",
     "configure_theme",
-    "configure_openclaw",
+    "configure_picoclaw",
     "confirm_setup_summary",
     "finalize_and_enter_main_console",
 ]

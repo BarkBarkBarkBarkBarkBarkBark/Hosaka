@@ -434,7 +434,7 @@ def setup_home() -> str:
       <a href='/setup/network'>Network</a>
       <a href='/setup/identity'>Identity</a>
       <a href='/setup/backend'>Backend</a>
-      <a href='/setup/openclaw'>OpenClaw</a>
+      <a href='/setup/picoclaw'>Picoclaw</a>
       <a href='/api/health'>Health JSON</a>
     </p>
     """
@@ -493,32 +493,26 @@ def save_backend(backend_endpoint: str = Form("")) -> RedirectResponse:
     return RedirectResponse("/setup/", status_code=303)
 
 
-@app.get("/setup/openclaw", response_class=HTMLResponse)
-def openclaw_config() -> str:
+@app.get("/setup/picoclaw", response_class=HTMLResponse)
+def picoclaw_config() -> str:
     s = orchestrator.summary()
-    enabled = "yes" if s["openclaw_enabled"] else "no"
+    enabled = "yes" if s["picoclaw_enabled"] else "no"
     body = f"""
-    <h2>OpenClaw Setup</h2>
-    <form method='post' action='/setup/openclaw'>
-      <label>Enable OpenClaw (yes/no)</label>
-      <input name='openclaw_enabled' value='{enabled}' />
-      <label>OpenClaw Path</label>
-      <input name='openclaw_path' value='{s["openclaw_path"]}' />
+    <h2>Picoclaw Setup</h2>
+    <form method='post' action='/setup/picoclaw'>
+      <label>Enable Picoclaw (yes/no)</label>
+      <input name='picoclaw_enabled' value='{enabled}' />
       <button type='submit'>Save</button>
     </form><p><a href='/setup/'>Back</a></p>
     """
-    return _layout("OpenClaw", body)
+    return _layout("Picoclaw", body)
 
 
-@app.post("/setup/openclaw")
-def save_openclaw(
-    openclaw_enabled: str = Form("yes"),
-    openclaw_path: str = Form("/opt/openclaw"),
-) -> RedirectResponse:
-    enabled = openclaw_enabled.strip().lower() not in {"no", "false", "0"}
-    orchestrator.set_field("openclaw_enabled", enabled)
-    orchestrator.set_field("openclaw_path", openclaw_path)
-    orchestrator.set_field("openclaw_ready", enabled and bool(openclaw_path.strip()))
+@app.post("/setup/picoclaw")
+def save_picoclaw(picoclaw_enabled: str = Form("yes")) -> RedirectResponse:
+    enabled = picoclaw_enabled.strip().lower() not in {"no", "false", "0"}
+    orchestrator.set_field("picoclaw_enabled", enabled)
+    orchestrator.set_field("picoclaw_ready", enabled)
     return RedirectResponse("/setup/", status_code=303)
 
 

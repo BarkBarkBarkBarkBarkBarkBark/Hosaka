@@ -31,7 +31,7 @@ operator workstation:
 │              ┌────────▼────────┐ │
 │              │  LLM Router     │ │
 │              │                 │ │
-│              │  1. OpenClaw    │ │
+│              │  1. Picoclaw    │ │
 │              │  2. OpenAI API  │ │
 │              └─────────────────┘ │
 └──────────────────────────────────┘
@@ -92,66 +92,36 @@ Conversation history is held in memory for the session (cleared on `/back`).
 
 ---
 
-## LLM Router — OpenClaw first, OpenAI fallback
+## LLM Router — Picoclaw first, OpenAI fallback
 
 ### Priority chain
 
 ```
-1. OpenClaw (local or LAN)  →  preferred, already in onboarding
-2. OpenAI API               →  fallback, requires OPENAI_API_KEY
-3. Offline stub             →  if both unavailable, use offline/assist.py
+1. Picoclaw (local subprocess)  →  preferred, must be installed
+2. OpenAI API                   →  fallback, requires OPENAI_API_KEY
+3. Offline stub                 →  if both unavailable, use offline/assist.py
 ```
 
-### OpenClaw path (preferred)
+### Picoclaw path (preferred)
 
-OpenClaw is already configured during onboarding (`openclaw_path`,
-`openclaw_enabled`, `openclaw_ready` in state).
-
-**Option A — HTTP API (recommended)**
-
-If OpenClaw exposes a local HTTP endpoint (e.g. `http://localhost:11434/v1/chat/completions`
-or a compatible API), Hosaka sends requests directly:
+Picoclaw is a lightweight local agent binary installed during setup.
+The adapter calls `picoclaw agent -m "..." --session KEY` as a subprocess
+per message. Session key persists conversation history across calls.
 
 ```python
-import httpx
-
-OPENCLAW_ENDPOINT = f"http://localhost:11434/v1/chat/completions"
-
-async def chat_openclaw(messages: list[dict], stream: bool = True):
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            OPENCLAW_ENDPOINT,
-            json={"messages": messages, "stream": stream},
-            timeout=120,
-        )
-        if stream:
-            async for chunk in resp.aiter_lines():
-                yield chunk
-        else:
-            yield resp.json()["choices"][0]["message"]["content"]
-```
-
-The endpoint URL is derived from `openclaw_path` + state, or set explicitly
-via a new env var `OPENCLAW_API_URL`.
-
-**Option B — subprocess / CLI**
-
-If OpenClaw only exposes a CLI:
-
-```python
-def chat_openclaw_cli(prompt: str, openclaw_bin: str) -> str:
+def chat_picoclaw(prompt: str, session: str = "hosaka:main") -> str:
     result = subprocess.run(
-        [openclaw_bin, "ask", prompt],
+        ["picoclaw", "agent", "-m", prompt, "--session", session],
         capture_output=True, text=True, timeout=120,
     )
-    return result.stdout
+    return extract_response(result.stdout)
 ```
 
-Less ideal (no streaming), but works as a bridge.
+See `hosaka/llm/picoclaw_adapter.py` for the full implementation.
 
 ### OpenAI API path (fallback)
 
-When OpenClaw is unavailable (`openclaw_ready=false` or health check fails),
+When Picoclaw is unavailable (not installed or subprocess fails),
 fall back to the OpenAI API if `OPENAI_API_KEY` is set.
 
 ```python
@@ -179,7 +149,7 @@ intent classifier for keyword-based guidance, and print:
 
 ```
 LLM unavailable. Showing offline guidance.
-Connect OpenClaw or set OPENAI_API_KEY for full chat.
+Install Picoclaw or set OPENAI_API_KEY for full chat.
 ```
 
 ---
@@ -188,7 +158,8 @@ Connect OpenClaw or set OPENAI_API_KEY for full chat.
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPENCLAW_API_URL` | `http://localhost:11434/v1/chat/completions` | OpenClaw API endpoint |
+| `PICOCLAW_SESSION` | `hosaka:main` | Session key for Picoclaw agent |
+| `PICOCLAW_MODEL` | *(picoclaw default)* | Override the model used by Picoclaw |
 | `OPENAI_API_KEY` | *(unset)* | OpenAI API key for fallback |
 | `OPENAI_MODEL` | `gpt-4o-mini` | Model to use with OpenAI fallback |
 | `HOSAKA_CHAT_TIMEOUT` | `120` | Max seconds to wait for LLM response |
@@ -213,10 +184,9 @@ wire format).
 
 | File | Purpose |
 |---|---|
-| `hosaka/llm/__init__.py` | Package init |
-| `hosaka/llm/router.py` | LLM routing: OpenClaw → OpenAI → offline |
-| `hosaka/llm/openclaw.py` | OpenClaw HTTP + CLI adapters |
-| `hosaka/llm/openai.py` | OpenAI API adapter |
+| `hosaka/llm/router.py` | LLM routing: Picoclaw → OpenAI → offline |
+| `hosaka/llm/picoclaw_adapter.py` | Picoclaw subprocess adapter |
+| `hosaka/llm/openai_adapter.py` | OpenAI API fallback adapter |
 | `hosaka/llm/chat.py` | `chat` REPL loop + one-shot handler |
 | `hosaka/main_console.py` | Wire up `code` and `chat` commands |
 | `tests/test_hosaka_chat.py` | Unit tests for router + adapters |
@@ -245,17 +215,16 @@ elif raw.startswith("chat "):
 - Add `code` to `DEFAULT_HELP_TOPICS`
 - Ship immediately
 
-### Phase 2 — `chat` with OpenClaw
+### Phase 2 — `chat` with Picoclaw
 - Create `hosaka/llm/` package
-- Implement OpenClaw HTTP adapter
+- Implement Picoclaw subprocess adapter
 - Implement chat REPL loop
-- Add `httpx` to requirements
 - Wire into `main_console.py`
-- Test with OpenClaw running locally
+- Test with `picoclaw agent` locally
 
 ### Phase 3 — OpenAI fallback
 - Add OpenAI adapter (same wire format, different URL + auth header)
-- Add router logic (try OpenClaw → try OpenAI → offline stub)
+- Add router logic (try Picoclaw → try OpenAI → offline stub)
 - Add env var documentation
 
 ### Phase 4 — Conversation context
@@ -269,7 +238,7 @@ elif raw.startswith("chat "):
 ## Security notes
 
 - `OPENAI_API_KEY` should be in `.env` or systemd credentials, never in state.json.
-- OpenClaw runs locally — no API key needed for local inference.
+- Picoclaw runs locally — no API key needed for local inference.
 - Chat history is in-memory only, never persisted to disk.
 - The `code` sub-shell inherits the Hosaka process's permissions — on an
   appliance this is typically root via the systemd unit.

@@ -33,14 +33,14 @@ Examples:
 3. `/network`
 4. `read README.md`
 
-## OpenClaw direction
-OpenClaw is intended as the brains of operation.
-Hosaka onboarding now includes OpenClaw setup fields so handoff can be made reliable.
+## Picoclaw agent
+Picoclaw is the brains of operation — a lightweight local agent binary.
+Everything typed at the `hosaka>` prompt goes straight to Picoclaw.
 
-Planned flow:
-- configure OpenClaw path during onboarding
-- validate readiness
-- launch OpenClaw-oriented shell flow by default when available
+Flow:
+- Picoclaw must be installed and onboarded before first boot (`picoclaw onboard`)
+- The console routes all free-form input through the Picoclaw subprocess adapter
+- `/picoclaw status` and `/picoclaw doctor` for diagnostics
 
 ## Failure behavior
 When a command fails or is unknown, the system should:

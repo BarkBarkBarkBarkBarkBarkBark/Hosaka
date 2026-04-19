@@ -26,14 +26,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         zstd \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Node 24 + OpenClaw AI agent gateway ──────────────────────────────────────
-# OpenClaw runs as a background gateway process alongside Hosaka.
-# It gives the 'chat' command a full agent runtime: exec, fs, web_search,
-# browser, image tools — powered by the configured OpenAI model.
-RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g openclaw@latest \
-    && rm -rf /var/lib/apt/lists/*
+# ── Picoclaw agent binary ─────────────────────────────────────────────────────
+# Picoclaw is a lightweight agentic framework. The gateway runs as a background
+# process alongside Hosaka, giving the console a full agent runtime.
+# Auto-detect arch: amd64 or arm64.
+ARG PICOCLAW_VERSION=0.2.4
+RUN ARCH=$(dpkg --print-architecture) \
+    && case "$ARCH" in \
+         amd64) PICOCLAW_ARCH="x86_64" ;; \
+         arm64) PICOCLAW_ARCH="arm64"   ;; \
+         *)     echo "Unsupported arch: $ARCH" && exit 1 ;; \
+       esac \
+    && curl -L "https://github.com/sipeed/picoclaw/releases/download/v${PICOCLAW_VERSION}/picoclaw_Linux_${PICOCLAW_ARCH}.tar.gz" \
+         -o /tmp/picoclaw.tar.gz \
+    && tar -xzf /tmp/picoclaw.tar.gz -C /tmp \
+    && chmod +x /tmp/picoclaw \
+    && mv /tmp/picoclaw /usr/local/bin/picoclaw \
+    && rm /tmp/picoclaw.tar.gz \
+    && picoclaw version
 
 # ── application directory structure ──────────────────────────────────────────
 ENV APP_ROOT=/opt/hosaka-field-terminal \
@@ -43,7 +53,18 @@ ENV APP_ROOT=/opt/hosaka-field-terminal \
     HOSAKA_WEB_PORT=8421 \
     PYTHONUNBUFFERED=1
 
-RUN mkdir -p /opt/hosaka-field-terminal /var/lib/hosaka
+RUN mkdir -p /opt/hosaka-field-terminal /var/lib/hosaka /var/log/hosaka
+
+# ── bootstrap picoclaw config so gateway can start on first boot ─────────
+# 'picoclaw onboard' is interactive; instead, seed a minimal config.
+# Users add their API key at first launch (Hosaka prompts for it).
+RUN mkdir -p /root/.picoclaw && echo '{
+  "agents": { "defaults": { "model_name": "gpt-4o-mini", "workspace": "/root/.picoclaw/workspace", "restrict_to_workspace": false } },
+  "gateway": { "host": "127.0.0.1", "port": 18790 },
+  "model_list": [
+    { "model_name": "gpt-4o-mini", "model": "openai/gpt-4o-mini", "api_key": "", "api_base": "https://api.openai.com/v1" }
+  ]
+}' > /root/.picoclaw/config.json && mkdir -p /root/.picoclaw/workspace
 
 WORKDIR /opt/hosaka-field-terminal
 

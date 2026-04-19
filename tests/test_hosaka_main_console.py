@@ -10,7 +10,7 @@ def test_unknown_command_shows_no_wrong_way(capsys) -> None:
     main_console._unknown_command("bogus")
     captured = capsys.readouterr()
     assert "No Wrong Way" in captured.out
-    assert "read <file>" in captured.out
+    assert "/commands" in captured.out
 
 
 def test_change_directory_relative_path(tmp_path) -> None:

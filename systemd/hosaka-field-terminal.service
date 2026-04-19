@@ -1,14 +1,21 @@
 [Unit]
 Description=Hosaka Field Terminal Appliance
-After=network-online.target
-Wants=network-online.target
+After=network-online.target picoclaw-gateway.service
+Wants=network-online.target picoclaw-gateway.service
+# Kill the normal tty1 login prompt — Hosaka owns tty1
+Conflicts=getty@tty1.service
+After=getty@tty1.service
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/hosaka-field-terminal
-Environment=HOSAKA_STATE_PATH=/var/lib/hosaka/state.json
+# State path readable/writable without root
+Environment=HOSAKA_STATE_PATH=/home/operator/.hosaka/state.json
 Environment=PYTHONUNBUFFERED=1
 Environment=HOSAKA_BOOT_MODE=console
+# Picoclaw config lives in operator's home; pass it through when running as root
+Environment=HOME=/home/operator
+ExecStartPre=/usr/bin/clear
 ExecStart=/opt/hosaka-field-terminal/.venv/bin/python -m hosaka
 Restart=always
 RestartSec=2
