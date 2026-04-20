@@ -31,6 +31,24 @@ def start_web_server() -> subprocess.Popen[str] | None:
     if is_port_in_use("127.0.0.1", WEB_PORT):
         print(f"Hosaka notice: port {WEB_PORT} already in use, reusing existing web setup server.")
         return None
+
+    # In console mode the TUI owns the terminal; the uvicorn subprocess inherits
+    # FDs 1/2 and would otherwise crash log lines into the operator's prompt.
+    # Route web logs to a file in console mode; keep them on stdout otherwise.
+    web_primary = BOOT_MODE in _WEB_PRIMARY_MODES
+    stdout: int | object = sys.stdout
+    stderr: int | object = sys.stderr
+    if not web_primary:
+        log_path = Path(os.getenv("HOSAKA_WEB_LOG", "/var/log/hosaka/web.log"))
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_fp = open(log_path, "a", encoding="utf-8", buffering=1)  # noqa: SIM115
+            stdout = log_fp
+            stderr = log_fp
+        except OSError:
+            stdout = subprocess.DEVNULL
+            stderr = subprocess.DEVNULL
+
     try:
         process = subprocess.Popen(  # noqa: S603
             [
@@ -45,6 +63,8 @@ def start_web_server() -> subprocess.Popen[str] | None:
                 "--log-level",
                 "warning",
             ],
+            stdout=stdout,
+            stderr=stderr,
         )
         return process
     except Exception as exc:  # noqa: BLE001
@@ -54,8 +74,31 @@ def start_web_server() -> subprocess.Popen[str] | None:
 
 # ── Picoclaw gateway ─────────────────────────────────────────────────────────
 
+_PICOCLAW_MIN_BYTES = 1_000_000  # real binary is ~26 MB; 9-byte "Not Found" must fail.
+
+
 def _picoclaw_installed() -> bool:
-    return bool(shutil.which("picoclaw"))
+    """Truthy only if picoclaw is on PATH AND looks like a real binary.
+
+    Guards against a clobbered `/usr/local/bin/picoclaw` (e.g. someone curled
+    a 404 page over it). We don't trust `shutil.which` alone.
+    """
+    path = shutil.which("picoclaw")
+    if not path:
+        return False
+    try:
+        size = Path(path).stat().st_size
+    except OSError:
+        return False
+    if size < _PICOCLAW_MIN_BYTES:
+        print(
+            f"Hosaka: picoclaw at {path} is only {size} bytes — looks corrupted "
+            "(likely a failed download wrote over the binary). Restart the "
+            "container to restore the image's copy, or reinstall from "
+            "https://github.com/sipeed/picoclaw/releases",
+        )
+        return False
+    return True
 
 
 def start_picoclaw_gateway() -> subprocess.Popen | None:  # type: ignore[type-arg]
@@ -72,15 +115,29 @@ def start_picoclaw_gateway() -> subprocess.Popen | None:  # type: ignore[type-ar
         print("Hosaka: continuing without gateway — the console will prompt for API key.")
         return None
 
+    log_path = Path(os.getenv("HOSAKA_PICOCLAW_LOG", "/var/log/hosaka/picoclaw.log"))
+    stdout: int | object = subprocess.DEVNULL
+    stderr: int | object = subprocess.DEVNULL
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_fp = open(log_path, "a", encoding="utf-8", buffering=1)  # noqa: SIM115
+        stdout = log_fp
+        stderr = log_fp
+    except OSError:
+        pass
+
     try:
         proc = subprocess.Popen(  # noqa: S603
             ["picoclaw", "gateway"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=stdout,
+            stderr=stderr,
         )
         time.sleep(2)  # brief pause for gateway to bind
         if proc.poll() is not None:
-            print("Hosaka: picoclaw gateway exited immediately — check config.")
+            print(
+                f"Hosaka: picoclaw gateway exited immediately (code {proc.returncode}) — "
+                f"check {log_path}",
+            )
             return None
         return proc
     except Exception as exc:  # noqa: BLE001

@@ -38,7 +38,7 @@ case "${1:-up}" in
 
   up)
     info "Starting Hosaka dev environment (headless)..."
-    dc up -d --build
+    dc up -d --build --remove-orphans
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║                                                  ║${NC}"
@@ -66,7 +66,7 @@ case "${1:-up}" in
     info "This is the same experience as booting a real Pi."
     info "Ctrl-C to exit back to your host shell."
     echo ""
-    dc run --rm --service-ports console
+    dc run --rm --service-ports --remove-orphans --build console
     ;;
 
   build)

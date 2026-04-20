@@ -14,6 +14,9 @@
 
 # ── shared config ────────────────────────────────────────────────────────────
 x-hosaka-common: &hosaka-common
+  # Both services share ONE image so `dev.sh up` (builds hosaka) and
+  # `dev.sh tui` (runs console) can never drift onto stale layers.
+  image: hosaka:dev
   build:
     context: ..
     dockerfile: docker/Dockerfile

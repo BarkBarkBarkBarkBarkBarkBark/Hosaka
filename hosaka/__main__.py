@@ -56,6 +56,12 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     handlers=_handlers,
 )
+
+# Quiet noisy third-party loggers that would otherwise crash into the TUI
+# prompt every time the agent makes an HTTP call. Override with HOSAKA_LOG_LEVEL=DEBUG.
+_NOISY_LOGGERS = ("httpx", "httpcore", "urllib3", "openai", "openai._base_client")
+for _name in _NOISY_LOGGERS:
+    logging.getLogger(_name).setLevel(logging.WARNING)
 # ─────────────────────────────────────────────────────────────────────────────
 
 from hosaka.boot.launcher import launch

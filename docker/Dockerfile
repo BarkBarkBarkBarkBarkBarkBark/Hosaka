@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.6
 # ─────────────────────────────────────────────────────────────────────────────
 # Hosaka Field Terminal — Development & Shipping Dockerfile
 #
@@ -58,13 +59,16 @@ RUN mkdir -p /opt/hosaka-field-terminal /var/lib/hosaka /var/log/hosaka
 # ── bootstrap picoclaw config so gateway can start on first boot ─────────
 # 'picoclaw onboard' is interactive; instead, seed a minimal config.
 # Users add their API key at first launch (Hosaka prompts for it).
-RUN mkdir -p /root/.picoclaw && echo '{
+RUN mkdir -p /root/.picoclaw/workspace
+COPY <<'EOF' /root/.picoclaw/config.json
+{
   "agents": { "defaults": { "model_name": "gpt-4o-mini", "workspace": "/root/.picoclaw/workspace", "restrict_to_workspace": false } },
   "gateway": { "host": "127.0.0.1", "port": 18790 },
   "model_list": [
     { "model_name": "gpt-4o-mini", "model": "openai/gpt-4o-mini", "api_key": "", "api_base": "https://api.openai.com/v1" }
   ]
-}' > /root/.picoclaw/config.json && mkdir -p /root/.picoclaw/workspace
+}
+EOF
 
 WORKDIR /opt/hosaka-field-terminal
 
