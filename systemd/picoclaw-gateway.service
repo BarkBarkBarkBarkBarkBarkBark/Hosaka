@@ -3,7 +3,6 @@ Description=Picoclaw Agent Gateway
 # No network-online dependency: the gateway reaches out to the LLM provider
 # lazily on first request, so a slow NIC bring-up shouldn't block boot.
 After=local-fs.target
-After=hosaka-mode.service
 # Don't bring up picoclaw at all if the Pi booted into build mode.
 ConditionPathExists=!/boot/firmware/hosaka-build-mode
 

@@ -6,10 +6,10 @@
 #   sudo $REPO/scripts/install_hosaka_lean.sh
 #
 # What it does:
-#   1. Installs CLIs:        hosaka, hosaka-mode-init, hosaka-device-dashboard
-#   2. Installs systemd:     hosaka-mode.service, hosaka-webserver.service,
-#                            picoclaw-gateway.service
-#   3. Drops in OOM guard:   /etc/systemd/system/ssh.service.d/oom-protection.conf
+#   1. Installs CLIs:        hosaka, hosaka-device-dashboard, hosakactl
+#   2. Installs systemd:     hosaka-webserver.service, picoclaw-gateway.service,
+#                            hosaka-device-dashboard.service
+#   3. SSH OOM drop-in:      /etc/systemd/system/ssh.service.d/oom-protection.conf
 #                            (sshd is the LAST thing the OOM killer touches)
 #   4. Enables persistent journal so we keep crash evidence across reboots
 #   5. Masks ALSA on this headless Pi (no sound card)
@@ -33,10 +33,8 @@ say() { printf '[hosaka-lean] %s\n' "$*"; }
 # ── 1. CLIs ───────────────────────────────────────────────────────────────────
 say "installing CLIs to /usr/local/bin"
 $SUDO install -m 0755 "$REPO_ROOT/scripts/hosaka"                  /usr/local/bin/hosaka
-$SUDO install -m 0755 "$REPO_ROOT/scripts/hosaka-mode-init"        /usr/local/bin/hosaka-mode-init
 $SUDO install -m 0755 "$REPO_ROOT/scripts/hosaka-device-dashboard" /usr/local/bin/hosaka-device-dashboard
 $SUDO install -m 0755 "$REPO_ROOT/scripts/hosakactl"               /usr/local/bin/hosakactl
-$SUDO install -m 0755 "$REPO_ROOT/scripts/hosaka-oom-guard"        /usr/local/bin/hosaka-oom-guard
 
 # ── 1b. API token for /api/v1/* (read by api_v1.py and hosakactl) ─────────────
 # /etc/hosaka/api-token is the bearer credential for LAN clients. Loopback
@@ -61,11 +59,9 @@ fi
 # ── 2. systemd units ──────────────────────────────────────────────────────────
 say "installing systemd units"
 for unit in \
-    hosaka-mode.service \
     hosaka-device-dashboard.service \
     hosaka-webserver.service \
     picoclaw-gateway.service \
-    hosaka-oom-guard.service \
 ; do
   if [[ -f "$REPO_ROOT/systemd/$unit" ]]; then
     $SUDO install -m 0644 "$REPO_ROOT/systemd/$unit" "/etc/systemd/system/$unit"
@@ -138,7 +134,7 @@ else
 fi
 rm -f "$TMP_SUDO"
 
-# ── 9. logrotate + log dir for hosaka-oom-guard / snapshots ───────────────────
+# ── 9. logrotate + log dir for snapshots ──────────────────────────────────────
 say "installing /etc/logrotate.d/hosaka and /var/log/hosaka"
 $SUDO install -d -m 0755 -o root -g adm /var/log/hosaka
 $SUDO install -m 0644 "$REPO_ROOT/systemd/logrotate-hosaka" /etc/logrotate.d/hosaka
@@ -153,11 +149,10 @@ $SUDO sysctl --system >/dev/null 2>&1 || true
 # ── 11. systemd reload + enables ──────────────────────────────────────────────
 say "reloading systemd"
 $SUDO systemctl daemon-reload
-$SUDO systemctl enable hosaka-mode.service 2>/dev/null || true
-$SUDO systemctl enable --now hosaka-oom-guard.service 2>/dev/null || true
+$SUDO systemctl enable hosaka-webserver.service picoclaw-gateway.service 2>/dev/null || true
 $SUDO systemctl restart systemd-journald.service 2>/dev/null || true
 $SUDO systemctl restart ssh.service 2>/dev/null || true
 $SUDO systemctl restart hosaka-webserver.service 2>/dev/null || true
 $SUDO systemctl restart picoclaw-gateway.service 2>/dev/null || true
 
-say "done. try: hosaka status   |   tail -f /var/log/hosaka/oom-guard.log"
+say "done. try: hosaka status   |   journalctl -u hosaka-webserver -f"
