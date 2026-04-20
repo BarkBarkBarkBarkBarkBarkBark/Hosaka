@@ -117,7 +117,12 @@ def _strip_picoclaw_banner(text: str) -> str:
     for raw in text.splitlines():
         visible = _ANSI_RE.sub("", raw).strip()
         if not visible:
-            lines.append(raw)
+            # Line has no printable characters — usually a leftover terminal
+            # control sequence (cursor moves, color resets) that picoclaw uses
+            # to redraw its spinner. Keep a blank line for paragraph spacing
+            # but drop the ANSI noise; otherwise xterm renders it as a
+            # mysterious "empty" line full of invisible escapes.
+            lines.append("")
             continue
         if _GOLOG_RE.match(visible):
             continue

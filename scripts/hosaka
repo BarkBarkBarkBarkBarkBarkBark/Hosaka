@@ -72,6 +72,22 @@ write_runtime_mode() {
   fi
 }
 
+# X display used by the local tty1 session (often :0, but if another X server
+# holds :0 — e.g. remote/IDE — startx may use :1, :2, …). Hardcoding :0 in
+# mode_console breaks the kiosk relaunch (xsetroot/chromium → wrong DISPLAY).
+kiosk_display() {
+  local line disp=""
+  while read -r line; do
+    [[ "$line" != *vt1* ]] && continue
+    # shellcheck disable=SC2001
+    disp="$(sed -n 's/.*[[:space:]]\(:[0-9][0-9]*\)[[:space:]].*/\1/p' <<<"$line")"
+    [[ -n "$disp" ]] && { printf '%s\n' "$disp"; return 0; }
+  done < <(ps -eo args= -C Xorg 2>/dev/null)
+  disp="$(ps -eo args= -C Xorg 2>/dev/null | head -1 | sed -n 's/.*[[:space:]]\(:[0-9][0-9]*\).*/\1/p')"
+  [[ -n "$disp" ]] && { printf '%s\n' "$disp"; return 0; }
+  printf '%s\n' ':0'
+}
+
 read_runtime_mode() {
   # Modes:
   #   console — interactive UI (chromium kiosk on the touchscreen, terminal,
@@ -218,7 +234,8 @@ mode_console() {
   if pgrep -x Xorg >/dev/null && pgrep -u "$(id -un)" -x openbox >/dev/null; then
     # Existing X session — just (re)fire the kiosk autostart in place.
     if ! pgrep -u "$(id -un)" -f '/.config/openbox/autostart' >/dev/null; then
-      DISPLAY=:0 XAUTHORITY="${HOME}/.Xauthority" \
+      kd="$(kiosk_display)"
+      DISPLAY="$kd" XAUTHORITY="${HOME}/.Xauthority" \
         nohup setsid /bin/sh "$KIOSK_AUTOSTART" \
         </dev/null >/tmp/hosaka-autostart.log 2>&1 &
       disown
