@@ -27,3 +27,4 @@ hosaka/web/ui/
 
 # keys
 *.pem
+.env

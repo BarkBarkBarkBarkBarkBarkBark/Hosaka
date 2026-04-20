@@ -10,7 +10,7 @@ After=hosaka-mode.service
 [Service]
 Type=simple
 WorkingDirectory=/opt/hosaka-field-terminal
-EnvironmentFile=-/opt/hosaka-field-terminal/.env
+EnvironmentFile=-/etc/hosaka/env
 Environment=HOSAKA_STATE_PATH=/var/lib/hosaka/state.json
 Environment=HOSAKA_BOOT_MODE=kiosk
 Environment=PYTHONUNBUFFERED=1

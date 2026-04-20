@@ -1,8 +1,7 @@
 # /etc/sudoers.d/hosaka — installed 0440 root:root
 #
-# Tight whitelist so the operator (and the hosaka-oom-guard daemon, which
-# runs as root anyway but uses sudo to keep audit trails) can perform the
-# specific privileged actions the appliance needs WITHOUT a password.
+# Tight whitelist so the operator can perform the specific privileged
+# actions the appliance needs WITHOUT a password.
 #
 # We do NOT grant blanket sudo. Each entry pins the exact binary path AND
 # the exact arguments allowed. Anything else still prompts.

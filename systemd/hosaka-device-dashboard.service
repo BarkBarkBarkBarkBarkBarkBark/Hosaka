@@ -3,7 +3,6 @@ Description=Hosaka device-mode dashboard (tty1 info screen)
 # Only ever start when the Pi is in device mode. The boot marker file lives
 # on the FAT boot partition so it can be added/removed from another machine.
 ConditionPathExists=/boot/firmware/hosaka-build-mode
-After=hosaka-mode.service
 Conflicts=getty@tty1.service
 
 [Service]
