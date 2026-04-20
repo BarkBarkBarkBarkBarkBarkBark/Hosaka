@@ -351,12 +351,20 @@ export class HosakaShell {
       case "/messages":
       case "/terminal":
       case "/reading":
-      case "/todo":
       case "/video":
       case "/games":
       case "/wiki":
       case "/web":
         this.switchToPanel(cmd.slice(1));
+        break;
+      case "/reddit":
+        this.openWebPreset("reddit");
+        break;
+      case "/tiktok":
+        this.openWebPreset("tiktok");
+        break;
+      case "/discord":
+        this.openWebPreset("discord");
         break;
       case "/update":
         await this.handleUpdate();
@@ -366,6 +374,9 @@ export class HosakaShell {
         break;
       case "/todo":
         this.handleTodo(arg);
+        break;
+      case "/books":
+        this.handleBooks(arg);
         break;
       case "/netscan":
         await this.netscan();
@@ -724,6 +735,7 @@ export class HosakaShell {
       games: "games",
       wiki: "wiki",
       web: "web",
+      books: "books",
     };
     const id = map[name];
     if (!id) {
@@ -734,6 +746,12 @@ export class HosakaShell {
       new CustomEvent("hosaka:open-tab", { detail: id }),
     );
     this.writeln(`  ${GRAY}${st("panel.opened", { panel: name })}${R}`);
+  }
+
+  private openWebPreset(presetId: string): void {
+    window.dispatchEvent(new CustomEvent("hosaka:open-tab", { detail: "web" }));
+    window.dispatchEvent(new CustomEvent("hosaka:web-preset", { detail: presetId }));
+    this.writeln(`  ${GRAY}${st("webPreset.opening", { preset: presetId })}${R}`);
   }
 
   private async handleUpdate(): Promise<void> {
@@ -921,6 +939,16 @@ export class HosakaShell {
       return;
     }
     this.writeln(`  ${GRAY}${st("todoCmd.usage")}${R}`);
+  }
+
+  private handleBooks(arg: string): void {
+    window.dispatchEvent(new CustomEvent("hosaka:open-tab", { detail: "books" }));
+    if (!arg) {
+      this.writeln(`  ${GRAY}${st("booksCmd.openedPanel")}${R}`);
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("hosaka:books-search", { detail: arg }));
+    this.writeln(`  ${GRAY}${st("booksCmd.searching")} ${CYAN}${arg}${R}`);
   }
 
   private async shellPassthrough(cmd: string, cfg: AgentConfig): Promise<void> {

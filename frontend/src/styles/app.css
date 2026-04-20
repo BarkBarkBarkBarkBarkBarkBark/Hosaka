@@ -1384,40 +1384,63 @@ html, body, #root {
 /* ── responsive ──────────────────────────────────────────── */
 
 @media (max-width: 600px) {
+  :root {
+    --top-h: 40px;
+    --dock-h: 44px;
+    --foot-h: 0px;
+  }
+
   .hosaka-brand-sub { display: none; }
-  .panel-header { padding: 16px 16px 8px; }
+  .panel-header { padding: 10px 12px 6px; }
+  .panel-header h2 { font-size: 15px; }
+  .panel-sub { font-size: 12px; }
+
   .messages-toolbar, .messages-log, .messages-compose,
   .todo-compose, .todo-list {
-    padding-left: 16px;
-    padding-right: 16px;
+    padding-left: 10px;
+    padding-right: 10px;
     margin-left: 0;
     margin-right: 0;
   }
-  .hosaka-dock-label { font-size: 12px; }
+  .hosaka-dock-label { font-size: 11px; }
 
-  /* Pull the terminal toward the upper-mid of the screen by trimming
-     the chrome above and below it. The footer is purely vibes copy,
-     so it goes. The plant pill is redundant with /plant in-shell. */
-  .hosaka-topbar { padding: 4px 10px; }
-  .hosaka-brand-logo { font-size: 13px; }
+  /* Reduce top-bar chrome so more vertical space goes to the stage */
+  .hosaka-topbar { padding: 2px 8px; }
+  .hosaka-brand-logo { font-size: 12px; }
   .signal-badge, .plant-badge {
-    padding: 3px 8px;
-    font-size: 10px;
+    padding: 2px 6px;
+    font-size: 9px;
   }
   .plant-badge { display: none; }
-  .icon-btn { width: 32px; height: 32px; }
+  .icon-btn { width: 30px; height: 30px; font-size: 14px; }
 
-  .hosaka-dock { padding: 3px 6px; gap: 4px; }
+  .hosaka-dock { padding: 2px 4px; gap: 3px; }
   .hosaka-dock-btn {
-    padding: 5px 10px;
-    min-height: 36px;
-    font-size: 12px;
+    padding: 4px 8px;
+    min-height: 34px;
+    font-size: 11px;
   }
 
-  .terminal-wrap { padding: 4px; }
-  .terminal-host { padding: 6px; }
+  /* Terminal: zero chrome so xterm gets the entire stage */
+  .terminal-wrap { padding: 2px; }
+  .terminal-host { padding: 4px; }
+
+  /* Reading: collapse sidebar to top on small screens */
+  .reading-wrap { flex-direction: column; }
+  .reading-sidebar { width: 100%; min-width: unset; height: 120px; border-right: none; border-bottom: 1px solid var(--border); }
 
   .hosaka-footer { display: none; }
+}
+
+/* Portrait phones: further reduce chrome to give reading/typing max space */
+@media (max-width: 430px) {
+  .hosaka-dock-btn .hosaka-dock-label { display: none; }
+  .hosaka-dock-btn {
+    padding: 4px 10px;
+    min-width: 40px;
+    justify-content: center;
+  }
+  .hosaka-dock-picker { display: none; }
 }
 
 /* ── ModeSwitch ─────────────────────────────────────────────────────────── */
@@ -1450,3 +1473,175 @@ html, body, #root {
 }
 .mode-switch-actions button.primary { background: #f5b042; color: #0b0b14; border-color: #f5b042; }
 .mode-switch-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── web panel social quick-launch bar ──────────────────── */
+
+.web-social-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 16px 0;
+}
+
+.web-social-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  min-height: 30px;
+  border-color: var(--violet-dim);
+  color: var(--violet);
+}
+
+.web-social-btn:hover {
+  background: var(--bg-3);
+  border-color: var(--violet);
+  color: var(--fg-0);
+}
+
+/* ── books panel ─────────────────────────────────────────── */
+
+.books-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.books-search-row {
+  display: flex;
+  gap: 8px;
+  padding: 0 24px 12px;
+  align-items: center;
+}
+
+.books-input {
+  flex: 1;
+  padding: 10px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  color: var(--fg-0);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  min-width: 0;
+}
+
+.books-input:focus {
+  outline: 1px solid var(--amber-dim);
+  border-color: var(--amber-dim);
+}
+
+.books-stage {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 24px 24px;
+  scrollbar-width: thin;
+}
+
+.books-empty,
+.books-unconfigured {
+  padding: 32px 0;
+  color: var(--fg-3);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.books-unconfigured p { margin: 0 0 10px; }
+
+.books-error {
+  padding: 16px 0;
+}
+
+.books-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.books-item {
+  display: flex;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
+.books-cover {
+  width: 64px;
+  height: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+  background: var(--bg-2);
+}
+
+.books-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.books-title {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-0);
+  line-height: 1.4;
+}
+
+.books-authors {
+  color: var(--fg-2);
+  font-size: 12px;
+}
+
+.books-binding {
+  color: var(--fg-3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.books-price {
+  color: var(--amber);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.books-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.books-buy-btn {
+  font-size: 12px;
+  min-height: 34px;
+  padding: 6px 12px;
+  text-decoration: none;
+}
+
+.books-kindle-btn {
+  font-size: 12px;
+  min-height: 34px;
+  padding: 6px 12px;
+  text-decoration: none;
+  border-color: var(--cyan-dim);
+  color: var(--cyan);
+}
+
+.books-kindle-btn:hover {
+  border-color: var(--cyan);
+  background: var(--bg-3);
+}
+
+@media (max-width: 600px) {
+  .books-search-row { padding: 0 10px 8px; gap: 6px; }
+  .books-stage { padding: 0 10px 16px; }
+  .books-item { flex-direction: column; gap: 10px; }
+  .books-cover { width: 48px; }
+}

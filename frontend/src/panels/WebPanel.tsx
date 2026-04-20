@@ -9,7 +9,7 @@
  * a preset or press Go.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "../i18n";
 
 type LoadMode = "iframe" | "window";
@@ -114,10 +114,37 @@ export function WebPanel({ active }: Props) {
     setLastExternal(null);
   };
 
+  // Listen for shell shortcuts like /reddit, /tiktok, /discord.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (id) onPresetChange(id);
+    };
+    window.addEventListener("hosaka:web-preset", handler as EventListener);
+    return () => window.removeEventListener("hosaka:web-preset", handler as EventListener);
+    // onPresetChange is stable (only depends on state setters + PRESETS const)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (!active) return null;
 
   return (
     <div className="web-panel">
+      {/* ── social quick-launch bar ─── */}
+      <div className="web-social-bar">
+        {PRESETS.filter((p) => ["reddit", "tiktok", "discord", "yt", "twitch"].includes(p.id)).map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className="btn btn-ghost web-social-btn"
+            onClick={() => onPresetChange(p.id)}
+            title={t(p.labelKey, p.id)}
+          >
+            {t(p.labelKey, p.id)}
+          </button>
+        ))}
+      </div>
+
       <div className="web-toolbar">
         <label className="web-label">
           <span className="dim">{t("web.presetLabel", "app")}</span>
