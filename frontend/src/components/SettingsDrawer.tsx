@@ -14,6 +14,14 @@ import {
   saveAgentConfig,
   type AgentConfig,
 } from "../llm/agentClient";
+import {
+  DEFAULT_UI_CONFIG,
+  FONT_SIZES,
+  loadUiConfig,
+  saveUiConfig,
+  type FontSize,
+  type UiConfig,
+} from "../uiConfig";
 
 type Props = {
   open: boolean;
@@ -24,6 +32,7 @@ export function SettingsDrawer({ open, onClose }: Props) {
   const { t } = useTranslation("ui");
   const [cfg, setCfg] = useState<LlmConfig>(loadConfig);
   const [agentCfg, setAgentCfg] = useState<AgentConfig>(loadAgentConfig);
+  const [uiCfg, setUiCfg] = useState<UiConfig>(loadUiConfig);
   const [agentPassRevealed, setAgentPassRevealed] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
 
@@ -31,6 +40,7 @@ export function SettingsDrawer({ open, onClose }: Props) {
     if (open) {
       setCfg(loadConfig());
       setAgentCfg(loadAgentConfig());
+      setUiCfg(loadUiConfig());
     }
   }, [open]);
 
@@ -48,6 +58,14 @@ export function SettingsDrawer({ open, onClose }: Props) {
   const commitAgent = (next: AgentConfig) => {
     setAgentCfg(next);
     saveAgentConfig(next);
+    flash();
+  };
+
+  const commitUi = (next: UiConfig) => {
+    setUiCfg(next);
+    saveUiConfig(next);
+    // Notify App.tsx and TerminalPanel to re-apply the font scale.
+    window.dispatchEvent(new CustomEvent("hosaka:ui-changed"));
     flash();
   };
 
@@ -161,6 +179,34 @@ export function SettingsDrawer({ open, onClose }: Props) {
             <button
               className="btn btn-ghost"
               onClick={() => commitAgent({ ...DEFAULT_AGENT_CONFIG })}
+            >
+              {t("settingsDrawer.reset")}
+            </button>
+          </div>
+        </section>
+
+        <section className="drawer-section">
+          <h3>{t("settingsDrawer.appearance.heading")}</h3>
+          <p className="dim small">{t("settingsDrawer.appearance.desc")}</p>
+
+          <label className="drawer-field">
+            <span>{t("settingsDrawer.appearance.fontSizeLabel")}</span>
+            <select
+              value={uiCfg.fontSize}
+              onChange={(e) => commitUi({ ...uiCfg, fontSize: e.target.value as FontSize })}
+            >
+              {FONT_SIZES.map((sz) => (
+                <option key={sz} value={sz}>
+                  {t(`settingsDrawer.appearance.fontSize_${sz}`, sz)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="drawer-actions">
+            <button
+              className="btn btn-ghost"
+              onClick={() => commitUi({ ...DEFAULT_UI_CONFIG })}
             >
               {t("settingsDrawer.reset")}
             </button>

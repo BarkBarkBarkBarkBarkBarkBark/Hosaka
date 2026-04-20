@@ -80,6 +80,22 @@ no wrong way — try /commands.
 |---|---|
 | `/terminal` | switch to the terminal tab |
 | `/messages` | hint: open the messages tab |
+| `/web` | open the web / apps panel |
+| `/video` | open the video panel |
+| `/games` | open the games panel |
+| `/wiki` | open the wikipedia roulette panel |
+| `/books` | open the books panel |
+| `/books <query>` | open books panel and search immediately |
+
+---
+
+## social
+
+| Command | Description |
+|---|---|
+| `/reddit` | open reddit in the web panel |
+| `/tiktok` | open tiktok in the web panel |
+| `/discord` | open discord in the web panel |
 
 ---
 
@@ -135,5 +151,10 @@ Type the **magic word** (default `neuro`) and the channel opens.
 | change the LLM model | `/model gemini-2.5-flash` |
 | check the agent connection | `/agent test` |
 | reset everything | `/reset`, `/clear`, refresh tab |
+| open reddit | `/reddit` |
+| open tiktok | `/tiktok` |
+| open discord | `/discord` |
+| search for a book | `/books dune` |
+| change font size | `/settings` → Appearance |
 
 > _no wrong way._

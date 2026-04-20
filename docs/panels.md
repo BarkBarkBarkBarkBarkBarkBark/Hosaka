@@ -6,7 +6,7 @@ and stays mounted afterwards so its state survives tab switching.
 
 This is the exact 6-step recipe. Follow it in order. Every existing panel
 (`TerminalPanel`, `ReadingPanel`, `TodoPanel`, `VideoPanel`, `MessagesPanel`,
-`GamesPanel`, `WikiPanel`, `WebPanel`) is built this way.
+`GamesPanel`, `WikiPanel`, `WebPanel`, `BooksPanel`) is built this way.
 
 **`WebPanel`** — iframe + preset shortcuts. Many large sites refuse to render
 inside an iframe (`X-Frame-Options` / CSP). Those presets open in a **new
@@ -147,9 +147,12 @@ The terminal can drive other panels via `CustomEvent`:
 |--------------------------|------------------|-----------------|
 | `hosaka:open-tab`        | `PanelId`        | `App.tsx`       |
 | `hosaka:open-settings`   | `void`           | `App.tsx`       |
+| `hosaka:ui-changed`      | `void`           | `App.tsx`, `TerminalPanel` |
 | `hosaka:read`            | `slug: string`   | `ReadingPanel`  |
 | `hosaka:todo-add`        | `text: string`   | `TodoPanel`     |
 | `hosaka:video`           | `url: string`    | `VideoPanel`    |
+| `hosaka:web-preset`      | `presetId: string` | `WebPanel`    |
+| `hosaka:books-search`    | `query: string`  | `BooksPanel`    |
 
 Add new events here when you wire them up. Keep the namespace `hosaka:*`
 and use `kebab-case`. Detail payloads should be JSON-serialisable so the

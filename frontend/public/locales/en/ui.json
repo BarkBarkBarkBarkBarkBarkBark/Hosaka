@@ -18,6 +18,7 @@
     "games": "Games",
     "wiki": "Wiki",
     "web": "Web",
+    "books": "Books",
     "jump": "view"
   },
 
@@ -57,7 +58,23 @@
     "hint": "many sites block iframes; those open in a new tab. embed-friendly pages load below.",
     "openedExternal": "opened in new tab:",
     "frameTitle": "web",
-    "empty": "pick a preset or enter a URL and press go."
+    "empty": "pick a preset or enter a URL and press go.",
+    "socialBar": "quick-launch:"
+  },
+
+  "books": {
+    "heading": "books",
+    "sub": "search amazon books. browse here, buy there.",
+    "placeholder": "search for a title, author, or ISBN…",
+    "search": "search",
+    "searching": "searching…",
+    "idle": "search for a book to begin.",
+    "noResults": "no results. the signal was quiet.",
+    "buyOnAmazon": "buy on amazon ↗",
+    "kindle": "kindle ↗",
+    "unconfigured": "the book relay isn't wired up yet.",
+    "unconfiguredHint": "to enable: add AMAZON_PA_ACCESS_KEY, AMAZON_PA_SECRET_KEY, AMAZON_PA_PARTNER_TAG, and AMAZON_PA_REGION to your deployment environment, then redeploy.",
+    "unconfiguredFallback": "in the meantime, try the web panel → amazon, or ask the orb for a recommendation."
   },
 
   "wiki": {
@@ -114,6 +131,15 @@
       "messagesLog": "messages log: browser <code>localStorage</code>",
       "geminiKey": "the gemini api key lives only in vercel env vars — the browser never sees it",
       "picoclaw": "picoclaw persists per-session history on the fly.io volume; your browser never sees it"
+    },
+
+    "appearance": {
+      "heading": "Appearance",
+      "desc": "font size affects text panels and the terminal. takes effect immediately.",
+      "fontSizeLabel": "font size",
+      "fontSize_small": "small",
+      "fontSize_normal": "normal",
+      "fontSize_large": "large"
     }
   },
 

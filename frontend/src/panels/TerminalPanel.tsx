@@ -7,6 +7,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 // paint of the kiosk doesn't pay this cost.
 import "@xterm/xterm/css/xterm.css";
 import { HosakaShell } from "../shell/HosakaShell";
+import { loadUiConfig, FONT_SIZE_TERMINAL } from "../uiConfig";
 
 type Props = { active: boolean };
 
@@ -19,14 +20,13 @@ export function TerminalPanel({ active }: Props) {
   useEffect(() => {
     if (!hostRef.current) return;
 
-    // Smaller font on narrow screens so the banner + plant fit without
-    // wrapping mid-glyph on phones in portrait. ~12px gives us roughly
-    // 56 cols on a 360px viewport, which is the threshold the shell uses
-    // to switch to its compact banner.
+    // Determine font size from user preference; fall back to narrow-screen
+    // auto-scaling so phones in portrait still fit the banner without wrapping.
     const isNarrow = window.innerWidth < 500;
+    const prefSize = FONT_SIZE_TERMINAL[loadUiConfig().fontSize];
     const term = new Terminal({
       fontFamily: '"JetBrains Mono", "Fira Code", Menlo, Consolas, monospace',
-      fontSize: isNarrow ? 12 : 14,
+      fontSize: isNarrow ? Math.min(prefSize, 12) : prefSize,
       cursorBlink: true,
       cursorStyle: "bar",
       scrollback: 5000,
@@ -77,10 +77,18 @@ export function TerminalPanel({ active }: Props) {
         // ignore layout-thrash errors
       }
     };
+    const onUiChanged = () => {
+      const isNarrowNow = window.innerWidth < 500;
+      const size = FONT_SIZE_TERMINAL[loadUiConfig().fontSize];
+      term.options.fontSize = isNarrowNow ? Math.min(size, 12) : size;
+      try { fit.fit(); } catch { /* ignore */ }
+    };
     window.addEventListener("resize", onResize);
+    window.addEventListener("hosaka:ui-changed", onUiChanged);
 
     return () => {
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("hosaka:ui-changed", onUiChanged);
       term.dispose();
     };
   }, []);

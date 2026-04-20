@@ -52,5 +52,10 @@ export function getCommands(): CommandEntry[] {
     { cmd: "/video",     desc: st("commands.videoDesc"),       cat: st("commands.catPanels") },
     { cmd: "/games",     desc: st("commands.gamesDesc"),       cat: st("commands.catPanels") },
     { cmd: "/wiki",      desc: st("commands.wikiDesc"),        cat: st("commands.catPanels") },
+    { cmd: "/books",     desc: st("commands.booksDesc"),       cat: st("commands.catPanels") },
+    { cmd: "/books <q>", desc: st("commands.booksSearchDesc"), cat: st("commands.catPanels") },
+    { cmd: "/reddit",    desc: st("commands.redditDesc"),      cat: st("commands.catSocial") },
+    { cmd: "/tiktok",    desc: st("commands.tiktokDesc"),      cat: st("commands.catSocial") },
+    { cmd: "/discord",   desc: st("commands.discordDesc"),     cat: st("commands.catSocial") },
   ];
 }

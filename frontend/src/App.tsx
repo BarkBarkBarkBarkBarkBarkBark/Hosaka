@@ -5,6 +5,7 @@ import { SignalBadge } from "./components/SignalBadge";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { LangPicker } from "./components/LangPicker";
 import { ModeSwitch } from "./components/ModeSwitch";
+import { applyFontSize, loadUiConfig } from "./uiConfig";
 
 // Each panel becomes its own chunk so first paint of the kiosk only ships
 // the shell (header + dock + footer + the active panel). Big panels — xterm
@@ -35,6 +36,9 @@ const WikiPanel = lazy(() =>
 const WebPanel = lazy(() =>
   import("./panels/WebPanel").then((m) => ({ default: m.WebPanel })),
 );
+const BooksPanel = lazy(() =>
+  import("./panels/BooksPanel").then((m) => ({ default: m.BooksPanel })),
+);
 
 export type PanelId =
   | "terminal"
@@ -44,7 +48,8 @@ export type PanelId =
   | "video"
   | "games"
   | "wiki"
-  | "web";
+  | "web"
+  | "books";
 
 const SHOW_SETTINGS = import.meta.env.VITE_SHOW_SETTINGS === "1";
 
@@ -53,6 +58,15 @@ export function App() {
   const [active, setActive] = useState<PanelId>("terminal");
   const [bootMessage, setBootMessage] = useState(t("boot.waking"));
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Apply font-size preference from localStorage immediately on mount.
+  useEffect(() => {
+    applyFontSize(loadUiConfig().fontSize);
+    // Re-apply whenever the operator changes it via the settings drawer.
+    const handler = () => applyFontSize(loadUiConfig().fontSize);
+    window.addEventListener("hosaka:ui-changed", handler);
+    return () => window.removeEventListener("hosaka:ui-changed", handler);
+  }, []);
 
   // Track which panels the operator has actually visited so far. We only
   // render (and therefore only load the chunk for) panels they've tapped.
@@ -71,6 +85,7 @@ export function App() {
       { id: "games", label: t("tabs.games", "games"), glyph: "◆" },
       { id: "wiki",  label: t("tabs.wiki",  "wiki"),  glyph: "W" },
       { id: "web",   label: t("tabs.web",   "web"),   glyph: "⌁" },
+      { id: "books", label: t("tabs.books", "books"), glyph: "📖" },
     ],
     [t],
   );
@@ -189,6 +204,11 @@ export function App() {
           {visited.has("web") && (
             <div className="hosaka-panel" hidden={active !== "web"}>
               <WebPanel active={active === "web"} />
+            </div>
+          )}
+          {visited.has("books") && (
+            <div className="hosaka-panel" hidden={active !== "books"}>
+              <BooksPanel active={active === "books"} />
             </div>
           )}
         </Suspense>

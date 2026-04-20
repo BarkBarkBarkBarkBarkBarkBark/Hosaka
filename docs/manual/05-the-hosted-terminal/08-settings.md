@@ -73,7 +73,10 @@ Leave blank to use offline orb chat only.
 | Field | What it does |
 |---|---|
 | Language | switches all UI strings (6 locales bundled) |
+| Font size | `small` / `normal` / `large` — scales all UI text and the terminal |
 | Theme | currently single theme: phosphor amber on black |
+
+Font size is stored in `localStorage` under `hosaka.ui.v1` and takes effect immediately without a reload.
 
 ---
 
@@ -85,6 +88,7 @@ Every setting lives in `localStorage`:
 |---|---|
 | `hosaka.llm.v1` | model + last conversation id |
 | `hosaka.agent.v1` | agent URL, passphrase, channel state |
+| `hosaka.ui.v1` | appearance preferences (font size) |
 | `hosaka.todo.v1` | open loops |
 | `hosaka.messages.v1` | message history + webhook config |
 | `hosaka.locale` | active language |

@@ -83,6 +83,11 @@
     "videoDesc": "open the video panel",
     "gamesDesc": "open the games panel",
     "wikiDesc": "open the wikipedia roulette panel",
+    "booksDesc": "open the books panel",
+    "booksSearchDesc": "search amazon books",
+    "redditDesc": "open reddit in the web panel",
+    "tiktokDesc": "open tiktok in the web panel",
+    "discordDesc": "open discord in the web panel",
 
     "catReference": "Reference",
     "catChatAI": "Chat & AI",
@@ -92,7 +97,8 @@
     "catOpenLoops": "Open Loops",
     "catSystem": "System",
     "catTools": "Tools",
-    "catPanels": "Panels"
+    "catPanels": "Panels",
+    "catSocial": "Social"
   },
 
   "banner": {
@@ -304,6 +310,15 @@
     "noOpenLoops": "no open loops.",
     "cantRead": "couldn't read loops.",
     "usage": "usage: /todo  ·  /todo add <text>  ·  /todo list"
+  },
+
+  "webPreset": {
+    "opening": "opening {{preset}} in the web panel."
+  },
+
+  "booksCmd": {
+    "openedPanel": "opened the books panel.",
+    "searching": "searching books for"
   },
 
   "netscan": {

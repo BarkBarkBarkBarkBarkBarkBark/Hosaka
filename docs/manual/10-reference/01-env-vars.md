@@ -69,6 +69,13 @@ Set in **Vercel → Project → Settings → Environment Variables**.
 | `VITE_SHOW_SETTINGS` | `1` to show the cog |
 | `VITE_HOSAKA_AGENT_URL` | `wss://agent.hosaka.app/ws/agent` |
 | `VITE_HOSAKA_MAGIC_WORD` | the magic word |
+| `AMAZON_PA_ACCESS_KEY` | Amazon PA-API access key (enables `/books` relay) |
+| `AMAZON_PA_SECRET_KEY` | Amazon PA-API secret key |
+| `AMAZON_PA_PARTNER_TAG` | Amazon Associates partner tag (e.g. `hosaka-20`) |
+| `AMAZON_PA_REGION` | PA-API region, default `us-east-1` |
+
+The Amazon PA-API vars are **optional**. If absent, the Books panel shows a
+"not wired up yet" message and degrades gracefully.
 
 Plus any Vercel-managed config (build commands, output dir, etc.) in
 `vercel.json`.
