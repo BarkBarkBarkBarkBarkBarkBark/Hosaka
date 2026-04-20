@@ -26,8 +26,25 @@ const TodoPanel = lazy(() =>
 const VideoPanel = lazy(() =>
   import("./panels/VideoPanel").then((m) => ({ default: m.VideoPanel })),
 );
+const GamesPanel = lazy(() =>
+  import("./panels/GamesPanel").then((m) => ({ default: m.GamesPanel })),
+);
+const WikiPanel = lazy(() =>
+  import("./panels/WikiPanel").then((m) => ({ default: m.WikiPanel })),
+);
+const WebPanel = lazy(() =>
+  import("./panels/WebPanel").then((m) => ({ default: m.WebPanel })),
+);
 
-export type PanelId = "terminal" | "messages" | "reading" | "todo" | "video";
+export type PanelId =
+  | "terminal"
+  | "messages"
+  | "reading"
+  | "todo"
+  | "video"
+  | "games"
+  | "wiki"
+  | "web";
 
 const SHOW_SETTINGS = import.meta.env.VITE_SHOW_SETTINGS === "1";
 
@@ -51,6 +68,9 @@ export function App() {
       { id: "reading", label: t("tabs.reading"), glyph: "❑" },
       { id: "todo", label: t("tabs.openLoops"), glyph: "▣" },
       { id: "video", label: t("tabs.video", "video"), glyph: "▶" },
+      { id: "games", label: t("tabs.games", "games"), glyph: "◆" },
+      { id: "wiki",  label: t("tabs.wiki",  "wiki"),  glyph: "W" },
+      { id: "web",   label: t("tabs.web",   "web"),   glyph: "⌁" },
     ],
     [t],
   );
@@ -100,6 +120,21 @@ export function App() {
       </header>
 
       <nav className="hosaka-dock" role="tablist">
+        <label className="hosaka-dock-picker">
+          <span className="hosaka-dock-picker-label dim">{t("tabs.jump", "view")}</span>
+          <select
+            className="hosaka-panel-select"
+            value={active}
+            aria-label={t("tabs.jump", "view")}
+            onChange={(e) => setActive(e.target.value as PanelId)}
+          >
+            {panels.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.glyph} {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
         {panels.map((p) => (
           <button
             key={p.id}
@@ -139,6 +174,21 @@ export function App() {
           {visited.has("video") && (
             <div className="hosaka-panel" hidden={active !== "video"}>
               <VideoPanel active={active === "video"} />
+            </div>
+          )}
+          {visited.has("games") && (
+            <div className="hosaka-panel" hidden={active !== "games"}>
+              <GamesPanel active={active === "games"} />
+            </div>
+          )}
+          {visited.has("wiki") && (
+            <div className="hosaka-panel" hidden={active !== "wiki"}>
+              <WikiPanel active={active === "wiki"} />
+            </div>
+          )}
+          {visited.has("web") && (
+            <div className="hosaka-panel" hidden={active !== "web"}>
+              <WebPanel active={active === "web"} />
             </div>
           )}
         </Suspense>

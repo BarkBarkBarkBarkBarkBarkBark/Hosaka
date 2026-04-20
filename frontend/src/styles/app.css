@@ -109,6 +109,7 @@ html, body, #root {
 
 .hosaka-dock {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: stretch;
   padding: 6px 10px;
@@ -116,6 +117,40 @@ html, body, #root {
   background: var(--bg-1);
   overflow-x: auto;
   scrollbar-width: thin;
+}
+
+.hosaka-dock-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 4px;
+  margin-right: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.hosaka-dock-picker-label {
+  text-transform: lowercase;
+  letter-spacing: 0.06em;
+}
+
+.hosaka-panel-select {
+  min-width: 140px;
+  max-width: min(220px, 40vw);
+  padding: 6px 8px;
+  background: var(--bg-0);
+  color: var(--fg-0);
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.hosaka-panel-select:focus {
+  outline: 1px solid var(--amber-dim);
+  border-color: var(--amber-dim);
 }
 
 .hosaka-dock-btn {
@@ -819,6 +854,374 @@ html, body, #root {
 
 .video-rail-source { color: var(--violet); font-size: 9px; letter-spacing: 0.05em; }
 .video-rail-title  { overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+
+/* ── games panel ─────────────────────────────────────────── */
+
+.games-panel {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  height: 100%;
+  gap: 0;
+  background: var(--bg-0);
+}
+
+.games-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 8px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-1);
+  overflow-y: auto;
+}
+
+.games-side-head {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--fg-3);
+  text-transform: lowercase;
+  padding: 4px 8px 8px;
+}
+
+.games-picker-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.games-picker {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-0);
+  color: var(--fg-0);
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.games-picker:focus {
+  outline: 1px solid var(--amber-dim);
+  border-color: var(--amber);
+}
+
+.games-side-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px;
+  background: transparent;
+  color: var(--fg-1);
+  border: 1px solid transparent;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.games-side-btn:hover { background: var(--bg-2); color: var(--fg-0); }
+.games-side-btn.is-active {
+  background: var(--bg-3);
+  color: var(--amber);
+  border-color: var(--amber-dim);
+  box-shadow: inset 0 -2px 0 var(--amber);
+}
+
+.games-side-glyph { color: var(--amber); min-width: 28px; }
+.games-side-label { letter-spacing: 0.05em; text-transform: lowercase; }
+
+.games-score {
+  margin-top: auto;
+  padding: 10px 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.games-score-val { color: var(--amber); font-weight: 700; }
+
+.games-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-0);
+}
+
+.games-canvas {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #0b0d10;
+  image-rendering: pixelated;
+  touch-action: none;
+}
+
+.games-touch {
+  display: none;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 8px 12px 12px;
+  pointer-events: none;
+}
+
+.games-dpad,
+.games-actions {
+  pointer-events: auto;
+  display: grid;
+  gap: 6px;
+}
+
+.games-dpad {
+  grid-template-columns: repeat(3, 44px);
+  grid-template-rows:    repeat(3, 44px);
+}
+
+.games-tbtn {
+  width: 44px;
+  height: 44px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  color: var(--amber);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.games-tbtn:active {
+  background: var(--bg-3);
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.games-tbtn-up    { grid-column: 2; grid-row: 1; }
+.games-tbtn-left  { grid-column: 1; grid-row: 2; }
+.games-tbtn-right { grid-column: 3; grid-row: 2; }
+.games-tbtn-down  { grid-column: 2; grid-row: 3; }
+
+.games-actions {
+  grid-template-columns: 56px;
+  grid-auto-rows: 44px;
+}
+
+.games-tbtn-fire { width: 56px; color: var(--cyan); border-color: var(--cyan-dim); }
+.games-tbtn-rot  { width: 56px; color: var(--violet); border-color: var(--violet-dim); }
+
+/* show on-screen controls on touch / narrow */
+@media (pointer: coarse), (max-width: 800px) {
+  .games-stage { display: grid; grid-template-rows: 1fr auto; }
+  .games-touch { display: flex; }
+}
+
+/* ── wiki panel ──────────────────────────────────────────── */
+
+.wiki-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.wiki-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 28px 12px;
+  flex-wrap: wrap;
+}
+
+.wiki-history {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.wiki-counter {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-2);
+  min-width: 50px;
+  text-align: center;
+}
+
+.wiki-open { margin-left: auto; }
+
+.wiki-stage {
+  flex: 1;
+  overflow: auto;
+  padding: 0 28px 28px;
+}
+
+.wiki-empty,
+.wiki-err {
+  color: var(--fg-2);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+.wiki-err { color: var(--red); }
+
+.wiki-article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  max-width: 760px;
+}
+
+@media (min-width: 720px) {
+  .wiki-article { grid-template-columns: 220px minmax(0, 1fr); }
+}
+
+.wiki-thumb {
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+  align-self: start;
+}
+
+.wiki-body { min-width: 0; }
+
+.wiki-title {
+  margin: 0 0 6px;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  color: var(--amber);
+  letter-spacing: 0.02em;
+}
+
+.wiki-desc {
+  color: var(--violet);
+  font-style: italic;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.wiki-extract {
+  color: var(--fg-1);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* ── web panel ───────────────────────────────────────────── */
+
+.web-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-0);
+}
+
+.web-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
+.web-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.web-select {
+  flex: 1;
+  min-width: 0;
+  max-width: min(100%, 420px);
+  padding: 8px 10px;
+  background: var(--bg-0);
+  color: var(--fg-0);
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.web-url-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.web-url-input {
+  flex: 1;
+  min-width: 120px;
+  padding: 8px 12px;
+  background: var(--bg-0);
+  color: var(--fg-1);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.web-go { min-width: 56px; }
+
+.web-hint {
+  margin: 0;
+  padding: 4px 16px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.web-external-note {
+  margin: 0;
+  padding: 0 16px 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--cyan-dim);
+}
+
+.web-external-note code {
+  color: var(--cyan);
+  word-break: break-all;
+}
+
+.web-frame-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: #000;
+}
+
+.web-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.web-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--fg-3);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-align: center;
+}
 
 /* ── 800×480 kiosk viewport lock ─────────────────────────── */
 

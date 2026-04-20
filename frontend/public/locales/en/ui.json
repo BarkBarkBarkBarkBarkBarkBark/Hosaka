@@ -13,7 +13,63 @@
     "terminal": "Terminal",
     "reading": "Reading",
     "openLoops": "Open Loops",
-    "messages": "Messages"
+    "messages": "Messages",
+    "video": "Video",
+    "games": "Games",
+    "wiki": "Wiki",
+    "web": "Web",
+    "jump": "view"
+  },
+
+  "games": {
+    "heading": "arcade",
+    "pickLabel": "game",
+    "score": "score",
+    "pong": "pong",
+    "snake": "snake",
+    "tetris": "tetris",
+    "invaders": "invaders",
+    "breakout": "breakout",
+    "orb": "orb catch",
+    "lunar": "lunar",
+    "signal": "signal sync"
+  },
+
+  "web": {
+    "presetLabel": "destination",
+    "presetCustom": "custom URL (iframe)",
+    "presetWiki": "wikipedia random",
+    "presetHn": "hacker news",
+    "presetGh": "github",
+    "presetArchive": "internet archive",
+    "presetReddit": "reddit (old)",
+    "presetYt": "youtube (new tab)",
+    "presetTiktok": "tiktok (new tab)",
+    "presetIg": "instagram (new tab)",
+    "presetDiscord": "discord (new tab)",
+    "presetTwitch": "twitch (new tab)",
+    "presetRedditNew": "reddit (new tab)",
+    "presetMastodon": "mastodon explore",
+    "presetLobsters": "lobste.rs",
+    "urlPlaceholder": "https://…",
+    "go": "go",
+    "openTab": "↗ tab",
+    "hint": "many sites block iframes; those open in a new tab. embed-friendly pages load below.",
+    "openedExternal": "opened in new tab:",
+    "frameTitle": "web",
+    "empty": "pick a preset or enter a URL and press go."
+  },
+
+  "wiki": {
+    "heading": "wikipedia roulette",
+    "sub": "a random article from the long quiet. press space for another.",
+    "again": "↻ another",
+    "loading": "rolling…",
+    "open": "open ↗",
+    "prev": "previous",
+    "next": "next",
+    "empty": "press ↻ to roll an article",
+    "errFetch": "could not reach wikipedia."
   },
 
   "plant": {

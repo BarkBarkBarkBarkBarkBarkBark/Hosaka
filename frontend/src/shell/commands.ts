@@ -39,6 +39,7 @@ export function getCommands(): CommandEntry[] {
 
     { cmd: "/status",    desc: st("commands.statusDesc"),      cat: st("commands.catSystem") },
     { cmd: "/signal",    desc: st("commands.signalDesc"),      cat: st("commands.catSystem") },
+    { cmd: "/update",    desc: st("commands.updateDesc"),      cat: st("commands.catSystem") },
     { cmd: "/clear",     desc: st("commands.clearDesc"),       cat: st("commands.catSystem") },
 
     { cmd: "/plant",     desc: st("commands.plantDesc"),       cat: st("commands.catTools") },
@@ -47,5 +48,9 @@ export function getCommands(): CommandEntry[] {
     { cmd: "/echo <x>",  desc: st("commands.echoDesc"),       cat: st("commands.catTools") },
 
     { cmd: "/messages",  desc: st("commands.messagesDesc"),    cat: st("commands.catPanels") },
+    { cmd: "/web",       desc: st("commands.webDesc"),         cat: st("commands.catPanels") },
+    { cmd: "/video",     desc: st("commands.videoDesc"),       cat: st("commands.catPanels") },
+    { cmd: "/games",     desc: st("commands.gamesDesc"),       cat: st("commands.catPanels") },
+    { cmd: "/wiki",      desc: st("commands.wikiDesc"),        cat: st("commands.catPanels") },
   ];
 }

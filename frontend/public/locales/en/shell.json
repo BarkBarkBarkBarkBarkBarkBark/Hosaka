@@ -72,12 +72,17 @@
     "todoListDesc": "list open loops in-terminal",
     "statusDesc": "hosted-mode status",
     "signalDesc": "confirm persistence",
+    "updateDesc": "pull latest hosaka (appliance api — may restart services)",
     "clearDesc": "wipe the screen",
     "plantDesc": "check the alien plant",
     "orbDesc": "the orb sees you",
     "loreDesc": "fragments from before the cascade",
     "echoDesc": "say something back at yourself",
     "messagesDesc": "hint: open the messages tab",
+    "webDesc": "open the web / apps panel",
+    "videoDesc": "open the video panel",
+    "gamesDesc": "open the games panel",
+    "wikiDesc": "open the wikipedia roulette panel",
 
     "catReference": "Reference",
     "catChatAI": "Chat & AI",
@@ -119,6 +124,20 @@
   },
 
   "switchTab": "switch tabs at the top to open the {{panel}} panel.",
+
+  "panel": {
+    "opened": "opened the {{panel}} panel."
+  },
+
+  "update": {
+    "starting": "requesting update…",
+    "ok": "update started.",
+    "fail": "update failed.",
+    "needToken": "forbidden — configure /etc/hosaka/api-token for this host, or run from ssh: hosaka deploy",
+    "unauthorized": "unauthorized — bearer token mismatch.",
+    "noApi": "no API on this build — static hosted only. redeploy the appliance or use the python TUI.",
+    "offline": "could not reach /api. are you offline or on static hosting?"
+  },
 
   "exit": "there's nowhere to exit to. you're already here.",
 

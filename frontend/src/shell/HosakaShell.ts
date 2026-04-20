@@ -350,9 +350,16 @@ export class HosakaShell {
         break;
       case "/messages":
       case "/terminal":
-        this.writeln(
-          `  ${GRAY}${st("switchTab", { panel: cmd.slice(1) })}${R}`,
-        );
+      case "/reading":
+      case "/todo":
+      case "/video":
+      case "/games":
+      case "/wiki":
+      case "/web":
+        this.switchToPanel(cmd.slice(1));
+        break;
+      case "/update":
+        await this.handleUpdate();
         break;
       case "/read":
         this.handleRead(arg);
@@ -705,6 +712,58 @@ export class HosakaShell {
       return;
     }
     this.writeln(`  ${RED}${st("agent.unknownSub")}${R} ${sub}`);
+  }
+
+  private switchToPanel(name: string): void {
+    const map: Record<string, string> = {
+      terminal: "terminal",
+      messages: "messages",
+      reading: "reading",
+      todo: "todo",
+      video: "video",
+      games: "games",
+      wiki: "wiki",
+      web: "web",
+    };
+    const id = map[name];
+    if (!id) {
+      this.writeln(`  ${GRAY}${st("switchTab", { panel: name })}${R}`);
+      return;
+    }
+    window.dispatchEvent(
+      new CustomEvent("hosaka:open-tab", { detail: id }),
+    );
+    this.writeln(`  ${GRAY}${st("panel.opened", { panel: name })}${R}`);
+  }
+
+  private async handleUpdate(): Promise<void> {
+    this.writeln(`  ${GRAY}${st("update.starting")}${R}`);
+    try {
+      const r = await fetch("/api/v1/system/update", {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      const j = (await r.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+      if (r.ok && j.ok) {
+        this.writeln(`  ${GREEN}${j.message ?? st("update.ok")}${R}`);
+        return;
+      }
+      if (r.status === 403) {
+        this.writeln(`  ${GRAY}${st("update.needToken")}${R}`);
+        return;
+      }
+      if (r.status === 401) {
+        this.writeln(`  ${GRAY}${st("update.unauthorized")}${R}`);
+        return;
+      }
+      if (r.status === 404) {
+        this.writeln(`  ${GRAY}${st("update.noApi")}${R}`);
+        return;
+      }
+      this.writeln(`  ${RED}${j.message ?? st("update.fail")}${R}`);
+    } catch {
+      this.writeln(`  ${GRAY}${st("update.offline")}${R}`);
+    }
   }
 
   private help(): void {

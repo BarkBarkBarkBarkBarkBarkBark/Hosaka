@@ -24,6 +24,7 @@ nav:
   - Client (hosakactl): client.md
   - Modes (console / device): modes.md
   - Wifi setup: wifi.md
+  - Adding a panel: panels.md
   - Claims audit: claims.md
 
 plugins:

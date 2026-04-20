@@ -25,6 +25,8 @@ import socket
 import subprocess
 import time
 from pathlib import Path
+
+from hosaka.ops.updater import APP_ROOT, UPDATE_SCRIPT
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -527,3 +529,35 @@ def v1_service_restart(name: str) -> ActionResult:
     if rc != 0:
         return ActionResult(ok=False, message=err.strip()[:400] or f"rc={rc}")
     return ActionResult(ok=True, message=f"restarted {name}")
+
+
+@router.post(
+    "/system/update",
+    response_model=ActionResult,
+    summary="Run the Hosaka git pull / reinstall script in the background",
+    dependencies=[Depends(require_write)],
+)
+def v1_system_update() -> ActionResult:
+    """Same flow as the Python TUI `/update` — fires `scripts/update_hosaka.sh`.
+
+    Runs detached so the HTTP handler returns before services restart.
+    """
+    if not UPDATE_SCRIPT.exists():
+        return ActionResult(
+            ok=False,
+            message=f"update script not found: {UPDATE_SCRIPT}",
+        )
+    try:
+        subprocess.Popen(
+            [str(UPDATE_SCRIPT)],
+            cwd=str(APP_ROOT),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        return ActionResult(ok=False, message=str(exc)[:400])
+    return ActionResult(
+        ok=True,
+        message="update started — services may restart; check ssh or journalctl",
+    )
