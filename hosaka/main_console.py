@@ -862,39 +862,8 @@ def _draw_ascii(subject: str, current_dir: Path) -> None:
     one_shot(prompt, hostname=_hostname(), cwd=str(current_dir))
 
 
-def _seed_picoclaw_key(cfg: dict, cfg_path: "Path", key: str, model_name: str) -> None:
-    """Write `key` into the active model entry of `cfg` and persist."""
-    import json
-    model_list = cfg.setdefault("model_list", [])
-    target_entry = next(
-        (m for m in model_list if m.get("model_name") == model_name), None,
-    )
-    if target_entry:
-        target_entry["api_key"] = key
-    else:
-        model_list.append({
-            "model_name": "gpt-4o-mini",
-            "model": "openai/gpt-4o-mini",
-            "api_key": key,
-            "api_base": "https://api.openai.com/v1",
-        })
-        if not model_name:
-            cfg.setdefault("agents", {}).setdefault("defaults", {})["model_name"] = "gpt-4o-mini"
-    cfg_path.write_text(json.dumps(cfg, indent=2))
-
-
 def _check_api_key() -> None:
-    """Resolve the OpenAI API key in priority order:
-
-    1. `OPENAI_API_KEY` env var (loaded from `.env` at boot) — silently seeds
-       `~/.picoclaw/config.json` and returns.
-    2. `~/.picoclaw/config.json` already contains a model with `api_key`.
-    3. Interactive prompt (input hidden via `getpass`) as the last resort.
-
-    The prompt also tells the user where to put the key so they don't have
-    to retype it next boot.
-    """
-    import getpass
+    """If no API key is configured, prompt the user to enter one."""
     import json
 
     cfg_path = Path.home() / ".picoclaw" / "config.json"
@@ -906,45 +875,53 @@ def _check_api_key() -> None:
     except Exception:
         return
 
+    # Check if any model in model_list has an api_key set
     model_list = cfg.get("model_list", [])
+    has_key = any(m.get("api_key") for m in model_list)
+    if has_key:
+        return
+
+    # Also check the default model
     defaults = cfg.get("agents", {}).get("defaults", {})
     model_name = defaults.get("model_name", "")
 
-    # 1. env var is authoritative — overwrites any stale/rotated key on disk.
-    #    silent, no echo, no prompt.
-    env_key = os.environ.get("OPENAI_API_KEY", "").strip()
-    if env_key:
-        already_matches = any(m.get("api_key") == env_key for m in model_list)
-        if not already_matches:
-            _seed_picoclaw_key(cfg, cfg_path, env_key, model_name)
-            print(f"  {ok_style('OpenAI key synced from environment.')} {GRAY}(written to ~/.picoclaw/config.json){R}")
-            print()
-        return
-
-    # 2. env var not set — fall back to whatever's already on disk
-    if any(m.get("api_key") for m in model_list):
-        return
-
-    # 2. interactive fallback (hidden input)
-    print(f"  {AMBER}No API key found.{R}")
-    print(f"  {GRAY}Hosaka needs an OpenAI API key to talk to the AI. Two ways to provide it:{R}")
-    print(f"    {CYAN}1.{R} {GRAY}set {R}{CYAN}OPENAI_API_KEY{R}{GRAY} in {R}{CYAN}.env{R}{GRAY} (then restart) — recommended{R}")
-    print(f"    {CYAN}2.{R} {GRAY}edit {R}{CYAN}~/.picoclaw/config.json{R}{GRAY} and set the {R}{CYAN}api_key{R}{GRAY} field{R}")
-    print(f"  {GRAY}Or paste it here once and we'll save it for you (input hidden):{R}")
+    print(f"  {AMBER}No API key found in ~/.picoclaw/config.json{R}")
+    print(f"  {GRAY}Hosaka needs an OpenAI API key to talk to the AI.{R}")
     print()
     try:
-        key = getpass.getpass(f"  {CYAN}OpenAI API key (hidden, Enter to skip): {R}").strip()
+        key = input(f"  {CYAN}Paste your OpenAI API key (or Enter to skip): {R}").strip()
     except (EOFError, KeyboardInterrupt):
         print()
         return
 
     if not key:
-        print(f"  {GRAY}Skipped. Edit ~/.picoclaw/config.json or set OPENAI_API_KEY in .env when ready.{R}")
-        print()
+        print(f"  {GRAY}Skipped. You can add it later to ~/.picoclaw/config.json{R}")
         return
 
-    _seed_picoclaw_key(cfg, cfg_path, key, model_name)
-    print(f"  {ok_style('API key saved.')} {GRAY}(written to ~/.picoclaw/config.json){R}")
+    # Find the active model entry or create one
+    target_entry = None
+    for m in model_list:
+        if m.get("model_name") == model_name:
+            target_entry = m
+            break
+
+    if target_entry:
+        target_entry["api_key"] = key
+    else:
+        # Add a default gpt-4o-mini entry
+        model_list.append({
+            "model_name": "gpt-4o-mini",
+            "model": "openai/gpt-4o-mini",
+            "api_key": key,
+            "api_base": "https://api.openai.com/v1",
+        })
+        if not model_name:
+            defaults["model_name"] = "gpt-4o-mini"
+            cfg.setdefault("agents", {}).setdefault("defaults", defaults)
+
+    cfg["model_list"] = model_list
+    cfg_path.write_text(json.dumps(cfg, indent=2))
+    print(f"  {ok_style('API key saved.')} You're ready to go.")
     print()
 
 
