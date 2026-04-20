@@ -28,17 +28,21 @@ export const MAGIC_WORD: string =
   (import.meta.env.VITE_HOSAKA_MAGIC_WORD as string | undefined) ?? "";
 
 // Picoclaw channel is on by default for the field-terminal appliance build.
+// When MAGIC_WORD is set (hosted builds), the channel starts gated — the
+// operator must type the passphrase to unlock it each session.
+const GATED = !!MAGIC_WORD;
+
 export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   url: DEFAULT_AGENT_URL,
   passphrase: MAGIC_WORD,
-  enabled: true,
+  enabled: !GATED,
 };
 
 export function loadAgentConfig(): AgentConfig {
-  // Field-terminal builds always boot with the channel open. We deliberately
-  // ignore any previously-persisted `enabled: false` so a one-off `/agent off`
-  // (or a stale localStorage entry from an older build) can never lock the
-  // operator out of the prompt on next reload.
+  // Appliance builds (no MAGIC_WORD) always boot with the channel open.
+  // Hosted builds (MAGIC_WORD set) require the user to speak the word first;
+  // we persist enabled=true in localStorage after they do, so it survives
+  // navigation but resets on a fresh session / cleared storage.
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULT_AGENT_CONFIG };
@@ -46,7 +50,7 @@ export function loadAgentConfig(): AgentConfig {
     return {
       url: stored.url || DEFAULT_AGENT_CONFIG.url,
       passphrase: stored.passphrase || DEFAULT_AGENT_CONFIG.passphrase,
-      enabled: true,
+      enabled: GATED ? (stored.enabled ?? false) : true,
     };
   } catch {
     return { ...DEFAULT_AGENT_CONFIG };
