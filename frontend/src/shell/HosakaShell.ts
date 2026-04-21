@@ -764,7 +764,7 @@ export class HosakaShell {
       return;
     }
     window.dispatchEvent(new CustomEvent("hosaka:web-open", { detail: trimmed }));
-    this.writeln(`  ${GRAY}${st("webPreset.opening", { preset: trimmed })}${R}`);
+    this.writeln(`  ${GRAY}${st("webOpen.opening", { target: trimmed })}${R}`);
   }
 
   private async handleUpdate(): Promise<void> {

@@ -49,13 +49,24 @@ const INTERNAL_PAGES = new Set<InternalPage>([
   "messages",
 ]);
 
-function normalizeExternalUrl(raw: string): string | null {
+export const INTERNAL_PANEL_PAGES: InternalPage[] = [
+  "terminal",
+  "messages",
+  "reading",
+  "todo",
+  "video",
+  "games",
+  "wiki",
+  "web",
+  "books",
+];
+
+function normalizeUrl(raw: string): string | null {
   const value = raw.trim();
   if (!value) return null;
   if (/^https?:\/\//i.test(value)) {
     try {
       const parsed = new URL(value);
-      if (!["http:", "https:"].includes(parsed.protocol)) return null;
       return parsed.href;
     } catch {
       return null;
@@ -126,7 +137,7 @@ export async function openUrl(rawInput: string): Promise<BrowserOpenResult> {
     return { kind: "internal", url, page: internal };
   }
 
-  const normalized = normalizeExternalUrl(rawInput);
+  const normalized = normalizeUrl(rawInput);
   if (!normalized) {
     return { kind: "unsupported", input: rawInput, reason: "enter a valid http(s) URL or hosaka:// target." };
   }

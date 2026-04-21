@@ -317,6 +317,10 @@
     "opening": "opening {{preset}} in the web panel."
   },
 
+  "webOpen": {
+    "opening": "opening {{target}} in the web panel."
+  },
+
   "booksCmd": {
     "openedPanel": "opened the books panel.",
     "searching": "searching books for"

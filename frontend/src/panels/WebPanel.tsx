@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "../i18n";
 import {
   getBrowserMode,
+  INTERNAL_PANEL_PAGES,
   launchExternal,
   openUrl,
   type BrowserOpenResult,
@@ -58,11 +59,13 @@ export function WebPanel({ active }: Props) {
     setUrlInput(result.kind === "unsupported" ? input : result.url);
 
     if (!push) {
+      // Reload replaces the current history entry instead of adding a new one.
       setHistory((rows) => rows.map((row, idx) => (idx === historyIndex ? { input, result } : row)));
       return;
     }
 
     setHistory((rows) => {
+      // Normal navigation drops forward history and appends a new current entry.
       const next = rows.slice(0, historyIndex + 1);
       next.push({ input, result });
       setHistoryIndex(next.length - 1);
@@ -74,13 +77,13 @@ export function WebPanel({ active }: Props) {
     void navigate(urlInput, true);
   };
 
-  const onPresetChange = (id: string) => {
+  const onPresetChange = useCallback((id: string) => {
     setPresetId(id);
     const p = PRESETS.find((x) => x.id === id);
     if (!p) return;
     setUrlInput(p.url);
     void navigate(p.url, true);
-  };
+  }, [navigate]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -100,13 +103,12 @@ export function WebPanel({ active }: Props) {
       window.removeEventListener("hosaka:web-preset", handler as EventListener);
       window.removeEventListener("hosaka:web-open", openHandler as EventListener);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigate]);
+  }, [navigate, onPresetChange]);
 
   if (!active) return null;
 
   const result = current?.result;
-  const internalPage: InternalPage = result?.kind === "internal" ? result.page : "home";
+  const internalResult = result?.kind === "internal" ? result : null;
   const isExternal = result?.kind === "external-browser";
   const isBlocked = result?.kind === "blocked";
   const isUnsupported = result?.kind === "unsupported";
@@ -195,9 +197,7 @@ export function WebPanel({ active }: Props) {
             <button
               type="button"
               className="btn btn-ghost"
-              onClick={() => {
-                if (result.kind !== "internal") void launchExternal(result.url);
-              }}
+              onClick={() => void launchExternal(result.url)}
               disabled={result.kind === "internal"}
             >
               {t("web.openTab", "↗ tab")}
@@ -236,7 +236,7 @@ export function WebPanel({ active }: Props) {
           </div>
         )}
         {!loading && !isBlocked && !isUnsupported && (
-          <InternalBrowserPage page={internalPage} onOpen={internalJump} />
+          <InternalBrowserPage page={internalResult?.page ?? "home"} onOpen={internalJump} />
         )}
       </div>
     </div>
@@ -251,16 +251,7 @@ function InternalBrowserPage({
   onOpen: (target: string) => void;
 }) {
   const { t } = useTranslation("ui");
-  const entries = [
-    "terminal",
-    "messages",
-    "reading",
-    "todo",
-    "video",
-    "games",
-    "wiki",
-    "books",
-  ] as const;
+  const entries = INTERNAL_PANEL_PAGES.filter((id) => id !== "web");
 
   if (page !== "home") {
     return (
