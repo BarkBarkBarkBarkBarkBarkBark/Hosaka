@@ -39,6 +39,7 @@
   "web": {
     "presetLabel": "destination",
     "presetCustom": "custom URL (iframe)",
+    "presetCyberspace": "cyberspace.online",
     "presetWiki": "wikipedia random",
     "presetHn": "hacker news",
     "presetGh": "github",
@@ -144,12 +145,13 @@
   },
 
   "reading": {
-    "sidebarHead": "library",
+    "sidebarHead": "collections",
     "orderBtn": "/read order →",
-    "loading": "… loading fragment …",
+    "loading": "… loading collections …",
     "errorNotFound": "signal lost. document not found.",
-    "emptySelect": "select a fragment from the sidebar.",
-    "emptyHint": "or type <code>/read</code> in the terminal."
+    "emptySelect": "select a collection from the sidebar.",
+    "emptyHint": "or type <code>/read</code> in the terminal.",
+    "openCollection": "open collection ↗"
   },
 
   "todo": {

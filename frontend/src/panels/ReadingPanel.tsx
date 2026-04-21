@@ -1,104 +1,105 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "../i18n";
-import { marked } from "marked";
-import i18next from "../i18n";
 
-// Marked is configured once at module load. GFM is on (tables, strikethrough,
-// task-list checkboxes, autolinks); breaks: false to match commonmark prose.
-// We intentionally do NOT install a sanitizer — library content is authored
-// in this repo, not user-supplied, so there's nothing to sanitize against.
-marked.setOptions({ gfm: true, breaks: false });
-
-type LibraryEntry = {
-  slug: string;
+type ReadingCollection = {
+  id: string;
   title: string;
-  author: string;
-  date: string;
-  tags: string[];
-  summary: string;
+  summary?: string;
+  description?: string;
+  url: string;
+  aliases?: string[];
 };
 
 type Props = { active: boolean };
 
-function libraryPath(slug: string): string {
-  const lang = i18next.language?.split("-")[0] ?? "en";
-  return `/library/${lang}/${slug}.md`;
+function isValidCollection(item: unknown): item is ReadingCollection {
+  if (!item || typeof item !== "object") return false;
+  const c = item as Partial<ReadingCollection>;
+  if (!c.id || !c.title || !c.url) return false;
+  try {
+    const u = new URL(c.url);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
-function libraryFallback(slug: string): string {
-  return `/library/en/${slug}.md`;
+function resolveCollectionId(value: string, collections: ReadingCollection[]): string | null {
+  const q = value.trim().toLowerCase();
+  if (!q) return null;
+  const hit = collections.find(
+    (c) =>
+      c.id.toLowerCase() === q ||
+      (Array.isArray(c.aliases) && c.aliases.some((a) => a.toLowerCase() === q)),
+  );
+  return hit?.id ?? null;
 }
 
 export function ReadingPanel({ active }: Props) {
   const { t } = useTranslation("ui");
-  const [entries, setEntries] = useState<LibraryEntry[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [content, setContent] = useState<string>("");
+  const [collections, setCollections] = useState<ReadingCollection[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/library/index.json")
+    setLoading(true);
+    fetch("/reading/collections.json")
       .then((r) => r.json())
-      .then((d: LibraryEntry[]) => setEntries(d))
-      .catch(() => {});
+      .then((d: unknown) => {
+        if (!Array.isArray(d)) {
+          setCollections([]);
+          return;
+        }
+        setCollections(d.filter(isValidCollection));
+      })
+      .catch(() => setCollections([]))
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
     const onSelect = (e: Event) => {
-      const slug = (e as CustomEvent<string>).detail;
-      if (slug) setSelected(slug);
+      const value = (e as CustomEvent<string>).detail;
+      if (!value) return;
+      const nextId = resolveCollectionId(value, collections);
+      if (nextId) setSelectedId(nextId);
     };
     window.addEventListener("hosaka:read", onSelect as EventListener);
     return () =>
       window.removeEventListener("hosaka:read", onSelect as EventListener);
-  }, []);
+  }, [collections]);
 
   useEffect(() => {
-    if (!selected) {
-      setContent("");
-      return;
+    if (active && !selectedId && collections.length > 0) {
+      setSelectedId(collections[0].id);
     }
-    setLoading(true);
-    const errMsg = t("reading.errorNotFound");
-    fetch(libraryPath(selected))
-      .then((r) => {
-        if (r.ok) return r.text();
-        return fetch(libraryFallback(selected)).then((fb) =>
-          fb.ok ? fb.text() : errMsg,
-        );
-      })
-      .then((txt) => setContent(txt))
-      .catch(() => setContent(errMsg))
-      .finally(() => setLoading(false));
-  }, [selected, t]);
+  }, [active, collections, selectedId]);
 
   useEffect(() => {
-    if (active && !selected && entries.length > 0) {
-      setSelected(entries[0].slug);
+    if (!selectedId || collections.length === 0) return;
+    if (!collections.some((c) => c.id === selectedId)) {
+      setSelectedId(collections[0]?.id ?? null);
     }
-  }, [active, entries, selected]);
+  }, [collections, selectedId]);
 
-  const entry = entries.find((e) => e.slug === selected);
-
-  // marked is sync in our config (no async extensions); the cast is safe.
-  const html = useMemo(() => (content ? (marked.parse(content) as string) : ""), [content]);
+  const selected = useMemo(
+    () => collections.find((c) => c.id === selectedId) ?? null,
+    [collections, selectedId],
+  );
 
   return (
     <div className="reading-wrap">
       <div className="reading-sidebar">
         <div className="reading-sidebar-head">
-          <span className="panel-glyph">❑</span> {t("reading.sidebarHead")}
+          <span className="panel-glyph">❑</span> {t("reading.sidebarHead", "collections")}
         </div>
-        {entries.map((e) => (
+        {collections.map((c) => (
           <button
-            key={e.slug}
-            className={`reading-entry ${selected === e.slug ? "is-active" : ""}`}
-            onClick={() => setSelected(e.slug)}
+            key={c.id}
+            className={`reading-entry ${selectedId === c.id ? "is-active" : ""}`}
+            onClick={() => setSelectedId(c.id)}
           >
-            <span className="reading-entry-title">{e.title}</span>
-            <span className="reading-entry-meta">
-              {e.author} · {e.date}
-            </span>
+            <span className="reading-entry-title">{c.title}</span>
+            <span className="reading-entry-meta">{c.summary ?? c.id}</span>
           </button>
         ))}
         <div className="reading-sidebar-foot">
@@ -116,26 +117,42 @@ export function ReadingPanel({ active }: Props) {
       </div>
 
       <div className="reading-content">
-        {loading && (
-          <p className="reading-loading">{t("reading.loading")}</p>
-        )}
-        {!loading && content && (
-          <>
-            {entry && (
-              <div className="reading-entry-tags">
-                {entry.tags.map((tag) => (
-                  <span key={tag} className="reading-tag">
-                    {tag}
-                  </span>
-                ))}
+        {loading && <p className="reading-loading">{t("reading.loading")}</p>}
+        {!loading && selected && (
+          <div className="reading-collection">
+            <div className="reading-collection-head">
+              <div className="reading-collection-copy">
+                <h2 className="reading-collection-title">{selected.title}</h2>
+                {(selected.description || selected.summary) && (
+                  <p className="reading-collection-desc">
+                    {selected.description ?? selected.summary}
+                  </p>
+                )}
               </div>
-            )}
-            <div className="reading-md" dangerouslySetInnerHTML={{ __html: html }} />
-          </>
+              <button
+                type="button"
+                className="btn btn-ghost reading-collection-link"
+                onClick={() =>
+                  window.open(selected.url, "_blank", "noopener,noreferrer")
+                }
+              >
+                {t("reading.openCollection", "open collection ↗")}
+              </button>
+            </div>
+            <div className="reading-frame-wrap">
+              <iframe
+                className="reading-frame"
+                title={selected.title}
+                src={selected.url}
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            </div>
+          </div>
         )}
-        {!loading && !content && (
+        {!loading && !selected && (
           <div className="reading-empty">
-            <p>{t("reading.emptySelect")}</p>
+            <p>{t("reading.emptySelect", "select a collection from the sidebar.")}</p>
             <p className="dim" dangerouslySetInnerHTML={{ __html: t("reading.emptyHint") }} />
           </div>
         )}

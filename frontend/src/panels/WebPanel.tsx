@@ -23,6 +23,7 @@ type Preset = {
 
 const PRESETS: Preset[] = [
   { id: "custom", labelKey: "web.presetCustom", url: "", mode: "iframe" },
+  { id: "cyberspace", labelKey: "web.presetCyberspace", url: "https://cyberspace.online", mode: "iframe" },
   { id: "wiki", labelKey: "web.presetWiki", url: "https://en.wikipedia.org/wiki/Special:Random", mode: "iframe" },
   { id: "hn", labelKey: "web.presetHn", url: "https://news.ycombinator.com", mode: "iframe" },
   { id: "gh", labelKey: "web.presetGh", url: "https://github.com", mode: "iframe" },
@@ -61,10 +62,10 @@ type Props = { active: boolean };
 
 export function WebPanel({ active }: Props) {
   const { t } = useTranslation("ui");
-  const [presetId, setPresetId] = useState("wiki");
-  const [urlInput, setUrlInput] = useState("https://en.wikipedia.org");
+  const [presetId, setPresetId] = useState("cyberspace");
+  const [urlInput, setUrlInput] = useState("https://cyberspace.online");
   const [iframeSrc, setIframeSrc] = useState<string | null>(
-    "https://en.wikipedia.org/wiki/Special:Random",
+    "https://cyberspace.online",
   );
   const [lastExternal, setLastExternal] = useState<string | null>(null);
 

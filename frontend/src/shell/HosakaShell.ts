@@ -877,11 +877,13 @@ export class HosakaShell {
     if (!arg) {
       this.writeln(`  ${AMBER}${st("read.libraryTitle")}${R}`);
       this.writeln("");
-      fetch("/library/index.json")
+      fetch("/reading/collections.json")
         .then((r) => r.json())
-        .then((entries: { slug: string; title: string; summary: string }[]) => {
+        .then((entries: { id: string; summary?: string; description?: string }[]) => {
           for (const e of entries) {
-            this.writeln(`    ${CYAN}${e.slug}${R}  ${GRAY}${e.summary}${R}`);
+            this.writeln(
+              `    ${CYAN}${e.id}${R}  ${GRAY}${e.summary ?? e.description ?? ""}${R}`,
+            );
           }
           this.writeln("");
           this.writeln(`  ${GRAY}${st("read.usage")}${R}`);
