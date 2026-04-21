@@ -80,6 +80,7 @@
     "echoDesc": "say something back at yourself",
     "messagesDesc": "hint: open the messages tab",
     "webDesc": "open the web / apps panel",
+    "webOpenDesc": "open a url or hosaka:// target in the web panel",
     "videoDesc": "open the video panel",
     "gamesDesc": "open the games panel",
     "wikiDesc": "open the wikipedia roulette panel",

@@ -49,6 +49,7 @@ export function getCommands(): CommandEntry[] {
 
     { cmd: "/messages",  desc: st("commands.messagesDesc"),    cat: st("commands.catPanels") },
     { cmd: "/web",       desc: st("commands.webDesc"),         cat: st("commands.catPanels") },
+    { cmd: "/web <url>", desc: st("commands.webOpenDesc"),     cat: st("commands.catPanels") },
     { cmd: "/video",     desc: st("commands.videoDesc"),       cat: st("commands.catPanels") },
     { cmd: "/games",     desc: st("commands.gamesDesc"),       cat: st("commands.catPanels") },
     { cmd: "/wiki",      desc: st("commands.wikiDesc"),        cat: st("commands.catPanels") },
