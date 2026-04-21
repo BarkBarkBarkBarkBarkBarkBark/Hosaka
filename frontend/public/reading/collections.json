@@ -1,0 +1,39 @@
+[
+  {
+    "id": "lore",
+    "title": "Lore",
+    "summary": "Hosaka lore archive",
+    "description": "Lore fragments and timeline material from Hosaka's GitHub Pages.",
+    "url": "https://barkbarkbarkbarkbarkbarkbark.github.io/Hosaka/manual/09-lore/",
+    "aliases": [
+      "the-attention-thesis",
+      "the-organic-lattice",
+      "the-kindling",
+      "the-ghost-notation",
+      "eleven-thousand-nodes",
+      "the-deep-signal",
+      "the-cyberwars",
+      "the-cascade",
+      "sables-last-transmission",
+      "the-long-quiet",
+      "field-notes-on-the-orb",
+      "the-plant-protocol",
+      "signals-from-the-margin",
+      "the-field-terminal"
+    ]
+  },
+  {
+    "id": "manual",
+    "title": "Manual",
+    "summary": "Hosaka operator manual",
+    "description": "Hosted terminal and appliance operator documentation on GitHub Pages.",
+    "url": "https://barkbarkbarkbarkbarkbarkbark.github.io/Hosaka/manual/"
+  },
+  {
+    "id": "thoozle",
+    "title": "Thoozle",
+    "summary": "Thoozle repository pages",
+    "description": "GitHub Pages for the Thoozle collection.",
+    "url": "https://barkbarkbarkbarkbarkbarkbark.github.io/Thoozle/"
+  }
+]

@@ -64,8 +64,8 @@
     "agentTestDesc": "ping the agent backend",
     "shellDesc": "run a shell command in the sandbox",
     "netscanDesc": "theatrical + real network scanner",
-    "readDesc": "list library fragments",
-    "readSlugDesc": "open a fragment in the reading tab",
+    "readDesc": "list reading collections",
+    "readSlugDesc": "open a collection in the reading tab",
     "readOrderDesc": "the kindle relay (coming soon)",
     "todoDesc": "open the open loops panel",
     "todoAddDesc": "add a loop from the terminal",
@@ -295,11 +295,11 @@
   ],
 
   "read": {
-    "libraryTitle": "library — reading material from the signal",
-    "usage": "usage: /read <slug>  or switch to the reading tab.",
-    "libraryQuiet": "the library is quiet. try again.",
+    "libraryTitle": "collections — reading material from the signal",
+    "usage": "usage: /read <collection>  or switch to the reading tab.",
+    "libraryQuiet": "the collections index is quiet. try again.",
     "kindleNotTuned": "the kindle relay isn't tuned yet — coming soon.",
-    "useLocal": "for now, the local library is open. try /read.",
+    "useLocal": "for now, the local collections are open. try /read.",
     "opening": "opening {{slug}} in the reading panel."
   },
 
