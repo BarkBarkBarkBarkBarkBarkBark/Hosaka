@@ -1,0 +1,39 @@
+[Unit]
+Description=Hosaka Kiosk (Electron)
+# The kiosk is the display layer. It depends on:
+#   - an X session to render into (graphical.target, DISPLAY=:0)
+#   - the FastAPI webserver to talk to (hosaka-webserver.service)
+# The launcher waits on the webserver health check anyway, but declaring
+# the dependency here makes journald traces much more readable.
+After=graphical.target hosaka-webserver.service hosaka-mode.service
+Wants=graphical.target hosaka-webserver.service
+PartOf=graphical.target
+# install_hosaka.sh rewrites the placeholders below at install time.
+
+[Service]
+Type=simple
+User=operator
+Group=operator
+WorkingDirectory=/opt/hosaka-field-terminal/kiosk
+EnvironmentFile=-/etc/hosaka/env
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/operator/.Xauthority
+Environment=HOSAKA_REPO=/opt/hosaka-field-terminal
+Environment=HOSAKA_KIOSK_URL=http://127.0.0.1:8421/
+Environment=HOSAKA_KIOSK_FULLSCREEN=1
+Environment=ELECTRON_DISABLE_SANDBOX=1
+ExecStart=/usr/local/bin/hosaka-kiosk-electron
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+# Resource caps so an Electron WebContents crash can't OOM the Pi 3B or
+# starve FastAPI. Electron's renderer + GPU processes share this budget.
+MemoryMax=620M
+MemoryHigh=520M
+CPUQuota=200%
+TasksMax=256
+
+[Install]
+WantedBy=graphical.target

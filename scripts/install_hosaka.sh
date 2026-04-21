@@ -30,7 +30,8 @@ sudo rsync -a --delete "$REPO_ROOT/scripts"              "$APP_ROOT/"
 sudo rsync -a           "$REPO_ROOT/README.md"           "$APP_ROOT/"
 sudo rsync -a           "$REPO_ROOT/requirements-hosaka.txt" "$APP_ROOT/"
 
-sudo install -m 755 "$REPO_ROOT/scripts/kiosk-chromium.sh" /usr/local/bin/hosaka-kiosk-chromium
+sudo install -m 755 "$REPO_ROOT/scripts/kiosk-chromium.sh"   /usr/local/bin/hosaka-kiosk-chromium
+sudo install -m 755 "$REPO_ROOT/scripts/kiosk-electron.sh"   /usr/local/bin/hosaka-kiosk-electron
 # Operator CLI (build/kiosk mode toggle, deploy, status) and the boot-mode
 # arbiter that the hosaka-mode.service runs at startup.
 sudo install -m 755 "$REPO_ROOT/scripts/hosaka"            /usr/local/bin/hosaka
@@ -135,6 +136,20 @@ if [[ -d "$FRONTEND_SRC" ]]; then
 else
   echo "Warning: frontend source not found at $FRONTEND_SRC — skipping SPA build." >&2
   echo "Clone hosaka_field-terminal/frontend alongside this repo, or build manually." >&2
+fi
+
+# ── Electron kiosk deps (only installed when kiosk mode is the target) ───────
+KIOSK_SRC="$REPO_ROOT/kiosk"
+if [[ "$HOSAKA_BOOT_MODE" == "kiosk" && -d "$KIOSK_SRC" ]]; then
+  info "Installing Electron kiosk dependencies..."
+  cd "$KIOSK_SRC"
+  # --omit=dev skips nothing meaningful here (electron itself is a devDep
+  # that we still need at runtime) — we install everything.
+  npm install --no-fund --no-audit --loglevel error
+  sudo mkdir -p "$APP_ROOT/kiosk"
+  sudo rsync -a --delete "$KIOSK_SRC/" "$APP_ROOT/kiosk/"
+  ok "Electron kiosk staged at $APP_ROOT/kiosk"
+  cd - >/dev/null
 fi
 
 # ── state directories ─────────────────────────────────────────────────────────

@@ -29,7 +29,9 @@ export function TerminalPanel({ active }: Props) {
       fontSize: isNarrow ? Math.min(prefSize, 12) : prefSize,
       cursorBlink: true,
       cursorStyle: "bar",
-      scrollback: 5000,
+      // 5 000 lines burned ~500 KB of RAM on Pi 3B just idling; 1 500 keeps
+      // "hours of session" without the weight.
+      scrollback: 1500,
       allowProposedApi: true,
       macOptionIsMeta: true,
       theme: {

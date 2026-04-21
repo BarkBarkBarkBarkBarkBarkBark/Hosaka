@@ -47,6 +47,26 @@ for i in $(seq 1 60); do
     sleep 1
 done
 
+# Prefer the Electron kiosk launcher — it's the canonical display for the
+# Hosaka SPA because it enables <webview>-based native browsing (no
+# X-Frame-Options grief in the Web panel). Fall back to Chromium if the
+# launcher isn't installed yet (fresh clones, hosts without the kiosk/
+# node_modules primed, etc.).
+ELECTRON_LAUNCHER="/usr/local/bin/hosaka-kiosk-electron"
+if [ -x "$ELECTRON_LAUNCHER" ]; then
+    echo 800 > /proc/self/oom_score_adj 2>/dev/null || true
+    while true; do
+        "$ELECTRON_LAUNCHER" 2>>/tmp/hosaka-kiosk-electron.log || true
+        sleep 3
+        if [ "$(read_mode)" = "device" ]; then
+            exit 0
+        fi
+    done &
+    # Fall through past the Chromium loop — we're handling the relaunch here.
+    wait
+    exit 0
+fi
+
 # Pick whichever Chromium binary is installed on this Debian/RPi build
 CHROMIUM=""
 for name in chromium chromium-browser /usr/local/bin/hosaka-kiosk-chromium; do
@@ -58,7 +78,7 @@ done
 
 if [ -z "$CHROMIUM" ]; then
     # Fall back to a terminal so the operator isn't stuck with a black screen
-    exec lxterminal -e "echo 'no chromium installed — run: sudo apt install chromium'; bash"
+    exec lxterminal -e "echo 'no chromium or electron installed — run: cd ~/Hosaka/kiosk && npm install, or: sudo apt install chromium'; bash"
 fi
 
 # Use a dedicated profile dir so a previous "unclean shutdown" infobar never appears

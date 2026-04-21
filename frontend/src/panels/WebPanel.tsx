@@ -38,11 +38,31 @@ type Props = { active: boolean };
 
 export function WebPanel({ active }: Props) {
   const { t } = useTranslation("ui");
-  const [presetId, setPresetId] = useState("home");
-  const [urlInput, setUrlInput] = useState("hosaka://home");
-  const [history, setHistory] = useState<BrowserEntry[]>([
-    { input: "hosaka://home", result: { kind: "internal", url: "hosaka://home", page: "home" } },
-  ]);
+  const [presetId, setPresetId] = useState("cyberspace");
+  const [urlInput, setUrlInput] = useState("https://cyberspace.online");
+  const [history, setHistory] = useState<BrowserEntry[]>(() => {
+    const mode = getBrowserMode();
+    // cyberspace.online is the default home in every inline mode
+    // (iframe when we're in fallback, webview when the Electron kiosk is
+    // hosting us). External-browser hosts don't render inline, so they
+    // start on the internal home grid — the operator has to pick a target.
+    const initial: BrowserEntry =
+      mode === "web-fallback"
+        ? {
+            input: "https://cyberspace.online",
+            result: { kind: "iframe", url: "https://cyberspace.online", mode },
+          }
+        : mode === "native-webview"
+          ? {
+              input: "https://cyberspace.online",
+              result: { kind: "native-webview", url: "https://cyberspace.online", mode },
+            }
+          : {
+              input: "hosaka://home",
+              result: { kind: "internal", url: "hosaka://home", page: "home" },
+            };
+    return [initial];
+  });
   const [historyIndex, setHistoryIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState(getBrowserMode());
@@ -109,6 +129,8 @@ export function WebPanel({ active }: Props) {
 
   const result = current?.result;
   const internalResult = result?.kind === "internal" ? result : null;
+  const iframeResult = result?.kind === "iframe" ? result : null;
+  const nativeResult = result?.kind === "native-webview" ? result : null;
   const isExternal = result?.kind === "external-browser";
   const isBlocked = result?.kind === "blocked";
   const isUnsupported = result?.kind === "unsupported";
@@ -235,8 +257,95 @@ export function WebPanel({ active }: Props) {
             </div>
           </div>
         )}
-        {!loading && !isBlocked && !isUnsupported && (
+        {!loading && nativeResult && (
+          <NativeWebview url={nativeResult.url} />
+        )}
+        {!loading && iframeResult && (
+          <InPanelFrame url={iframeResult.url} />
+        )}
+        {!loading && !nativeResult && !iframeResult && !isBlocked && !isUnsupported && !isExternal && (
           <InternalBrowserPage page={internalResult?.page ?? "home"} onOpen={internalJump} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NativeWebview({ url }: { url: string }) {
+  // Rendered only when window.hosakaBrowserAdapter.mode === "native-webview"
+  // (i.e., the app is running inside the Electron kiosk host). The <webview>
+  // tag is Chromium-native and ignores X-Frame-Options / CSP frame-ancestors
+  // that block plain iframes. See kiosk/ at the repo root.
+  return (
+    <div className="web-iframe-wrap">
+      <webview
+        src={url}
+        className="web-iframe"
+        partition="persist:hosaka-browser"
+        allowpopups="true"
+      />
+    </div>
+  );
+}
+
+function InPanelFrame({ url }: { url: string }) {
+  const { t } = useTranslation("ui");
+  const [showBlockedHelp, setShowBlockedHelp] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    } catch {
+      /* clipboard denied in some kiosk configs; silent */
+    }
+  };
+
+  return (
+    <div className="web-iframe-wrap">
+      <iframe
+        className="web-iframe"
+        src={url}
+        title={url}
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation allow-modals"
+        referrerPolicy="no-referrer-when-downgrade"
+        loading="eager"
+      />
+      <div className="web-iframe-chrome">
+        <button
+          type="button"
+          className="web-iframe-hint-btn"
+          onClick={() => setShowBlockedHelp((v) => !v)}
+          aria-expanded={showBlockedHelp}
+        >
+          {showBlockedHelp
+            ? t("web.iframeHelpHide", "× hide")
+            : t("web.iframeHelpShow", "⚠ page blank?")}
+        </button>
+        {showBlockedHelp && (
+          <div className="web-iframe-help">
+            <p className="dim small">
+              {t(
+                "web.iframeHelpBody",
+                "some sites (github, youtube, etc.) set X-Frame-Options and refuse to render inside other pages. this panel is running in web-fallback mode — for a true in-panel browser, enable a native-webview or remote-browser adapter.",
+              )}
+            </p>
+            <div className="web-iframe-help-row">
+              <button type="button" className="btn btn-ghost" onClick={copyUrl}>
+                {copied ? t("web.copied", "copied ✓") : t("web.copyUrl", "copy url")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => void launchExternal(url)}
+                title={t("web.openTabTitle", "open in a new window (not kiosk-friendly)")}
+              >
+                {t("web.openTab", "↗ tab")}
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -279,6 +388,22 @@ function InternalBrowserPage({
       <div className="web-state">
         <h3>{t("web.homeTitle", "hosaka browser surface")}</h3>
         <p>{t("web.homeBody", "internal targets render here. external URLs launch through the active browser adapter.")}</p>
+        <div className="web-home-hero">
+          <button
+            type="button"
+            className="btn btn-primary web-home-hero-btn"
+            onClick={() =>
+              window.dispatchEvent(
+                new CustomEvent("hosaka:web-open", { detail: "https://cyberspace.online" }),
+              )
+            }
+          >
+            {t("web.homeHero", "cyberspace.online →")}
+          </button>
+          <p className="dim small">
+            {t("web.homeHeroSub", "default home. renders in-panel.")}
+          </p>
+        </div>
         <div className="web-internal-grid">
           {entries.map((id) => (
             <button

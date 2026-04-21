@@ -1,0 +1,18 @@
+{
+  "name": "hosaka-kiosk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron kiosk host for the Hosaka field terminal. The single entrypoint to the app — wraps the SPA in a native window and provides a real in-app <webview> so the browser panel renders any URL without X-Frame-Options interference.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "bash scripts/dev.sh",
+    "start": "electron .",
+    "start:dev": "HOSAKA_KIOSK_URL=http://localhost:5173 HOSAKA_KIOSK_FULLSCREEN=0 HOSAKA_KIOSK_DEVTOOLS=1 electron .",
+    "start:server": "HOSAKA_KIOSK_URL=http://127.0.0.1:8421/ electron .",
+    "start:windowed": "HOSAKA_KIOSK_FULLSCREEN=0 electron .",
+    "build": "cd ../frontend && npm run build"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}

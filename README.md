@@ -25,6 +25,25 @@ There is no wrong way.
 
 ---
 
+## The single entrypoint
+
+The canonical way to run Hosaka — on the Pi, on your laptop, anywhere —
+is the **Electron kiosk host** at [`kiosk/`](./kiosk/). It wraps the
+SPA in a native Chromium window and turns on Electron's `<webview>` tag
+so the Web panel renders any URL inline, with no X-Frame-Options grief.
+
+```bash
+cd kiosk
+npm install      # first time only
+npm run dev      # vite + electron together, HMR, windowed
+```
+
+On the edge device, `hosaka-kiosk.service` runs the same Electron host
+fullscreen at boot, pointed at the local FastAPI on `127.0.0.1:8421`.
+See [`kiosk/README.md`](./kiosk/README.md) for details.
+
+---
+
 ## Documentation
 
 Full reference site (auto-built from this commit on every push to `main`):
@@ -253,7 +272,7 @@ Hours of inactivity drain it. Reach colony state and it records a birth.
 | Variable | Default | Description |
 |---|---|---|
 | `HOSAKA_STATE_PATH` | `~/.hosaka/state.json` | Persistent state |
-| `HOSAKA_BOOT_MODE` | `console` | `console` (Python tty shell), `headless` / `web` (API+SPA only), `kiosk` (same + Chromium; use `./scripts/switch_boot_mode.sh`) |
+| `HOSAKA_BOOT_MODE` | `console` | `console` (Python tty shell), `headless` / `web` (API+SPA only), `kiosk` (same + Electron fullscreen; use `./scripts/switch_boot_mode.sh`) |
 | `HOSAKA_SOURCEMAP` | unset | Set to `1` to emit sourcemaps from `vite build` (off by default to halve the build's RAM peak on the Pi) |
 | `HOSAKA_WEB_PORT` | `8421` | LAN setup web server port |
 | `PICOCLAW_SESSION` | `hosaka:main` | Agent session key |

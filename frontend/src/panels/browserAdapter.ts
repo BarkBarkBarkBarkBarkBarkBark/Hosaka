@@ -18,6 +18,7 @@ export type InternalPage =
 
 export type BrowserOpenResult =
   | { kind: "internal"; url: string; page: InternalPage }
+  | { kind: "iframe"; url: string; mode: BrowserMode }
   | { kind: "native-webview"; url: string; mode: BrowserMode }
   | { kind: "external-browser"; url: string; mode: BrowserMode; launched: boolean }
   | { kind: "blocked"; url: string; mode: BrowserMode; reason: string }
@@ -100,10 +101,6 @@ export function parseInternalPage(input: string): InternalPage | null {
   return null;
 }
 
-export function canEmbed(url: string): boolean {
-  return parseInternalPage(url) !== null;
-}
-
 export function getBrowserMode(): BrowserMode {
   const bridge = window.hosakaBrowserAdapter;
   if (bridge?.mode) return bridge.mode;
@@ -144,14 +141,20 @@ export async function openUrl(rawInput: string): Promise<BrowserOpenResult> {
 
   const mode = getBrowserMode();
   if (mode === "native-webview") {
+    // Inline render: WebPanel mounts an Electron <webview> tag directly.
+    // The bridge's launchNativeWebview is still called so hosts that
+    // manage their webview out-of-DOM (e.g. a BrowserView stacked over
+    // the SPA) can opt in. A return value of false falls back to inline.
     const launched = await launchNativeWebview(normalized);
-    if (launched) return { kind: "native-webview", url: normalized, mode };
-    return {
-      kind: "blocked",
-      url: normalized,
-      mode,
-      reason: "native webview adapter is unavailable for this build.",
-    };
+    if (launched === false) {
+      return {
+        kind: "blocked",
+        url: normalized,
+        mode,
+        reason: "native webview adapter refused this URL.",
+      };
+    }
+    return { kind: "native-webview", url: normalized, mode };
   }
 
   if (mode === "remote-browser") {
@@ -165,11 +168,18 @@ export async function openUrl(rawInput: string): Promise<BrowserOpenResult> {
     };
   }
 
-  const launched = await launchExternal(normalized);
-  return {
-    kind: "external-browser",
-    url: normalized,
-    mode,
-    launched,
-  };
+  if (mode === "external-browser") {
+    const launched = await launchExternal(normalized);
+    return {
+      kind: "external-browser",
+      url: normalized,
+      mode,
+      launched,
+    };
+  }
+
+  // web-fallback: render inline. Kiosk-friendly (no external windows).
+  // Sites that set X-Frame-Options/CSP will still fail to paint; the
+  // panel shows an always-visible "site blocks embedding?" disclosure.
+  return { kind: "iframe", url: normalized, mode };
 }

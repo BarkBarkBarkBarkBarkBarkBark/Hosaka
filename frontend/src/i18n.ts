@@ -1,7 +1,7 @@
 // In-house i18n shim — replaces i18next + react-i18next + i18next-http-backend
-// + i18next-browser-languagedetector. We were paying ~2 MB of node_modules and
-// a half-dozen network round-trips for what amounts to "look up a key in a
-// nested JSON object", so this file is the entire i18n surface area now.
+// + i18next-browser-languagedetector. We were paying ~2 MB of node_modules for
+// what amounts to "look up a key in a nested JSON object", so this file is the
+// entire i18n surface area now.
 //
 // Surface intentionally mirrors what the rest of the app already uses:
 //   import i18next from "./i18n";
@@ -15,11 +15,11 @@
 //     t(key, { returnObjects: true })
 //     t(key, { someInterpolationKey: "value" })
 //
-// Locale JSON ships in the bundle via Vite's `import.meta.glob` with `eager:
-// true` — total payload across all 6 languages × 2 namespaces is ~120 KB
-// uncompressed (much smaller after esbuild + gzip), which is roughly the size
-// of the i18next runtime alone, so we end up smaller AND with zero network
-// fetches at startup.
+// Locale JSON ships *per-language* as its own Vite chunk (import.meta.glob,
+// non-eager). At boot we synchronously inline en/* (fallback + most common
+// operator language) and asynchronously load the detected language if it
+// differs. Total bundled-at-boot JSON is ~20 KB; the other 5 languages are
+// fetched only if the operator flips to them — a real win on Pi 3B.
 
 import { useSyncExternalStore } from "react";
 
@@ -32,21 +32,49 @@ const SUPPORTED = ["en", "es", "fr", "it", "ja", "pt"] as const;
 const FALLBACK_LANG = "en";
 const STORAGE_KEY = "hosaka.lang";
 
-// Eagerly bundle every locale JSON. Vite resolves the glob at build time and
-// the JSON content is inlined directly — no fetches, no waterfalls.
-const localeModules = import.meta.glob("../public/locales/*/*.json", {
+// Fallback language: inlined into the entry bundle so first paint never waits
+// on a fetch. `eager + query:'?url'` would give us URLs; we want the parsed
+// JSON object directly, so we use `eager:true` only for en.
+const enModules = import.meta.glob("./locales/en/*.json", {
   eager: true,
   import: "default",
 }) as Record<string, Bundle>;
 
+// Other languages: lazy-loaded on demand. Vite code-splits one chunk per
+// language × namespace, which the operator only pays for if they change lang.
+// We deliberately exclude en — it's already in the eager bundle above and
+// including it here would fight with rollup over which chunk owns it.
+const lazyModules = import.meta.glob("./locales/!(en)/*.json", {
+  import: "default",
+}) as Record<string, () => Promise<Bundle>>;
+
 const catalogs: Catalogs = {};
-for (const [path, mod] of Object.entries(localeModules)) {
-  // path looks like "/public/locales/en/ui.json"
+
+function ingest(path: string, bundle: Bundle) {
+  // path looks like "./locales/en/ui.json"
   const m = path.match(/\/locales\/([^/]+)\/([^/]+)\.json$/);
-  if (!m) continue;
+  if (!m) return;
   const [, lang, ns] = m;
   catalogs[lang] ??= {};
-  catalogs[lang][ns] = mod;
+  catalogs[lang][ns] = bundle;
+}
+
+for (const [path, mod] of Object.entries(enModules)) ingest(path, mod);
+
+async function loadLang(lang: string): Promise<void> {
+  if (catalogs[lang]) return; // already resident
+  const jobs: Promise<void>[] = [];
+  for (const [path, loader] of Object.entries(lazyModules)) {
+    if (!path.includes(`/locales/${lang}/`)) continue;
+    jobs.push(
+      loader()
+        .then((bundle) => ingest(path, bundle))
+        .catch(() => {
+          // leave the ns missing; lookup() falls back to en
+        }),
+    );
+  }
+  await Promise.all(jobs);
 }
 
 function detectInitialLang(): string {
@@ -68,6 +96,13 @@ const listeners = new Set<() => void>();
 
 function notify() {
   for (const l of listeners) l();
+}
+
+// Kick off the async load for the detected language if it isn't already in
+// the fallback bundle. We don't block on it — lookup() falls through to en
+// until the chunk lands, then notify() re-renders consumers.
+if (currentLang !== FALLBACK_LANG) {
+  void loadLang(currentLang).then(notify);
 }
 
 function getNested(bundle: Bundle | undefined, key: string): Json | undefined {
@@ -155,6 +190,7 @@ const i18n: I18n = {
   languages: SUPPORTED,
   async changeLanguage(lang: string) {
     if (!SUPPORTED.includes(lang as (typeof SUPPORTED)[number])) return;
+    await loadLang(lang);
     currentLang = lang;
     try {
       window.localStorage.setItem(STORAGE_KEY, lang);
@@ -181,7 +217,7 @@ const i18n: I18n = {
 export default i18n;
 
 export function useTranslation(ns: string = "ui"): { t: TFunction; i18n: I18n } {
-  // Re-render any consuming component when the language changes.
+  // Re-render any consuming component when the language (or its bundle) changes.
   useSyncExternalStore(
     (cb) => {
       listeners.add(cb);
