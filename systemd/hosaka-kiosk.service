@@ -21,7 +21,9 @@ Environment=XAUTHORITY=/home/operator/.Xauthority
 Environment=HOSAKA_REPO=/opt/hosaka-field-terminal
 Environment=HOSAKA_KIOSK_URL=http://127.0.0.1:8421/
 Environment=HOSAKA_KIOSK_FULLSCREEN=1
-Environment=ELECTRON_DISABLE_SANDBOX=1
+# kiosk-electron.sh already passes --no-sandbox on the Electron CLI, which
+# is the authoritative disable on Linux hosts that don't have the SUID
+# chrome-sandbox helper. ELECTRON_DISABLE_SANDBOX was duplicative.
 ExecStart=/usr/local/bin/hosaka-kiosk-electron
 Restart=always
 RestartSec=3
@@ -30,10 +32,16 @@ StandardError=journal
 
 # Resource caps so an Electron WebContents crash can't OOM the Pi 3B or
 # starve FastAPI. Electron's renderer + GPU processes share this budget.
-MemoryMax=620M
-MemoryHigh=520M
+# Sized for a 905 MiB Pi 3B with ~300M reserved for hosaka-webserver and
+# ~80M for picoclaw-gateway. Leaves ~50M swap headroom for the kernel.
+MemoryMax=520M
+MemoryHigh=440M
 CPUQuota=200%
 TasksMax=256
+
+# The launcher's `exec` into electron inherits this env, so the bias applies
+# to the Electron main + all renderer processes. SSH stays priority.
+OOMScoreAdjust=500
 
 [Install]
 WantedBy=graphical.target

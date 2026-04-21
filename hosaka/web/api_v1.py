@@ -27,6 +27,7 @@ import time
 from pathlib import Path
 
 from hosaka.ops.updater import APP_ROOT, UPDATE_SCRIPT
+from hosaka.web import channel_store as channel_store
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -211,6 +212,30 @@ class WifiAdd(BaseModel):
 class ActionResult(BaseModel):
     ok: bool
     message: str = ""
+
+
+class ChannelMessageOut(BaseModel):
+    id: str
+    at: int
+    author: str
+    text: str
+    tags: list[str]
+    parent_id: Optional[str] = None
+    prev_hash: str
+    hash: str
+
+
+class ChannelFeedOut(BaseModel):
+    chain_head: str
+    chain_ok: bool
+    messages: list[ChannelMessageOut]
+
+
+class ChannelPostIn(BaseModel):
+    text: str = Field(..., min_length=1, max_length=4000)
+    author: str = Field("operator", max_length=64)
+    parent_id: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
 
 
 # ── system info collectors ────────────────────────────────────────────────────
@@ -560,4 +585,68 @@ def v1_system_update() -> ActionResult:
     return ActionResult(
         ok=True,
         message="update started — services may restart; check ssh or journalctl",
+    )
+
+
+# ── public channel (hash-chained log, on-disk JSON) ───────────────────────────
+
+
+@router.get(
+    "/channel/messages",
+    response_model=ChannelFeedOut,
+    summary="Public channel messages (SHA-256 chain, persisted on the appliance SD card)",
+    dependencies=[Depends(require_auth)],
+)
+def v1_channel_messages(tag: Optional[str] = None) -> ChannelFeedOut:
+    raw, head = channel_store.list_messages()
+    msgs = [m for m in raw if isinstance(m, dict)]
+    if tag:
+        t = tag.strip().lstrip("#").lower()
+        msgs = [m for m in msgs if t in (m.get("tags") or [])]
+    ok = channel_store.verify_chain()
+    out: list[ChannelMessageOut] = []
+    for m in msgs:
+        try:
+            out.append(
+                ChannelMessageOut(
+                    id=str(m["id"]),
+                    at=int(m["at"]),
+                    author=str(m.get("author", "operator")),
+                    text=str(m.get("text", "")),
+                    tags=list(m.get("tags") or []),
+                    parent_id=str(m["parent_id"]) if m.get("parent_id") else None,
+                    prev_hash=str(m.get("prev_hash", "")),
+                    hash=str(m.get("hash", "")),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    return ChannelFeedOut(chain_head=head, chain_ok=ok, messages=out)
+
+
+@router.post(
+    "/channel/messages",
+    response_model=ChannelMessageOut,
+    summary="Append a message (extends the hash chain)",
+    dependencies=[Depends(require_write)],
+)
+def v1_channel_post(body: ChannelPostIn) -> ChannelMessageOut:
+    try:
+        row = channel_store.append_message(
+            body.text,
+            author=body.author,
+            parent_id=body.parent_id,
+            extra_tags=body.tags,
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return ChannelMessageOut(
+        id=str(row["id"]),
+        at=int(row["at"]),
+        author=str(row.get("author", "operator")),
+        text=str(row.get("text", "")),
+        tags=list(row.get("tags") or []),
+        parent_id=str(row["parent_id"]) if row.get("parent_id") else None,
+        prev_hash=str(row.get("prev_hash", "")),
+        hash=str(row["hash"]),
     )

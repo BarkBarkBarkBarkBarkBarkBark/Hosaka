@@ -35,6 +35,8 @@ say "installing CLIs to /usr/local/bin"
 $SUDO install -m 0755 "$REPO_ROOT/scripts/hosaka"                  /usr/local/bin/hosaka
 $SUDO install -m 0755 "$REPO_ROOT/scripts/hosaka-device-dashboard" /usr/local/bin/hosaka-device-dashboard
 $SUDO install -m 0755 "$REPO_ROOT/scripts/hosakactl"               /usr/local/bin/hosakactl
+$SUDO install -m 0755 "$REPO_ROOT/scripts/kiosk-electron.sh"       /usr/local/bin/hosaka-kiosk-electron
+$SUDO install -m 0755 "$REPO_ROOT/scripts/kiosk-chromium.sh"       /usr/local/bin/hosaka-kiosk-chromium
 
 # ── 1b. API token for /api/v1/* (read by api_v1.py and hosakactl) ─────────────
 # /etc/hosaka/api-token is the bearer credential for LAN clients. Loopback
@@ -61,12 +63,61 @@ say "installing systemd units"
 for unit in \
     hosaka-device-dashboard.service \
     hosaka-webserver.service \
+    hosaka-kiosk.service \
     picoclaw-gateway.service \
 ; do
   if [[ -f "$REPO_ROOT/systemd/$unit" ]]; then
     $SUDO install -m 0644 "$REPO_ROOT/systemd/$unit" "/etc/systemd/system/$unit"
   fi
 done
+
+# Patch hosaka-kiosk.service to the actual operator user (install-time rewrite
+# so the same unit file works on laptops, dev Pis, and appliance Pis).
+if [[ -f /etc/systemd/system/hosaka-kiosk.service ]]; then
+  $SUDO sed -i \
+    -e "s/^User=.*/User=${TARGET_USER}/" \
+    -e "s/^Group=.*/Group=${TARGET_USER}/" \
+    -e "s|^Environment=XAUTHORITY=.*|Environment=XAUTHORITY=${TARGET_HOME}/.Xauthority|" \
+    /etc/systemd/system/hosaka-kiosk.service
+fi
+
+# ── 2b. stage the electron kiosk into /opt ────────────────────────────────────
+# kiosk/ needs to live alongside /opt/hosaka-field-terminal/hosaka/web/ui so
+# the Electron main process can find the built SPA via its ../hosaka/web/ui
+# path (when HOSAKA_KIOSK_NO_LOOPBACK=1 is set for demos). At boot, though,
+# we prefer http://127.0.0.1:8421 so /api is same-origin — see main.js.
+KIOSK_SRC="$REPO_ROOT/kiosk"
+KIOSK_DEST="/opt/hosaka-field-terminal/kiosk"
+if [[ -d "$KIOSK_SRC" ]]; then
+  say "staging electron kiosk into $KIOSK_DEST"
+  $SUDO install -d -o "$TARGET_USER" -g "$TARGET_USER" -m 0755 "$KIOSK_DEST"
+  # Exclude node_modules from the rsync; we'll rebuild it in-place so the
+  # native electron binary matches this host's arch (arm64 on a Pi, not
+  # darwin-arm64 from whoever committed it last).
+  $SUDO rsync -a --delete \
+    --exclude node_modules --exclude out --exclude dist \
+    "$KIOSK_SRC/" "$KIOSK_DEST/"
+  $SUDO chown -R "$TARGET_USER:$TARGET_USER" "$KIOSK_DEST"
+  if command -v npm >/dev/null 2>&1; then
+    say "running npm install in $KIOSK_DEST (pulls native electron for $(uname -m))"
+    # Run as the operator user so the resulting node_modules is owned by
+    # them — otherwise `hosaka deploy` can't blow it away later.
+    if [[ "$(id -un)" == "$TARGET_USER" ]]; then
+      ( cd "$KIOSK_DEST" && npm install --no-fund --no-audit --loglevel error )
+    else
+      # If we're already root (bare install), sudo is a no-op var; use `runuser`
+      # so we drop privs unconditionally and don't end up running postinstall
+      # scripts as root (which chown the cache to root too).
+      runuser -u "$TARGET_USER" -- bash -lc \
+        "cd '$KIOSK_DEST' && npm install --no-fund --no-audit --loglevel error"
+    fi
+  else
+    say "WARNING: npm not on PATH — skipping kiosk npm install"
+    say "         install Node 20 (curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -) and rerun."
+  fi
+else
+  say "no kiosk/ in repo — skipping electron kiosk staging"
+fi
 
 # ── 3. SSH OOM protection drop-in ─────────────────────────────────────────────
 # sshd is the LAST process the OOM killer should touch. Without this drop-in
@@ -150,9 +201,20 @@ $SUDO sysctl --system >/dev/null 2>&1 || true
 say "reloading systemd"
 $SUDO systemctl daemon-reload
 $SUDO systemctl enable hosaka-webserver.service picoclaw-gateway.service 2>/dev/null || true
+# Enable the kiosk only if we actually have a working electron on disk —
+# otherwise systemd will restart-loop forever. The openbox autostart still
+# provides a Chromium fallback in that case.
+if [[ -x "$KIOSK_DEST/node_modules/electron/dist/electron" ]]; then
+  $SUDO systemctl enable hosaka-kiosk.service 2>/dev/null || true
+  say "hosaka-kiosk.service enabled"
+else
+  say "electron not present in $KIOSK_DEST/node_modules/electron/dist — not enabling hosaka-kiosk.service"
+  say "  re-run this script once npm install has completed successfully."
+fi
 $SUDO systemctl restart systemd-journald.service 2>/dev/null || true
 $SUDO systemctl restart ssh.service 2>/dev/null || true
 $SUDO systemctl restart hosaka-webserver.service 2>/dev/null || true
 $SUDO systemctl restart picoclaw-gateway.service 2>/dev/null || true
 
 say "done. try: hosaka status   |   journalctl -u hosaka-webserver -f"
+say "          systemctl restart hosaka-kiosk   (to cycle the electron kiosk)"

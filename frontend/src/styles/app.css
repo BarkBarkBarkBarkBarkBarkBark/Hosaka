@@ -1415,6 +1415,20 @@ html, body, #root {
   background: #000;
 }
 
+/* Both the Electron <webview> tag and the plain <iframe> use this class. */
+/* <webview> is a Chromium custom element — without explicit sizing it */
+/* defaults to ~300x150 (the HTML replaced-element default). Force-fill the */
+/* wrap so the browsed page actually occupies the panel. */
+.web-frame-wrap > .web-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #000;
+  display: flex;
+}
+
 .web-empty {
   position: absolute;
   inset: 0;

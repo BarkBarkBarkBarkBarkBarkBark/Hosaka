@@ -14,6 +14,13 @@ frontend/*.tsbuildinfo
 # Vite build output (run: cd frontend && npm run build)
 hosaka/web/ui/
 
+# Electron kiosk host — node_modules is platform-specific (darwin vs linux-arm64)
+# so we NEVER commit it. `npm install` re-creates it on the target, with the
+# right native Electron binary pulled by the `electron` package's postinstall.
+kiosk/node_modules/
+kiosk/out/
+kiosk/dist/
+
 # env
 .env*
 !frontend/.env.appliance

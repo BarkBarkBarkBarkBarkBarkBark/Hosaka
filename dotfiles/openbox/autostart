@@ -49,23 +49,42 @@ done
 
 # Prefer the Electron kiosk launcher — it's the canonical display for the
 # Hosaka SPA because it enables <webview>-based native browsing (no
-# X-Frame-Options grief in the Web panel). Fall back to Chromium if the
-# launcher isn't installed yet (fresh clones, hosts without the kiosk/
-# node_modules primed, etc.).
+# X-Frame-Options grief in the Web panel).
+#
+# IMPORTANT: we run the launcher directly from here rather than via
+# `systemctl start hosaka-kiosk.service`. Reason: this appliance boots to
+# multi-user.target (not graphical.target) — the X session is started by
+# ~/.profile's `startx` call after autologin on tty1, NOT by systemd. So
+# systemd's graphical.target never activates, and a unit WantedBy=
+# graphical.target would never fire on its own. The hosaka-kiosk.service
+# file still exists so operators can `sudo systemctl restart hosaka-kiosk`
+# for clean cycles, but *this script* is the authoritative supervisor.
+#
+# Fall back to Chromium if electron isn't installed or is half-installed
+# (fresh clone, interrupted npm install, macOS-checked-in node_modules…).
 ELECTRON_LAUNCHER="/usr/local/bin/hosaka-kiosk-electron"
-if [ -x "$ELECTRON_LAUNCHER" ]; then
+ELECTRON_BIN=""
+for d in /opt/hosaka-field-terminal/kiosk /home/operator/Hosaka/kiosk; do
+    if [ -x "$d/node_modules/electron/dist/electron" ]; then
+        ELECTRON_BIN="$d/node_modules/electron/dist/electron"
+        break
+    fi
+done
+if [ -x "$ELECTRON_LAUNCHER" ] && [ -n "$ELECTRON_BIN" ]; then
     echo 800 > /proc/self/oom_score_adj 2>/dev/null || true
     while true; do
-        "$ELECTRON_LAUNCHER" 2>>/tmp/hosaka-kiosk-electron.log || true
+        "$ELECTRON_LAUNCHER" >>/tmp/hosaka-kiosk-electron.log 2>&1 || true
         sleep 3
         if [ "$(read_mode)" = "device" ]; then
             exit 0
         fi
     done &
-    # Fall through past the Chromium loop — we're handling the relaunch here.
     wait
     exit 0
 fi
+[ -x "$ELECTRON_LAUNCHER" ] && \
+    echo "[autostart] electron not installed (no dist/electron), using chromium" \
+        >>/tmp/hosaka-kiosk-electron.log
 
 # Pick whichever Chromium binary is installed on this Debian/RPi build
 CHROMIUM=""

@@ -30,10 +30,19 @@ const path = require("path");
 const fs = require("fs");
 
 function resolveStartUrl() {
+  // 1. Explicit override always wins — systemd and the dev runner set this.
   if (process.env.HOSAKA_KIOSK_URL) return process.env.HOSAKA_KIOSK_URL;
+  // 2. Prefer the local FastAPI. The SPA talks to /api/* and we need
+  //    same-origin; serving the built bundle from file:// breaks that
+  //    (Origin: null, cookies can't be set, etc.).
+  //    We don't probe here because electron is launched by systemd AFTER
+  //    hosaka-webserver.service is healthy; if it's not up we'll just
+  //    show a "refused to connect" page and retry via Restart=always.
+  if (!process.env.HOSAKA_KIOSK_NO_LOOPBACK) return "http://127.0.0.1:8421/";
+  // 3. Opt-in file:// fallback for plain-laptop demos where no webserver
+  //    is running. Broken /api/* is expected in that mode.
   const built = path.resolve(__dirname, "..", "hosaka", "web", "ui", "index.html");
   if (fs.existsSync(built)) return `file://${built}`;
-  // Final fallback: FastAPI should already be serving the SPA at :8421.
   return "http://127.0.0.1:8421/";
 }
 

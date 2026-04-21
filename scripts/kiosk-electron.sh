@@ -43,7 +43,21 @@ ELECTRON_BIN="$KIOSK_DIR/node_modules/.bin/electron"
 # ── deps ──────────────────────────────────────────────────────────────────
 if [ ! -x "$ELECTRON_BIN" ]; then
     log "electron not found — running npm install in $KIOSK_DIR"
-    (cd "$KIOSK_DIR" && npm install --omit=dev --no-fund --no-audit)
+    # NOTE: electron is declared in devDependencies (that's the conventional
+    # place for it), but we absolutely need it at runtime — it IS the runtime.
+    # Do not pass --omit=dev here; it would skip the binary we're trying to
+    # install.
+    (cd "$KIOSK_DIR" && npm install --no-fund --no-audit)
+fi
+
+# postinstall sometimes fails silently on a thrashing Pi (network blip, SD
+# card EIO). Detect and retry once before we give up.
+if [ ! -d "$KIOSK_DIR/node_modules/electron/dist" ]; then
+    log "electron/dist missing — re-running postinstall"
+    (cd "$KIOSK_DIR" && node node_modules/electron/install.js) || {
+        log "electron postinstall failed; cannot start kiosk"
+        exit 1
+    }
 fi
 
 # ── wait for FastAPI ──────────────────────────────────────────────────────
