@@ -475,6 +475,8 @@ html, body, #root {
   color: var(--fg-3);
   font-family: var(--font-mono);
   font-size: 13px;
+}
+
 .reading-collection {
   display: flex;
   flex-direction: column;
