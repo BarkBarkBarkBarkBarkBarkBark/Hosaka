@@ -1133,6 +1133,28 @@ html, body, #root {
   background: var(--bg-1);
 }
 
+.web-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.web-nav-btn {
+  min-width: 40px;
+  min-height: 32px;
+  padding: 4px 10px;
+}
+
+.web-mode-pill {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--cyan-dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
 .web-label {
   display: inline-flex;
   align-items: center;
@@ -1200,14 +1222,6 @@ html, body, #root {
   background: #000;
 }
 
-.web-frame {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: none;
-}
-
 .web-empty {
   position: absolute;
   inset: 0;
@@ -1219,6 +1233,46 @@ html, body, #root {
   font-family: var(--font-mono);
   font-size: 13px;
   text-align: center;
+}
+
+.web-state {
+  max-width: 560px;
+  width: min(100%, 560px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.web-state h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--fg-1);
+  font-family: var(--font-mono);
+}
+
+.web-state p {
+  margin: 0;
+  color: var(--fg-2);
+  line-height: 1.5;
+}
+
+.web-state code {
+  color: var(--cyan);
+  word-break: break-all;
+}
+
+.web-internal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.web-internal-btn {
+  justify-content: flex-start;
+  text-align: left;
+  font-size: 12px;
+  min-height: 34px;
 }
 
 /* ── 800×480 kiosk viewport lock ─────────────────────────── */

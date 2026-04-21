@@ -1,137 +1,145 @@
-/**
- * WebPanel — minimal browser + preset “apps”.
- *
- * Many big sites (YouTube, Instagram, Discord, …) send X-Frame-Options and
- * refuse to render inside an iframe. For those we open a new browser tab /
- * window (`mode: "window"`). Embed-friendly pages use `mode: "iframe"`.
- *
- * All heavy UI is this one lazy chunk; iframe `src` only loads after you pick
- * a preset or press Go.
- */
-
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "../i18n";
-
-type LoadMode = "iframe" | "window";
+import {
+  getBrowserMode,
+  INTERNAL_PANEL_PAGES,
+  launchExternal,
+  openUrl,
+  type BrowserOpenResult,
+  type InternalPage,
+} from "./browserAdapter";
 
 type Preset = {
   id: string;
   labelKey: string;
   url: string;
-  mode: LoadMode;
 };
 
 const PRESETS: Preset[] = [
-  { id: "custom", labelKey: "web.presetCustom", url: "", mode: "iframe" },
-  { id: "cyberspace", labelKey: "web.presetCyberspace", url: "https://cyberspace.online", mode: "iframe" },
-  { id: "wiki", labelKey: "web.presetWiki", url: "https://en.wikipedia.org/wiki/Special:Random", mode: "iframe" },
-  { id: "hn", labelKey: "web.presetHn", url: "https://news.ycombinator.com", mode: "iframe" },
-  { id: "gh", labelKey: "web.presetGh", url: "https://github.com", mode: "iframe" },
-  { id: "archive", labelKey: "web.presetArchive", url: "https://archive.org", mode: "iframe" },
-  { id: "reddit", labelKey: "web.presetReddit", url: "https://old.reddit.com", mode: "iframe" },
-  { id: "yt", labelKey: "web.presetYt", url: "https://m.youtube.com", mode: "window" },
-  { id: "tiktok", labelKey: "web.presetTiktok", url: "https://www.tiktok.com", mode: "window" },
-  { id: "ig", labelKey: "web.presetIg", url: "https://www.instagram.com", mode: "window" },
-  { id: "discord", labelKey: "web.presetDiscord", url: "https://discord.com/app", mode: "window" },
-  { id: "twitch", labelKey: "web.presetTwitch", url: "https://www.twitch.tv", mode: "window" },
-  { id: "reddit_new", labelKey: "web.presetRedditNew", url: "https://www.reddit.com", mode: "window" },
-  { id: "mastodon", labelKey: "web.presetMastodon", url: "https://mastodon.social/explore", mode: "iframe" },
-  { id: "lobsters", labelKey: "web.presetLobsters", url: "https://lobste.rs", mode: "iframe" },
+  { id: "home", labelKey: "web.presetHome", url: "hosaka://home" },
+  { id: "cyberspace", labelKey: "web.presetCyberspace", url: "https://cyberspace.online" },
+  { id: "wiki", labelKey: "web.presetWiki", url: "https://en.wikipedia.org/wiki/Special:Random" },
+  { id: "hn", labelKey: "web.presetHn", url: "https://news.ycombinator.com" },
+  { id: "gh", labelKey: "web.presetGh", url: "https://github.com" },
+  { id: "archive", labelKey: "web.presetArchive", url: "https://archive.org" },
+  { id: "reddit", labelKey: "web.presetReddit", url: "https://old.reddit.com" },
+  { id: "yt", labelKey: "web.presetYt", url: "https://m.youtube.com" },
+  { id: "tiktok", labelKey: "web.presetTiktok", url: "https://www.tiktok.com" },
+  { id: "ig", labelKey: "web.presetIg", url: "https://www.instagram.com" },
+  { id: "discord", labelKey: "web.presetDiscord", url: "https://discord.com/app" },
+  { id: "twitch", labelKey: "web.presetTwitch", url: "https://www.twitch.tv" },
+  { id: "reddit_new", labelKey: "web.presetRedditNew", url: "https://www.reddit.com" },
+  { id: "mastodon", labelKey: "web.presetMastodon", url: "https://mastodon.social/explore" },
+  { id: "lobsters", labelKey: "web.presetLobsters", url: "https://lobste.rs" },
 ];
 
-function normalizeUrl(raw: string): string | null {
-  const t = raw.trim();
-  if (!t) return null;
-  if (/^https?:\/\//i.test(t)) {
-    try {
-      const u = new URL(t);
-      if (u.protocol !== "http:" && u.protocol !== "https:") return null;
-      return u.href;
-    } catch {
-      return null;
-    }
-  }
-  try {
-    return new URL(`https://${t}`).href;
-  } catch {
-    return null;
-  }
-}
-
+type BrowserEntry = { input: string; result: BrowserOpenResult };
 type Props = { active: boolean };
 
 export function WebPanel({ active }: Props) {
   const { t } = useTranslation("ui");
-  const [presetId, setPresetId] = useState("cyberspace");
-  const [urlInput, setUrlInput] = useState("https://cyberspace.online");
-  const [iframeSrc, setIframeSrc] = useState<string | null>(
-    "https://cyberspace.online",
-  );
-  const [lastExternal, setLastExternal] = useState<string | null>(null);
+  const [presetId, setPresetId] = useState("home");
+  const [urlInput, setUrlInput] = useState("hosaka://home");
+  const [history, setHistory] = useState<BrowserEntry[]>([
+    { input: "hosaka://home", result: { kind: "internal", url: "hosaka://home", page: "home" } },
+  ]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState(getBrowserMode());
 
-  const preset = useMemo(
-    () => PRESETS.find((p) => p.id === presetId) ?? PRESETS[1],
-    [presetId],
-  );
+  const current = history[historyIndex] ?? history[0];
+  const canBack = historyIndex > 0;
+  const canForward = historyIndex < history.length - 1;
 
-  const applyPreset = useCallback(
-    (p: Preset, customUrl?: string) => {
-      if (p.id === "custom") {
-        const u = normalizeUrl(customUrl ?? urlInput);
-        if (!u) return;
-        setIframeSrc(u);
-        setUrlInput(u);
-        return;
-      }
-      if (p.mode === "window") {
-        window.open(p.url, "_blank", "noopener,noreferrer");
-        setLastExternal(p.url);
-        setIframeSrc(null);
-        return;
-      }
-      setIframeSrc(p.url);
-      setLastExternal(null);
-    },
-    [urlInput],
-  );
+  const navigate = useCallback(async (input: string, push = true) => {
+    setLoading(true);
+    const result = await openUrl(input);
+    setMode(getBrowserMode());
+    setLoading(false);
+    setUrlInput(result.kind === "unsupported" ? input : result.url);
 
-  const onGo = () => applyPreset(preset);
+    if (!push) {
+      // Reload replaces the current history entry instead of adding a new one.
+      setHistory((rows) => rows.map((row, idx) => (idx === historyIndex ? { input, result } : row)));
+      return;
+    }
 
-  const onPresetChange = (id: string) => {
+    setHistory((rows) => {
+      // Normal navigation drops forward history and appends a new current entry.
+      const next = rows.slice(0, historyIndex + 1);
+      next.push({ input, result });
+      setHistoryIndex(next.length - 1);
+      return next;
+    });
+  }, [historyIndex]);
+
+  const onGo = () => {
+    void navigate(urlInput, true);
+  };
+
+  const onPresetChange = useCallback((id: string) => {
     setPresetId(id);
     const p = PRESETS.find((x) => x.id === id);
     if (!p) return;
-    if (p.id === "custom") {
-      setIframeSrc(null);
-      return;
-    }
-    if (p.mode === "window") {
-      window.open(p.url, "_blank", "noopener,noreferrer");
-      setLastExternal(p.url);
-      setIframeSrc(null);
-      return;
-    }
-    setIframeSrc(p.url);
-    setLastExternal(null);
-  };
+    setUrlInput(p.url);
+    void navigate(p.url, true);
+  }, [navigate]);
 
-  // Listen for shell shortcuts like /reddit, /tiktok, /discord.
   useEffect(() => {
     const handler = (e: Event) => {
       const id = (e as CustomEvent<string>).detail;
       if (id) onPresetChange(id);
     };
+    const openHandler = (e: Event) => {
+      const input = (e as CustomEvent<string>).detail;
+      if (!input) return;
+      setUrlInput(input);
+      setPresetId("home");
+      void navigate(input, true);
+    };
     window.addEventListener("hosaka:web-preset", handler as EventListener);
-    return () => window.removeEventListener("hosaka:web-preset", handler as EventListener);
-    // onPresetChange is stable (only depends on state setters + PRESETS const)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    window.addEventListener("hosaka:web-open", openHandler as EventListener);
+    return () => {
+      window.removeEventListener("hosaka:web-preset", handler as EventListener);
+      window.removeEventListener("hosaka:web-open", openHandler as EventListener);
+    };
+  }, [navigate, onPresetChange]);
 
   if (!active) return null;
 
+  const result = current?.result;
+  const internalResult = result?.kind === "internal" ? result : null;
+  const isExternal = result?.kind === "external-browser";
+  const isBlocked = result?.kind === "blocked";
+  const isUnsupported = result?.kind === "unsupported";
+
+  const onBack = () => {
+    if (!canBack) return;
+    const idx = historyIndex - 1;
+    setHistoryIndex(idx);
+    setUrlInput(history[idx]?.input ?? "");
+  };
+
+  const onForward = () => {
+    if (!canForward) return;
+    const idx = historyIndex + 1;
+    setHistoryIndex(idx);
+    setUrlInput(history[idx]?.input ?? "");
+  };
+
+  const onReload = () => {
+    if (!current) return;
+    void navigate(current.input, false);
+  };
+
+  const internalJump = (target: string) => {
+    setPresetId("home");
+    setUrlInput(target);
+    void navigate(target, true);
+  };
+
   return (
     <div className="web-panel">
-      {/* ── social quick-launch bar ─── */}
       <div className="web-social-bar">
         {PRESETS.filter((p) => ["reddit", "tiktok", "discord", "yt", "twitch"].includes(p.id)).map((p) => (
           <button
@@ -145,8 +153,19 @@ export function WebPanel({ active }: Props) {
           </button>
         ))}
       </div>
-
       <div className="web-toolbar">
+        <div className="web-nav-row">
+          <button type="button" className="btn btn-ghost web-nav-btn" onClick={onBack} disabled={!canBack}>
+            {t("web.back", "←")}
+          </button>
+          <button type="button" className="btn btn-ghost web-nav-btn" onClick={onForward} disabled={!canForward}>
+            {t("web.forward", "→")}
+          </button>
+          <button type="button" className="btn btn-ghost web-nav-btn" onClick={onReload} disabled={loading}>
+            {t("web.reload", "↻")}
+          </button>
+          <span className="web-mode-pill">{mode}</span>
+        </div>
         <label className="web-label">
           <span className="dim">{t("web.presetLabel", "app")}</span>
           <select
@@ -174,37 +193,104 @@ export function WebPanel({ active }: Props) {
           <button type="button" className="btn btn-primary web-go" onClick={onGo}>
             {t("web.go", "go")}
           </button>
-          {iframeSrc && (
+          {result && result.kind !== "unsupported" && (
             <button
               type="button"
               className="btn btn-ghost"
-              onClick={() => window.open(iframeSrc, "_blank", "noopener,noreferrer")}
+              onClick={() => void launchExternal(result.url)}
+              disabled={result.kind === "internal"}
             >
               {t("web.openTab", "↗ tab")}
             </button>
           )}
         </div>
       </div>
-      <p className="web-hint dim small">{t("web.hint", "sites that block embedding open in a new tab. custom URL loads here when possible.")}</p>
-      {lastExternal && (
+      <p className="web-hint dim small">
+        {t("web.hint", "external pages use your browser adapter (tab/system/native). hosaka:// and panel routes stay inside this panel.")}
+      </p>
+      {isExternal && (
         <p className="web-external-note">
-          {t("web.openedExternal", "opened:")} <code>{lastExternal}</code>
+          {t("web.openedExternal", "opened externally:")} <code>{result.url}</code>
         </p>
       )}
       <div className="web-frame-wrap">
-        {iframeSrc ? (
-          <iframe
-            className="web-frame"
-            title={t("web.frameTitle", "web")}
-            src={iframeSrc}
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-            referrerPolicy="no-referrer-when-downgrade"
-          />
-        ) : (
+        {loading && <div className="web-empty">{t("web.loading", "loading…")}</div>}
+        {!loading && isUnsupported && (
           <div className="web-empty">
-            {t("web.empty", "pick a preset or enter a URL and press go.")}
+            <div className="web-state">
+              <h3>{t("web.unsupportedTitle", "unsupported address")}</h3>
+              <p>{result.reason}</p>
+            </div>
           </div>
         )}
+        {!loading && isBlocked && (
+          <div className="web-empty">
+            <div className="web-state">
+              <h3>{t("web.blockedTitle", "cannot render in-panel")}</h3>
+              <p>{result.reason}</p>
+              <p>{t("web.blockedHint", "this target must open through external/native browser mode.")}</p>
+              <button type="button" className="btn btn-primary" onClick={() => void launchExternal(result.url)}>
+                {t("web.openExternal", "open externally")}
+              </button>
+            </div>
+          </div>
+        )}
+        {!loading && !isBlocked && !isUnsupported && (
+          <InternalBrowserPage page={internalResult?.page ?? "home"} onOpen={internalJump} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InternalBrowserPage({
+  page,
+  onOpen,
+}: {
+  page: InternalPage;
+  onOpen: (target: string) => void;
+}) {
+  const { t } = useTranslation("ui");
+  const entries = INTERNAL_PANEL_PAGES.filter((id) => id !== "web");
+
+  if (page !== "home") {
+    return (
+      <div className="web-empty">
+        <div className="web-state">
+          <h3>{t("web.internalPageTitle", "hosaka internal page")}</h3>
+          <p>
+            <code>hosaka://panel/{page}</code>
+          </p>
+          <p>{t("web.internalPageHint", "this is internal app content. open the panel directly when needed.")}</p>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => window.dispatchEvent(new CustomEvent("hosaka:open-tab", { detail: page }))}
+          >
+            {t("web.openPanel", "open panel")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="web-empty">
+      <div className="web-state">
+        <h3>{t("web.homeTitle", "hosaka browser surface")}</h3>
+        <p>{t("web.homeBody", "internal targets render here. external URLs launch through the active browser adapter.")}</p>
+        <div className="web-internal-grid">
+          {entries.map((id) => (
+            <button
+              key={id}
+              type="button"
+              className="btn btn-ghost web-internal-btn"
+              onClick={() => onOpen(`hosaka://panel/${id}`)}
+            >
+              hosaka://panel/{id}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

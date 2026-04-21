@@ -354,8 +354,10 @@ export class HosakaShell {
       case "/video":
       case "/games":
       case "/wiki":
-      case "/web":
         this.switchToPanel(cmd.slice(1));
+        break;
+      case "/web":
+        this.handleWeb(arg);
         break;
       case "/reddit":
         this.openWebPreset("reddit");
@@ -752,6 +754,17 @@ export class HosakaShell {
     window.dispatchEvent(new CustomEvent("hosaka:open-tab", { detail: "web" }));
     window.dispatchEvent(new CustomEvent("hosaka:web-preset", { detail: presetId }));
     this.writeln(`  ${GRAY}${st("webPreset.opening", { preset: presetId })}${R}`);
+  }
+
+  private handleWeb(target: string): void {
+    window.dispatchEvent(new CustomEvent("hosaka:open-tab", { detail: "web" }));
+    const trimmed = target.trim();
+    if (!trimmed) {
+      this.writeln(`  ${GRAY}${st("panel.opened", { panel: "web" })}${R}`);
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("hosaka:web-open", { detail: trimmed }));
+    this.writeln(`  ${GRAY}${st("webOpen.opening", { target: trimmed })}${R}`);
   }
 
   private async handleUpdate(): Promise<void> {

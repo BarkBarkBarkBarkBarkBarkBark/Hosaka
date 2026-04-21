@@ -8,9 +8,9 @@ This is the exact 6-step recipe. Follow it in order. Every existing panel
 (`TerminalPanel`, `ReadingPanel`, `TodoPanel`, `VideoPanel`, `MessagesPanel`,
 `GamesPanel`, `WikiPanel`, `WebPanel`, `BooksPanel`) is built this way.
 
-**`WebPanel`** — iframe + preset shortcuts. Many large sites refuse to render
-inside an iframe (`X-Frame-Options` / CSP). Those presets open in a **new
-browser tab**; embed-friendly sites (Wikipedia, HN, GitHub, …) load in-panel.
+**`WebPanel`** — browser-surface + preset shortcuts. Internal Hosaka targets
+render in-panel; arbitrary external sites launch through the current browser
+adapter (web fallback/new tab today, native/remote adapters later).
 
 ## File map
 
@@ -152,6 +152,7 @@ The terminal can drive other panels via `CustomEvent`:
 | `hosaka:todo-add`        | `text: string`   | `TodoPanel`     |
 | `hosaka:video`           | `url: string`    | `VideoPanel`    |
 | `hosaka:web-preset`      | `presetId: string` | `WebPanel`    |
+| `hosaka:web-open`        | `target: string` | `WebPanel`      |
 | `hosaka:books-search`    | `query: string`  | `BooksPanel`    |
 
 Add new events here when you wire them up. Keep the namespace `hosaka:*`
