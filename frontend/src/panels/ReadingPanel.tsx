@@ -144,7 +144,7 @@ export function ReadingPanel({ active }: Props) {
                 className="reading-frame"
                 title={selected.title}
                 src={selected.url}
-                sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+                sandbox="allow-popups allow-popups-to-escape-sandbox"
                 referrerPolicy="no-referrer-when-downgrade"
               />
             </div>
