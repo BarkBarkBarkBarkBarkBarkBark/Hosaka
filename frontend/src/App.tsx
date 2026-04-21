@@ -59,6 +59,17 @@ export function App() {
   const [bootMessage, setBootMessage] = useState(t("boot.waking"));
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // Immersive mode: hide topbar/footer/dock-buttons and collapse the web
+  // panel's hint line so the browsed page gets ~all of the viewport. Toggled
+  // by the chevron in the dock. Persists so the kiosk re-boots into whichever
+  // mode the operator left it in.
+  const [immersive, setImmersive] = useState(
+    () => typeof localStorage !== "undefined" && localStorage.getItem("hosaka.immersive") === "1",
+  );
+  useEffect(() => {
+    try { localStorage.setItem("hosaka.immersive", immersive ? "1" : "0"); } catch {}
+  }, [immersive]);
+
   // Apply font-size preference from localStorage immediately on mount.
   useEffect(() => {
     applyFontSize(loadUiConfig().fontSize);
@@ -110,7 +121,7 @@ export function App() {
   }, []);
 
   return (
-    <div className="hosaka-shell">
+    <div className={`hosaka-shell${immersive ? " hosaka-shell--immersive" : ""}`}>
       <header className="hosaka-topbar">
         <div className="hosaka-brand">
           <span className="hosaka-brand-logo">{t("brand")}</span>
@@ -135,6 +146,16 @@ export function App() {
       </header>
 
       <nav className="hosaka-dock" role="tablist">
+        <button
+          type="button"
+          className="hosaka-chevron"
+          aria-label={immersive ? t("chrome.expand", "expand chrome") : t("chrome.collapse", "collapse chrome")}
+          title={immersive ? t("chrome.expand", "expand chrome") : t("chrome.collapse", "collapse chrome")}
+          aria-pressed={immersive}
+          onClick={() => setImmersive((v) => !v)}
+        >
+          {immersive ? "⌄" : "⌃"}
+        </button>
         <label className="hosaka-dock-picker">
           <span className="hosaka-dock-picker-label dim">{t("tabs.jump", "view")}</span>
           <select

@@ -13,7 +13,7 @@
  * The same bundle loads in both. The only branch is on `getBrowserMode()`.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "../i18n";
 import { getBrowserMode } from "./browserAdapter";
 // electronWebview.d.ts is an ambient .d.ts — TS picks it up from tsconfig's
@@ -79,31 +79,12 @@ export function WebPanel({ active }: Props) {
   const [mode] = useState(() => getBrowserMode());
   const useWebview = mode === "native-webview";
 
-  const preset = useMemo(
-    () => PRESETS.find((p) => p.id === presetId) ?? PRESETS[1],
-    [presetId],
-  );
-
-  const load = useCallback(
-    (url: string) => {
-      const normalized = normalizeUrl(url);
-      if (!normalized) return;
-      setSrc(normalized);
-      setUrlInput(normalized);
-    },
-    [],
-  );
-
-  const applyPreset = useCallback(
-    (p: Preset, customUrl?: string) => {
-      if (p.id === "custom") {
-        load(customUrl ?? urlInput);
-        return;
-      }
-      load(p.url);
-    },
-    [urlInput, load],
-  );
+  const load = useCallback((url: string) => {
+    const normalized = normalizeUrl(url);
+    if (!normalized) return;
+    setSrc(normalized);
+    setUrlInput(normalized);
+  }, []);
 
   // The URL bar is the source of truth on Go — real-browser behaviour. If the
   // user edits the bar (even while a preset is selected), Enter/Go renders
