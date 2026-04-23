@@ -267,6 +267,93 @@ Hours of inactivity drain it. Reach colony state and it records a birth.
 
 ---
 
+## Voice mode
+
+Talk to Hosaka. Wake word + OpenAI Realtime + a webcam for the `see()`
+tool. Runs in two places:
+
+- **Kiosk panel** — tap the `◎ voice` tab, hit the orb, say something.
+  Uses browser `getUserMedia` + WebRTC to OpenAI; the API key never
+  leaves the Pi (the backend mints a short-lived session token).
+- **Headless daemon** — `hosaka voice` (or the `hosaka-voice.service`
+  unit). Runs across the room with a USB mic/speaker; default wake
+  word is "hey jarvis" because that model is bundled with
+  openwakeword. A custom "hey hosaka" needs training — see
+  [openwakeword docs](https://github.com/dscripka/openWakeWord#training-new-models).
+
+### Install
+
+```bash
+./scripts/install_voice_deps.sh     # apt: portaudio, alsa, v4l, ffmpeg
+                                    # pip: sounddevice, openwakeword, opencv, ...
+export OPENAI_API_KEY=sk-...        # or put in /etc/hosaka/env
+```
+
+### Run
+
+```bash
+hosaka voice                         # foreground daemon
+# or inside the Hosaka console:
+/voice
+
+# or as a systemd unit on the appliance:
+sudo cp systemd/hosaka-voice.service /etc/systemd/system/
+sudo systemctl enable --now hosaka-voice
+```
+
+### Tools exposed to the voice
+
+The Realtime session has five tools it can call mid-conversation.
+Four are thin; the fifth hands off to the full agent:
+
+| Tool         | What it does                                    |
+|--------------|-------------------------------------------------|
+| `todo_add`   | Appends to `~/.hosaka/voice_todos.jsonl` (the VoicePanel mirrors it into the Todo panel) |
+| `set_mode`   | Switches console/device mode via `hosaka mode`  |
+| `get_status` | One-line summary: host, uptime, free RAM, CPU C |
+| `see`        | Grabs a JPEG, runs `gpt-4o-mini` vision, speaks the caption |
+| `ask_agent`  | Routes to picoclaw for real agentic tool use (shell, git, files) |
+
+If you say "what do you see" / "describe the room" the model calls
+`see()`. If you say "run `ls -la`" / "what's the biggest file in my
+home dir" it should say "on it" and hand off to `ask_agent`.
+
+### Env knobs
+
+| Variable                          | Default                    | Note |
+|-----------------------------------|----------------------------|------|
+| `OPENAI_API_KEY`                  | —                          | Reuses the one `openai_adapter.py` already picks up |
+| `HOSAKA_VOICE_MODEL`              | `gpt-4o-realtime-preview`  | Whatever latest realtime SKU you pay for |
+| `HOSAKA_VOICE_VOICE`              | `verse`                    | One of the Realtime voice presets |
+| `HOSAKA_VOICE_WAKEWORD`           | `hey_jarvis`               | openwakeword preset or path to `.onnx` |
+| `HOSAKA_VOICE_WAKE_THRESHOLD`     | `0.5`                      | 0-1 trigger confidence |
+| `HOSAKA_VOICE_INPUT_DEVICE`       | system default             | sounddevice index or name (see `python -c "import sounddevice as sd;print(sd.query_devices())"`) |
+| `HOSAKA_VOICE_OUTPUT_DEVICE`      | system default             | same, for the speaker |
+| `HOSAKA_VOICE_CAMERA`             | `/dev/video0`              | V4L2 device path or numeric index |
+| `HOSAKA_VOICE_VISION_MODEL`       | `gpt-4o-mini`              | For the `see()` tool |
+| `HOSAKA_VOICE_TURN_TIMEOUT`       | `45`                       | Hard cap on one turn's mic time, seconds |
+
+### Echo + half-duplex
+
+We mute the microphone while Hosaka is speaking (the daemon's audio
+callback gates the input queue; the browser relies on the standard
+`echoCancellation: true` WebRTC constraint). This is the cheapest way
+to prevent the wake word from firing on Hosaka's own voice. If you
+want full-duplex (interrupt while it's talking), you need a real AEC —
+`speexdsp-python` on Pi will work, patches welcome.
+
+### Hardware notes
+
+- A USB webcam with a built-in mic is the easiest wiring — the mic
+  shows up as a separate ALSA card; set `HOSAKA_VOICE_INPUT_DEVICE`
+  to that card's index.
+- The Pi 3B's built-in audio jack is fine for output. Anything louder
+  wants a USB speaker or a DAC.
+- `picoclaw` is a *soft* dependency — `ask_agent` falls back to
+  plain `gpt-4o-mini` chat when picoclaw isn't on the path.
+
+---
+
 ## Configuration
 
 | Variable | Default | Description |

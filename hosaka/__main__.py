@@ -67,5 +67,24 @@ for _name in _NOISY_LOGGERS:
 from hosaka.boot.launcher import launch
 
 
+def _dispatch_argv() -> int | None:
+    """Tiny subcommand router layered on top of the default launcher.
+
+    Returns the desired exit code if a subcommand was handled, or None
+    to fall through to the interactive launcher (the historical behaviour
+    when running ``python -m hosaka`` with no args).
+    """
+    if len(sys.argv) < 2:
+        return None
+    cmd = sys.argv[1]
+    if cmd == "voice":
+        from hosaka.voice.daemon import main as voice_main
+        return voice_main()
+    return None
+
+
 if __name__ == "__main__":
+    rc = _dispatch_argv()
+    if rc is not None:
+        sys.exit(rc)
     launch()

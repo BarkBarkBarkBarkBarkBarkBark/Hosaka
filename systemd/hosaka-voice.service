@@ -1,0 +1,37 @@
+[Unit]
+Description=Hosaka voice daemon (wake-word + OpenAI Realtime over USB mic/speaker)
+# Needs the sound stack up (ALSA) and network for the Realtime WebSocket.
+# Picoclaw gateway is a soft dep — ask_agent will fall back to the OpenAI
+# chat API if picoclaw isn't running, so don't hard-require it here.
+After=sound.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# The operator's home holds ~/.picoclaw/config.json (which is how we pick
+# up OPENAI_API_KEY on fresh installs). Run as the kiosk user, not root,
+# so PortAudio picks the desktop session's default sound card without
+# the usual "no such device" root-session shenanigans.
+User=operator
+Group=audio
+SupplementaryGroups=video
+WorkingDirectory=/opt/hosaka-field-terminal
+EnvironmentFile=-/etc/hosaka/env
+Environment=HOSAKA_VOICE_WAKEWORD=hey_jarvis
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/hosaka-field-terminal/.venv/bin/python -m hosaka voice
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Voice is allowed to use a bit more RAM than the web process because
+# openwakeword loads an ONNX model into memory and opencv-headless is
+# chunky. Still capped well under the Pi 3B's 906 MiB budget.
+MemoryMax=320M
+MemoryHigh=260M
+CPUQuota=65%
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

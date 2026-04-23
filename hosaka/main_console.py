@@ -37,6 +37,7 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("/chat",           "Enter interactive chat mode with the AI",       "Chat & AI"),
     ("/chat <text>",    "One-shot question — ask and get an answer",     "Chat & AI"),
     ("/ask <text>",     "Alias for /chat <text>",                        "Chat & AI"),
+    ("/voice",          "Talk to Hosaka (wake-word + OpenAI Realtime)",  "Chat & AI"),
     # ── System ──
     ("/status",         "System overview — uptime, IP, model, services", "System"),
     ("/doctor",         "Diagnose picoclaw config and connectivity",     "System"),
@@ -1015,6 +1016,21 @@ def run_main_console() -> None:
             one_shot(raw[6:], hostname=_hostname(), cwd=str(current_dir))
         elif raw.startswith("/ask "):
             one_shot(raw[5:], hostname=_hostname(), cwd=str(current_dir))
+        elif raw == "/voice":
+            try:
+                from hosaka.voice.daemon import main as voice_main
+            except ImportError as exc:
+                print(
+                    f"Voice deps not installed ({exc}).\n"
+                    "Run ./scripts/install_voice_deps.sh first."
+                )
+            else:
+                print("Entering voice mode. Ctrl-C to return.")
+                try:
+                    voice_main()
+                except KeyboardInterrupt:
+                    pass
+                print("Back in Hosaka console.")
 
         # ── Tools (continued) ──
         elif raw.startswith("/draw "):

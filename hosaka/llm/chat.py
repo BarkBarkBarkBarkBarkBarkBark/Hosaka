@@ -168,6 +168,22 @@ def enter_chat_mode(hostname: str, cwd: str) -> None:
             from hosaka.llm import picoclaw_adapter
             print(f"Session: {picoclaw_adapter.DEFAULT_SESSION}")
             continue
+        if user_input == "/voice":
+            try:
+                from hosaka.voice.daemon import main as voice_main
+            except ImportError as exc:
+                print(
+                    f"Voice deps not installed ({exc}). "
+                    "Run scripts/install_voice_deps.sh first."
+                )
+                continue
+            print("Entering voice mode. Ctrl-C to return.")
+            try:
+                voice_main()
+            except KeyboardInterrupt:
+                pass
+            print("\nBack in Hosaka chat.")
+            continue
 
         history.append({"role": "user", "content": user_input})
         assistant_text = _print_stream(history, backend=backend)

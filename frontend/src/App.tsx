@@ -39,6 +39,9 @@ const WebPanel = lazy(() =>
 const BooksPanel = lazy(() =>
   import("./panels/BooksPanel").then((m) => ({ default: m.BooksPanel })),
 );
+const VoicePanel = lazy(() =>
+  import("./panels/VoicePanel").then((m) => ({ default: m.VoicePanel })),
+);
 
 export type PanelId =
   | "terminal"
@@ -49,7 +52,8 @@ export type PanelId =
   | "games"
   | "wiki"
   | "web"
-  | "books";
+  | "books"
+  | "voice";
 
 const SHOW_SETTINGS = import.meta.env.VITE_SHOW_SETTINGS === "1";
 
@@ -90,6 +94,7 @@ export function App() {
   const panels = useMemo<{ id: PanelId; label: string; glyph: string }[]>(
     () => [
       { id: "terminal", label: t("tabs.terminal"), glyph: "›_" },
+      { id: "voice", label: t("tabs.voice", "voice"), glyph: "◎" },
       { id: "reading", label: t("tabs.reading"), glyph: "❑" },
       { id: "todo", label: t("tabs.openLoops"), glyph: "▣" },
       { id: "video", label: t("tabs.video", "video"), glyph: "▶" },
@@ -230,6 +235,11 @@ export function App() {
           {visited.has("books") && (
             <div className="hosaka-panel" hidden={active !== "books"}>
               <BooksPanel active={active === "books"} />
+            </div>
+          )}
+          {visited.has("voice") && (
+            <div className="hosaka-panel" hidden={active !== "voice"}>
+              <VoicePanel active={active === "voice"} />
             </div>
           )}
         </Suspense>

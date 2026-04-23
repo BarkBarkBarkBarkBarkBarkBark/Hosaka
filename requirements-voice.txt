@@ -1,0 +1,13 @@
+# Hosaka voice-mode dependencies.
+#
+# Install on top of requirements-hosaka.txt:
+#   pip install -r requirements-hosaka.txt -r requirements-voice.txt
+#
+# System packages (apt) are handled by scripts/install_voice_deps.sh —
+# you need portaudio19-dev before `pip install sounddevice` works.
+
+sounddevice>=0.4.6,<1.0
+numpy>=1.26,<3.0
+openwakeword>=0.6.0,<1.0
+websockets>=12.0,<14.0
+opencv-python-headless>=4.9,<5.0

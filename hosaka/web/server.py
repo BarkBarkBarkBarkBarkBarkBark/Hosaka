@@ -251,8 +251,10 @@ app = FastAPI(
 
 # ── v1 API (single source of truth for remote clients) ───────────────────────
 from hosaka.web.api_v1 import router as v1_router  # noqa: E402
+from hosaka.web.voice_api import router as voice_router  # noqa: E402
 
 app.include_router(v1_router)
+app.include_router(voice_router)
 
 
 # ── /device — minimal HTML mirror of the TTY device dashboard ─────────────────
