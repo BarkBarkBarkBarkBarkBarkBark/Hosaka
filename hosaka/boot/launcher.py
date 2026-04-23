@@ -17,6 +17,16 @@ WEB_HOST = os.getenv("HOSAKA_WEB_HOST", "0.0.0.0")
 WEB_PORT = int(os.getenv("HOSAKA_WEB_PORT", "8421"))
 BOOT_MODE = os.getenv("HOSAKA_BOOT_MODE", "console")
 PICOCLAW_GATEWAY_PORT = int(os.getenv("PICOCLAW_GATEWAY_PORT", "18790"))
+# Desktop mode is set by the cross-platform `hosaka` launcher when the
+# container is running on a laptop (not a Pi). In that case we avoid the
+# Pi-only assumptions: don't try to auto-start the picoclaw gateway
+# (the desktop user hasn't onboarded a key yet), and don't crash on
+# missing /proc/net shapes during network introspection.
+DESKTOP_MODE = os.getenv("HOSAKA_DESKTOP_MODE") == "1"
+# `client` is a special desktop-mode boot: this container is just a
+# front-end; the real Hosaka lives somewhere else on the tailnet, pointed
+# at by $HOSAKA_REMOTE. We don't spin up the local web server or picoclaw.
+REMOTE_URL = os.getenv("HOSAKA_REMOTE", "").strip()
 # Skip the Python ANSI shell; keep the FastAPI/JS UI as the only interactive surface.
 _WEB_PRIMARY_MODES = frozenset({"headless", "kiosk", "web"})
 
@@ -103,6 +113,12 @@ def _picoclaw_installed() -> bool:
 
 def start_picoclaw_gateway() -> subprocess.Popen | None:  # type: ignore[type-arg]
     """Start the Picoclaw gateway in the background if available."""
+    # On a desktop install the user hasn't onboarded picoclaw yet — the
+    # first-run web UI collects their model provider key and writes the
+    # config, after which they can start the gateway manually. Starting
+    # it here just spams the log with "config not found" every boot.
+    if DESKTOP_MODE:
+        return None
     if not _picoclaw_installed():
         return None
 
@@ -147,9 +163,42 @@ def start_picoclaw_gateway() -> subprocess.Popen | None:  # type: ignore[type-ar
 
 # ── main entry ────────────────────────────────────────────────────────────────
 
+def _run_client_mode() -> None:
+    """Desktop 'client' boot: no local web server, just point the operator
+    at the remote Hosaka they linked to via `hosaka link`."""
+    if not REMOTE_URL:
+        print(
+            "Hosaka client mode: HOSAKA_REMOTE is not set. "
+            "Did you mean to run `hosaka up` (local) or `hosaka link <host>` first?",
+        )
+        sys.exit(2)
+    print(f"Hosaka client: linked to {REMOTE_URL}")
+    print("Open the web UI in your browser, or use `hosaka open`.")
+    # Hand off to the TUI which honours HOSAKA_REMOTE for API calls.
+    # (If main_console doesn't yet speak remote, the user still gets a
+    # working browser path via `hosaka open`.)
+    try:
+        run_main_console()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Hosaka client: main console exited ({exc})")
+        sys.exit(1)
+
+
 def launch() -> None:
+    if BOOT_MODE == "client":
+        _run_client_mode()
+        return
+
     orchestrator = build_default_orchestrator()
-    orchestrator.update_runtime_network()
+    try:
+        orchestrator.update_runtime_network()
+    except Exception as exc:  # noqa: BLE001
+        # /proc/net shapes differ on macOS/WSL containers — don't let
+        # network introspection kill the desktop boot.
+        if DESKTOP_MODE:
+            print(f"Hosaka desktop: skipping network introspection ({exc})")
+        else:
+            raise
     web_url = f"http://{orchestrator.state.local_ip}:{WEB_PORT}"
     web_process = start_web_server()
 

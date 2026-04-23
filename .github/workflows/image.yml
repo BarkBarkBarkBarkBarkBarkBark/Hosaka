@@ -1,0 +1,87 @@
+name: image
+
+# Publish multi-arch container images for the Hosaka client.
+#
+# Triggers:
+#   - push to main              → :main  + :edge
+#   - push of a v* tag          → :vX.Y.Z + :latest
+#   - manual run                → whatever SHA you kick it off against
+#
+# Consumers (hosaka launcher) pull ghcr.io/<owner>/hosaka:latest by
+# default, so the "latest" tag only moves when you cut a real tag — not
+# on every push to main.
+
+on:
+  push:
+    branches: [main]
+    tags:     ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set lower-case owner
+        id: owner
+        run: echo "name=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.owner.outputs.name }}/hosaka
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,format=short
+            type=raw,value=edge,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          labels: |
+            org.opencontainers.image.title=Hosaka
+            org.opencontainers.image.description=Hosaka Field Terminal — client container
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build + push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags:   ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "### hosaka image published"
+            echo ""
+            echo "Tags:"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": false,
+  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/",         "destination": "/install.sh"  },
+    { "source": "/windows",  "destination": "/install.ps1" },
+    { "source": "/healthz",  "destination": "/healthz.txt" },
+    { "source": "/version",  "destination": "/VERSION"     }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "content-type",              "value": "text/plain; charset=utf-8" },
+        { "key": "cache-control",             "value": "public, max-age=300, s-maxage=300" },
+        { "key": "x-content-type-options",    "value": "nosniff" },
+        { "key": "strict-transport-security", "value": "max-age=63072000; includeSubDomains; preload" }
+      ]
+    }
+  ]
+}

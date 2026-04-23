@@ -1,0 +1,18 @@
+name = "hosaka-install"
+main = "src/worker.js"
+compatibility_date = "2025-01-01"
+
+# Custom domain binding — set this after you've added install.hosaka.xyz
+# to your Cloudflare zone (see install/README.md). Cloudflare Workers
+# custom domains automatically terminate TLS.
+routes = [
+  { pattern = "install.hosaka.xyz", custom_domain = true },
+]
+
+# Repo + branch the worker serves the installer files from. Override at
+# deploy time with `wrangler deploy --var REPO:<…> --var REF:<…>` if
+# you want a staging channel.
+[vars]
+REPO = "BarkBarkBarkBarkBarkBarkBark/Hosaka"
+REF  = "main"
+BASE_PATH = "install"

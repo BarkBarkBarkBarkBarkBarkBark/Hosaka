@@ -1,0 +1,269 @@
+#!/usr/bin/env bash
+# hosaka — thin desktop client.
+#
+# Wraps `docker run` to give you:
+#   - a local hosaka node (web UI + TUI) on this machine, OR
+#   - a remote-linked client that opens the TUI / browser against
+#     another hosaka machine on your tailnet.
+#
+# Config lives in $HOSAKA_HOME (default: ~/.hosaka).
+# State persists across restarts via a bind-mount at $HOSAKA_HOME/state.
+#
+# Subcommands:
+#   hosaka up                  start the local node (detached)
+#   hosaka down                stop the local node
+#   hosaka tui                 drop into the console TUI
+#                              (against the linked remote if `hosaka link` was run)
+#   hosaka open                open the web UI in your browser
+#   hosaka logs                follow logs from the local node
+#   hosaka shell               bash shell inside the local container
+#   hosaka status              what's running + where it points
+#   hosaka update              pull the latest image
+#   hosaka link <host[:port]>  route tui/open/status at a remote hosaka
+#   hosaka unlink              go back to using the local node
+#   hosaka uninstall           remove launcher + local container (keeps state)
+#   hosaka version             print versions
+#   hosaka help                this message
+#
+# Env overrides:
+#   HOSAKA_IMAGE         container image (default: ghcr.io/barkbarkbarkbarkbarkbarkbark/hosaka:latest)
+#   HOSAKA_PORT          local port for the web UI (default: 8421)
+#   HOSAKA_HOME          config + state dir (default: ~/.hosaka)
+#   HOSAKA_CONTAINER     container name (default: hosaka)
+
+set -euo pipefail
+
+HOSAKA_IMAGE="${HOSAKA_IMAGE:-ghcr.io/barkbarkbarkbarkbarkbarkbark/hosaka:latest}"
+HOSAKA_PORT="${HOSAKA_PORT:-8421}"
+HOSAKA_HOME="${HOSAKA_HOME:-$HOME/.hosaka}"
+HOSAKA_CONTAINER="${HOSAKA_CONTAINER:-hosaka}"
+STATE_DIR="$HOSAKA_HOME/state"
+LINK_FILE="$HOSAKA_HOME/link"
+ENV_FILE="$HOSAKA_HOME/env"
+
+mkdir -p "$HOSAKA_HOME" "$STATE_DIR"
+
+# ── style ────────────────────────────────────────────────────────────────────
+if [ -t 1 ]; then
+    C_DIM=$'\033[2m'; C_CYAN=$'\033[36m'; C_GREEN=$'\033[32m'
+    C_AMBER=$'\033[33m'; C_RED=$'\033[31m'; C_RESET=$'\033[0m'
+else
+    C_DIM=""; C_CYAN=""; C_GREEN=""; C_AMBER=""; C_RED=""; C_RESET=""
+fi
+note() { printf '  %s›%s %s\n' "$C_CYAN" "$C_RESET" "$*"; }
+ok()   { printf '  %s✓%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
+warn() { printf '  %s!%s %s\n' "$C_AMBER" "$C_RESET" "$*"; }
+die()  { printf '  %s✗%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+have_docker() { command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; }
+
+current_link() {
+    [ -f "$LINK_FILE" ] && tr -d '[:space:]' < "$LINK_FILE"
+}
+
+# Normalize "host", "host:port", "http://host:port" → "http://host:port"
+link_url() {
+    local raw="$1"
+    case "$raw" in
+        http://*|https://*) printf '%s\n' "${raw%/}" ;;
+        *:[0-9]*)           printf 'http://%s\n' "$raw" ;;
+        *)                  printf 'http://%s:%s\n' "$raw" "$HOSAKA_PORT" ;;
+    esac
+}
+
+env_file_args() {
+    [ -f "$ENV_FILE" ] && printf -- '--env-file %s\n' "$ENV_FILE"
+}
+
+container_running() {
+    have_docker || return 1
+    [ "$(docker inspect -f '{{.State.Running}}' "$HOSAKA_CONTAINER" 2>/dev/null || true)" = "true" ]
+}
+
+# ── commands ─────────────────────────────────────────────────────────────────
+cmd_up() {
+    have_docker || die "docker not running — start Docker Desktop or the docker daemon"
+    if container_running; then
+        ok "hosaka already running at http://127.0.0.1:$HOSAKA_PORT"
+        return 0
+    fi
+    docker rm -f "$HOSAKA_CONTAINER" >/dev/null 2>&1 || true
+    note "starting local node → http://127.0.0.1:$HOSAKA_PORT"
+    # shellcheck disable=SC2046
+    docker run -d --rm \
+        --name "$HOSAKA_CONTAINER" \
+        -p "127.0.0.1:$HOSAKA_PORT:8421" \
+        -v "$STATE_DIR:/var/lib/hosaka" \
+        -e HOSAKA_BOOT_MODE=headless \
+        -e HOSAKA_DESKTOP_MODE=1 \
+        $(env_file_args) \
+        "$HOSAKA_IMAGE" >/dev/null
+    ok "up. try: hosaka open | hosaka tui"
+}
+
+cmd_down() {
+    have_docker || die "docker not available"
+    if container_running; then
+        docker stop "$HOSAKA_CONTAINER" >/dev/null
+        ok "stopped"
+    else
+        note "already down"
+    fi
+}
+
+cmd_tui() {
+    local link target
+    link="$(current_link || true)"
+    if [ -n "$link" ]; then
+        target="$(link_url "$link")"
+        note "attaching to remote tui at $target (linked)"
+        # Remote TUI attach: run a short-lived container that speaks to the
+        # remote API. The image's /usr/local/bin/picoclaw handles agent REPL
+        # over HTTP, and the hosaka module honours HOSAKA_REMOTE.
+        exec docker run --rm -it \
+            -e HOSAKA_REMOTE="$target" \
+            -e HOSAKA_BOOT_MODE=client \
+            -v "$STATE_DIR:/var/lib/hosaka" \
+            "$HOSAKA_IMAGE"
+    fi
+    # Local TUI: if the daemon is up, exec into it; otherwise spin a one-shot.
+    if container_running; then
+        exec docker exec -it "$HOSAKA_CONTAINER" \
+            /opt/hosaka-field-terminal/.venv/bin/python -m hosaka --boot console
+    fi
+    note "no local node running — starting a one-shot console"
+    exec docker run --rm -it \
+        -v "$STATE_DIR:/var/lib/hosaka" \
+        -e HOSAKA_BOOT_MODE=console \
+        -e HOSAKA_DESKTOP_MODE=1 \
+        "$HOSAKA_IMAGE"
+}
+
+cmd_open() {
+    local link url
+    link="$(current_link || true)"
+    if [ -n "$link" ]; then
+        url="$(link_url "$link")"
+    else
+        container_running || { warn "local node not running. starting it."; cmd_up; }
+        url="http://127.0.0.1:$HOSAKA_PORT"
+    fi
+    note "opening $url"
+    if command -v open >/dev/null 2>&1; then open "$url"
+    elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$url"
+    else printf '  visit: %s\n' "$url"; fi
+}
+
+cmd_logs() {
+    container_running || die "local node not running"
+    exec docker logs -f "$HOSAKA_CONTAINER"
+}
+
+cmd_shell() {
+    container_running || die "local node not running — try: hosaka up"
+    exec docker exec -it "$HOSAKA_CONTAINER" bash
+}
+
+cmd_status() {
+    printf '\n'
+    printf '  %shosaka%s\n' "$C_CYAN" "$C_RESET"
+    printf '    image       : %s\n' "$HOSAKA_IMAGE"
+    printf '    state dir   : %s\n' "$STATE_DIR"
+    printf '    local node  : '
+    if container_running; then
+        printf '%srunning%s at http://127.0.0.1:%s\n' "$C_GREEN" "$C_RESET" "$HOSAKA_PORT"
+    else
+        printf '%sstopped%s\n' "$C_DIM" "$C_RESET"
+    fi
+    local link
+    link="$(current_link || true)"
+    if [ -n "$link" ]; then
+        printf '    linked to   : %s%s%s  %s(remote)%s\n' "$C_AMBER" "$(link_url "$link")" "$C_RESET" "$C_DIM" "$C_RESET"
+    else
+        printf '    linked to   : %s(not linked — using local)%s\n' "$C_DIM" "$C_RESET"
+    fi
+    if command -v tailscale >/dev/null 2>&1; then
+        local ts_status
+        ts_status="$(tailscale status --self=false 2>/dev/null | head -5 || true)"
+        if [ -n "$ts_status" ]; then
+            printf '    tailnet     :\n'
+            printf '%s\n' "$ts_status" | sed 's/^/      /'
+        fi
+    fi
+    printf '\n'
+}
+
+cmd_update() {
+    have_docker || die "docker not available"
+    note "pulling $HOSAKA_IMAGE"
+    docker pull "$HOSAKA_IMAGE"
+    if container_running; then
+        note "restarting local node with fresh image"
+        cmd_down
+        cmd_up
+    fi
+    ok "updated"
+}
+
+cmd_link() {
+    local host="${1:-}"
+    [ -z "$host" ] && die "usage: hosaka link <host[:port]>"
+    printf '%s\n' "$host" > "$LINK_FILE"
+    ok "linked to $(link_url "$host")"
+    note "hosaka tui / hosaka open now target the remote"
+    note "run 'hosaka unlink' to go back to local"
+}
+
+cmd_unlink() {
+    if [ -f "$LINK_FILE" ]; then
+        rm -f "$LINK_FILE"
+        ok "unlinked — back to local node"
+    else
+        note "not linked"
+    fi
+}
+
+cmd_uninstall() {
+    warn "uninstalling hosaka launcher"
+    if container_running; then docker stop "$HOSAKA_CONTAINER" >/dev/null 2>&1 || true; fi
+    docker rm -f "$HOSAKA_CONTAINER" >/dev/null 2>&1 || true
+    local self; self="$(command -v hosaka || true)"
+    if [ -n "$self" ] && [ -w "$self" ]; then
+        rm -f "$self" && ok "removed $self"
+    elif [ -n "$self" ]; then
+        sudo rm -f "$self" && ok "removed $self"
+    fi
+    note "state kept at $HOSAKA_HOME (delete manually if you want a clean slate)"
+}
+
+cmd_version() {
+    printf 'hosaka launcher : %s\n' "0.1.0"
+    printf 'image           : %s\n' "$HOSAKA_IMAGE"
+    if have_docker; then
+        docker image inspect "$HOSAKA_IMAGE" --format 'image digest    : {{index .RepoDigests 0}}' 2>/dev/null || true
+    fi
+}
+
+cmd_help() {
+    sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# ── dispatch ─────────────────────────────────────────────────────────────────
+cmd="${1:-help}"; shift || true
+case "$cmd" in
+    up)         cmd_up ;;
+    down|stop)  cmd_down ;;
+    tui|console)cmd_tui "$@" ;;
+    open)       cmd_open ;;
+    logs)       cmd_logs ;;
+    shell|sh)   cmd_shell ;;
+    status|st)  cmd_status ;;
+    update|pull)cmd_update ;;
+    link)       cmd_link "$@" ;;
+    unlink)     cmd_unlink ;;
+    uninstall)  cmd_uninstall ;;
+    version|-v|--version) cmd_version ;;
+    help|-h|--help|"") cmd_help ;;
+    *) warn "unknown command: $cmd"; cmd_help; exit 1 ;;
+esac
