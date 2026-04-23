@@ -73,20 +73,24 @@ GitHub (main branch) -- push --> Vercel project (Root Directory: install)
 ### Deploying a change
 
 Just push to `main`. Vercel auto-deploys whenever any file inside
-`install/` changes (it only watches this root directory). No CLI needed.
-
-> **Note:** pushes that only touch files *outside* `install/` (e.g.
-> `hosaka/`, `tests/`) will not trigger a Vercel build. This is
-> expected behaviour from the Root Directory filter.
+`install/` changes. Pushes that only touch other parts of the repo
+(`hosaka/`, `tests/`, etc.) are skipped automatically by the Ignored
+Build Step filter. No CLI needed.
 
 ### First-time project setup (if recreating from scratch)
 
 1. Create a new Vercel project connected to this repo.
-2. Set **Root Directory** to `install` (not `./install`).
+2. Set **Root Directory** to `install` (not `./install`, not `/`).
 3. Leave Framework Preset as **Other** and Build Command blank.
-4. Add the custom domain `install.hosaka.xyz` in Project Settings.
-5. In GoDaddy DNS, add a CNAME: `install` -> `cname.vercel-dns.com`
-   (Vercel will give you the exact target during domain setup).
+4. Set **Ignored Build Step** to:
+   ```
+   git diff HEAD^ HEAD --quiet -- install/
+   ```
+   This tells Vercel to skip the build when nothing under `install/`
+   changed (exit 0 = skip, exit 1 = build — the opposite of intuition).
+5. Add the custom domain `install.hosaka.xyz` in Project Settings.
+6. In GoDaddy DNS, add a CNAME: `install` → the target Vercel gives you
+   during domain setup (e.g. `cname.vercel-dns.com`).
 
 ### Smoke testing after a push
 

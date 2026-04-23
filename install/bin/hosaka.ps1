@@ -51,7 +51,12 @@ function Env-File-Args {
 
 function Cmd-Up {
     if (-not (Have-Docker)) { Die "docker not running - start Docker Desktop" }
-    if (Container-Running) { OK "hosaka already running at http://127.0.0.1:$Port"; return }
+    if (Container-Running) {
+        OK "hosaka already running at http://127.0.0.1:$Port"
+        Write-Host "    launcher : $PSCommandPath" -ForegroundColor DarkGray
+        Write-Host "    state    : $StateDir" -ForegroundColor DarkGray
+        return
+    }
     try { & docker rm -f $Container *> $null } catch {}
     Note "starting local node -> http://127.0.0.1:$Port"
     $args = @("run", "-d", "--rm",
@@ -61,7 +66,11 @@ function Cmd-Up {
               "-e", "HOSAKA_BOOT_MODE=headless",
               "-e", "HOSAKA_DESKTOP_MODE=1") + (Env-File-Args) + @($Image)
     & docker @args *> $null
-    OK "up. try: hosaka open | hosaka tui"
+    OK "up -> http://127.0.0.1:$Port"
+    Write-Host "    launcher : $PSCommandPath" -ForegroundColor DarkGray
+    Write-Host "    state    : $StateDir" -ForegroundColor DarkGray
+    Write-Host "    image    : $Image" -ForegroundColor DarkGray
+    Write-Host "    try      : hosaka open  |  hosaka tui" -ForegroundColor DarkGray
 }
 
 function Cmd-Down {

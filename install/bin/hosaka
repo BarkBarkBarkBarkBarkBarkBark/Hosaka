@@ -86,6 +86,8 @@ cmd_up() {
     have_docker || die "docker not running — start Docker Desktop or the docker daemon"
     if container_running; then
         ok "hosaka already running at http://127.0.0.1:$HOSAKA_PORT"
+        printf '    launcher : %s\n' "$(realpath "$0")"
+        printf '    state    : %s\n' "$STATE_DIR"
         return 0
     fi
     docker rm -f "$HOSAKA_CONTAINER" >/dev/null 2>&1 || true
@@ -99,7 +101,11 @@ cmd_up() {
         -e HOSAKA_DESKTOP_MODE=1 \
         $(env_file_args) \
         "$HOSAKA_IMAGE" >/dev/null
-    ok "up. try: hosaka open | hosaka tui"
+    ok "up -> http://127.0.0.1:$HOSAKA_PORT"
+    printf '    launcher : %s\n' "$(realpath "$0")" 
+    printf '    state    : %s\n' "$STATE_DIR"
+    printf '    image    : %s\n' "$HOSAKA_IMAGE"
+    printf '    try      : hosaka open  |  hosaka tui\n'
 }
 
 cmd_down() {

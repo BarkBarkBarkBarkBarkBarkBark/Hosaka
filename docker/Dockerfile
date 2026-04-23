@@ -12,6 +12,17 @@
 # No systemd — the container IS the process supervisor.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── stage 1: build the frontend SPA ──────────────────────────────────────────
+FROM node:22-slim AS frontend-builder
+
+WORKDIR /build/frontend
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci --prefer-offline
+
+COPY frontend/ ./
+RUN npm run build
+# output lands in /build/hosaka/web/ui (vite.config.ts outDir)
+
 FROM python:3.12-slim-bookworm AS base
 
 # ── system packages (match a real Pi's toolset) ──────────────────────────────
@@ -85,6 +96,9 @@ COPY scripts/           scripts/
 COPY systemd/           systemd/
 COPY tests/             tests/
 COPY README.md          .
+
+# ── inject the pre-built frontend SPA ────────────────────────────────────────
+COPY --from=frontend-builder /build/hosaka/web/ui hosaka/web/ui/
 
 RUN chmod +x scripts/*.sh
 
