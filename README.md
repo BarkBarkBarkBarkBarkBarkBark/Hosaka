@@ -25,6 +25,35 @@ There is no wrong way.
 
 ---
 
+## Install in one line
+
+**mac / linux**
+
+```bash
+curl -fsSL https://install.hosaka.xyz | sh
+```
+
+**windows (PowerShell)**
+
+```powershell
+iwr https://install.hosaka.xyz/windows | iex
+```
+
+Then:
+
+```bash
+hosaka up          # start the local node (web UI on http://127.0.0.1:8421)
+hosaka tui         # drop into the console TUI
+hosaka open        # open the web UI in your browser
+hosaka link HOST   # route this client at a remote hosaka on your tailnet
+hosaka help        # see everything
+```
+
+Requires [Docker](https://www.docker.com/products/docker-desktop).
+See [`install/`](./install/) for the installer internals.
+
+---
+
 ## The single entrypoint
 
 The canonical way to run Hosaka — on the Pi, on your laptop, anywhere —
