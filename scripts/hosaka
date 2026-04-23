@@ -38,6 +38,11 @@ KIOSK_AUTOSTART="${HOME:-/home/operator}/.config/openbox/autostart"
 WEB_UNIT="hosaka-webserver.service"
 PICO_UNIT="picoclaw-gateway.service"
 
+# Default session key used by `hosaka chat` / `hosaka message`. Override with
+# HOSAKA_AGENT_SESSION or pass `-s <name>` after the verb.
+AGENT_SESSION="${HOSAKA_AGENT_SESSION:-manager}"
+PICOCLAW_BIN="${PICOCLAW_BIN:-/usr/local/bin/picoclaw}"
+
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 c_red()    { printf '\033[31m%s\033[0m' "$*"; }
@@ -317,6 +322,71 @@ cmd_reboot() {
   sudo systemctl reboot
 }
 
+# ── agent: chat / message / tui ──────────────────────────────────────────────
+#
+# Thin wrappers around `picoclaw agent`. The point is muscle memory:
+#   hosaka chat                  → interactive REPL on the manager session
+#   hosaka message <text...>     → one-shot into the manager session
+#   hosaka tui                   → full Hosaka console (main_console.py)
+#
+# Session defaults to "manager" so planning/prioritization threads are
+# persistent and distinct from ad-hoc `picoclaw agent` (cli:default) use.
+# Override per-call with `-s <name>` or globally via HOSAKA_AGENT_SESSION.
+
+_ensure_picoclaw() {
+  [[ -x "$PICOCLAW_BIN" ]] || die "picoclaw not found at $PICOCLAW_BIN (set PICOCLAW_BIN=...)"
+}
+
+_split_session_args() {
+  # Pulls an optional leading `-s <name>` / `--session <name>` out of "$@"
+  # and exports SESSION_OVERRIDE. Remaining args are left in REST[@].
+  SESSION_OVERRIDE=""
+  REST=()
+  while (( $# )); do
+    case "$1" in
+      -s|--session)
+        [[ $# -ge 2 ]] || die "$1 needs a session name"
+        SESSION_OVERRIDE="$2"; shift 2 ;;
+      -s=*|--session=*)
+        SESSION_OVERRIDE="${1#*=}"; shift ;;
+      --) shift; REST+=("$@"); break ;;
+      *) REST+=("$1"); shift ;;
+    esac
+  done
+}
+
+cmd_chat() {
+  _ensure_picoclaw
+  _split_session_args "$@"
+  local session="${SESSION_OVERRIDE:-$AGENT_SESSION}"
+  note "opening chat session $(c_cyan "$session") — ctrl-d to exit"
+  exec "$PICOCLAW_BIN" agent -s "$session" "${REST[@]}"
+}
+
+cmd_message() {
+  _ensure_picoclaw
+  _split_session_args "$@"
+  local session="${SESSION_OVERRIDE:-$AGENT_SESSION}"
+  if (( ${#REST[@]} == 0 )); then
+    die "usage: hosaka message [-s session] <text...>  (try: hosaka chat for REPL)"
+  fi
+  exec "$PICOCLAW_BIN" agent -s "$session" -m "${REST[*]}"
+}
+
+cmd_tui() {
+  # Full console with /chat, plant, ops, etc. Runs via the same venv the
+  # webserver uses so hosaka.tui imports resolve without PYTHONPATH games.
+  local py
+  if [[ -x "$REPO_ROOT/.venv/bin/python" ]]; then
+    py="$REPO_ROOT/.venv/bin/python"
+  elif command -v python >/dev/null 2>&1; then
+    py="$(command -v python)"
+  else
+    die "no python available for hosaka tui"
+  fi
+  ( cd "$REPO_ROOT" && exec "$py" -m hosaka "$@" )
+}
+
 # ── dispatch ──────────────────────────────────────────────────────────────────
 
 usage() {
@@ -341,6 +411,11 @@ hosaka — operator CLI for the Hosaka Field Terminal Pi
   hosaka deploy [--check]           build + rsync into $DEPLOY_ROOT + restart web
   hosaka logs [unit]                follow journalctl for web/pico/<custom>
   hosaka reboot                     sync + reboot
+
+  hosaka chat [-s session]          open interactive agent REPL
+                                    (default session: \$HOSAKA_AGENT_SESSION = $AGENT_SESSION)
+  hosaka message [-s session] TEXT  one-shot message into agent session
+  hosaka tui                        launch full Hosaka console (python -m hosaka)
 
 Typical SSH-then-deploy flow:
   hosaka mode device                 # frees RAM
@@ -370,6 +445,9 @@ main() {
     deploy)    cmd_deploy "$@" ;;
     logs)      cmd_logs "$@" ;;
     reboot)    cmd_reboot "$@" ;;
+    chat|agent|repl) cmd_chat "$@" ;;
+    message|msg|say) cmd_message "$@" ;;
+    tui|console-ui)  cmd_tui "$@" ;;
     -h|--help|help) usage ;;
     *) usage; die "unknown command: $cmd" ;;
   esac
