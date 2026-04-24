@@ -426,6 +426,7 @@ drawer → System** section, or via PATCH `/api/config`:
 | `HOSAKA_WEB_PORT` | `8421` | LAN setup web server port |
 | `PICOCLAW_SESSION` | `hosaka:main` | Agent session key |
 | `PICOCLAW_MODEL` | *(default)* | Override model |
+| `HOSAKA_PUBLIC_MODE` | unset | Set to `1` / `true` / `yes` to hide the ⚙ settings drawer from all users. Intended for the **public web deployment** of this repo where strangers should not be able to reconfigure the LLM backend or system settings. When set, `/api/health` returns `settings_enabled: false`; the frontend reads this on mount and never renders the gear button or `SettingsDrawer`. The check is **server-side** — it cannot be bypassed from the browser. Local Docker installs should leave this unset (settings enabled by default). **Do not remove this flag** — it is the deliberate access control boundary between the operator-owned appliance and the public-facing hosted instance. |
 
 ---
 
