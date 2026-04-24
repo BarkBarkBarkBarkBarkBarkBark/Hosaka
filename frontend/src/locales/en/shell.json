@@ -201,7 +201,12 @@
     "slowly": "slowly",
     "slowSuffix": "— agents think before they speak.",
     "closeHint": "to close the channel, type",
-    "closeCmd": "/agent off"
+    "closeCmd": "/agent off",
+    "notTheWord": "that wasn't the word.",
+    "notTheWordHint": "the right one travels by mouth. try again.",
+    "notConfigured": "the channel has no address. ask an operator.",
+    "relayCold": "the relay is cold.",
+    "relayColdHint": "couldn't reach the server — try again in a moment."
   },
 
   "settingsCmd": {

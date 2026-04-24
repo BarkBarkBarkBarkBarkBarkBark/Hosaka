@@ -18,7 +18,8 @@ import {
 } from "../llm/gemini";
 import {
   DEFAULT_AGENT_URL,
-  MAGIC_WORD,
+  GATED,
+  attemptUnlock,
   getAgent,
   loadAgentConfig,
   saveAgentConfig,
@@ -293,13 +294,20 @@ export class HosakaShell {
     }
 
     if (!raw.startsWith("/")) {
-      const normalized = raw.trim().toLowerCase();
-      if (MAGIC_WORD && normalized === MAGIC_WORD.toLowerCase()) {
-        this.magicWord();
+      const agentCfg = loadAgentConfig();
+      // Gated hosted build + channel still closed: treat the first plain-text
+      // line as a passphrase candidate and let the server decide. The client
+      // never learns the password — only the server knows HOSAKA_ACCESS_TOKEN.
+      if (GATED && !agentCfg.enabled) {
+        const candidate = raw.trim();
+        if (!candidate || candidate.length > 128) {
+          this.channelClosed();
+        } else {
+          await this.tryMagicWord(candidate, agentCfg);
+        }
         this.writePrompt();
         return;
       }
-      const agentCfg = loadAgentConfig();
       if (!agentCfg.enabled) {
         this.channelClosed();
       } else {
@@ -487,26 +495,35 @@ export class HosakaShell {
     this.writeln(`  ${GRAY}${st("model.set")}${R} ${AMBER}${arg}${R}`);
   }
 
-  private magicWord(): void {
-    const cfg = loadAgentConfig();
-    if (cfg.enabled) {
+  // Ask the server to validate a candidate passphrase. We never check the
+  // word on the client — that would leak it in the JS bundle. Instead we
+  // open a probe WebSocket with `?token=<candidate>`; the server runs an
+  // hmac.compare_digest and either sends us "hello" (success) or closes
+  // with 4401 (unauthorized). Marketing/tone-wise: "the word was heard".
+  private async tryMagicWord(candidate: string, cfg: AgentConfig): Promise<void> {
+    const url = cfg.url || DEFAULT_AGENT_URL;
+    this.writeln("");
+    this.writeln(`  ${DARK_GRAY}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${R}`);
+    this.writeln(`  ${DARK_GRAY}${st("magic.wordSpoken")}${R}`);
+    this.writeln(`  ${AMBER}${st("magic.authorizing")}${R}${DARK_GRAY}…${R}`);
+
+    const result = await attemptUnlock(url, candidate);
+    if (!result.ok) {
+      this.writeln(`  ${DARK_GRAY}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${R}`);
       this.writeln("");
-      this.writeln(`  ${GRAY}${st("magic.alreadyOpen")}${R} ${AMBER}${st("magic.signalSteady")}${R}`);
+      if (result.code === "unauthorized") {
+        this.writeln(`  ${RED}${st("magic.notTheWord")}${R} ${GRAY}${st("magic.notTheWordHint")}${R}`);
+      } else if (result.code === "not_configured") {
+        this.writeln(`  ${RED}${st("magic.notConfigured")}${R}`);
+      } else {
+        this.writeln(`  ${RED}${st("magic.relayCold")}${R} ${GRAY}${st("magic.relayColdHint")}${R}`);
+      }
       this.writeln("");
       return;
     }
 
-    const next: AgentConfig = {
-      url: cfg.url || DEFAULT_AGENT_URL,
-      passphrase: MAGIC_WORD || cfg.passphrase,
-      enabled: true,
-    };
-    saveAgentConfig(next);
+    saveAgentConfig({ url, passphrase: candidate, enabled: true });
 
-    this.writeln("");
-    this.writeln(`  ${DARK_GRAY}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${R}`);
-    this.writeln(`  ${DARK_GRAY}${st("magic.wordSpoken")}${R}`);
-    this.writeln(`  ${AMBER}${st("magic.authorizing")}${R}${DARK_GRAY}…${R}  ${GREEN}${st("magic.accepted")}${R}`);
     this.writeln(`  ${AMBER}${st("magic.connecting")}${R}${DARK_GRAY}…${R}  ${GREEN}${st("magic.channelOpen")}${R}`);
     this.writeln(`  ${DARK_GRAY}░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░${R}`);
     this.writeln("");

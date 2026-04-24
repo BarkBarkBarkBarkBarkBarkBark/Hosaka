@@ -22,27 +22,24 @@ export const DEFAULT_AGENT_URL: string =
   (import.meta.env.VITE_HOSAKA_AGENT_URL as string | undefined) ??
   "wss://hosaka-field-terminal-alpha.fly.dev/ws/agent";
 
-// Optional unlock phrase (must match server HOSAKA_ACCESS_TOKEN when set).
-// Empty = no passphrase; local appliance uses open WS auth unless you set a token.
-export const MAGIC_WORD: string =
-  (import.meta.env.VITE_HOSAKA_MAGIC_WORD as string | undefined) ?? "";
-
-// Picoclaw channel is on by default for the field-terminal appliance build.
-// When MAGIC_WORD is set (hosted builds), the channel starts gated — the
-// operator must type the passphrase to unlock it each session.
-const GATED = !!MAGIC_WORD;
+// Whether the hosted build starts with the agent channel locked. The client
+// deliberately does NOT know the password — that's the point. Users type a
+// candidate, we ship it to the server as `?token=…`, the server decides.
+// Appliance builds (VITE_HOSAKA_GATED unset or 0) boot with the channel open.
+export const GATED: boolean =
+  (import.meta.env.VITE_HOSAKA_GATED as string | undefined) === "1";
 
 export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   url: DEFAULT_AGENT_URL,
-  passphrase: MAGIC_WORD,
+  passphrase: "",
   enabled: !GATED,
 };
 
 export function loadAgentConfig(): AgentConfig {
-  // Appliance builds (no MAGIC_WORD) always boot with the channel open.
-  // Hosted builds (MAGIC_WORD set) require the user to speak the word first;
-  // we persist enabled=true in localStorage after they do, so it survives
-  // navigation but resets on a fresh session / cleared storage.
+  // Appliance builds (!GATED) always boot with the channel open.
+  // Hosted builds require the user to say the word out loud; once the
+  // server validates it we persist enabled=true so it survives navigation
+  // within the tab, but it resets on a fresh session / cleared storage.
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULT_AGENT_CONFIG };
@@ -55,6 +52,60 @@ export function loadAgentConfig(): AgentConfig {
   } catch {
     return { ...DEFAULT_AGENT_CONFIG };
   }
+}
+
+// Try to unlock the channel by opening a probe WebSocket with `candidate` as
+// the token. Resolves `{ ok: true }` if the server sends the `hello` frame
+// (token accepted). Resolves `{ ok: false, code }` if the server closes with
+// 4401 unauthorized, or if the socket errors for any other reason. Used by
+// the shell's "speak the word" unlock flow — the client never has to know
+// the actual passphrase, because the server decides.
+export async function attemptUnlock(
+  url: string,
+  candidate: string,
+  timeoutMs = 4000,
+): Promise<{ ok: true } | { ok: false; code: AgentErrorCode }> {
+  if (!looksLikeWsUrl(url)) return { ok: false, code: "not_configured" };
+  if (!candidate) return { ok: false, code: "unauthorized" };
+
+  return new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      const u = new URL(url);
+      u.searchParams.set("token", candidate);
+      ws = new WebSocket(u.toString());
+    } catch {
+      resolve({ ok: false, code: "unreachable" });
+      return;
+    }
+
+    let settled = false;
+    let sawClose = false;
+    const done = (r: { ok: true } | { ok: false; code: AgentErrorCode }) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      try { ws.close(); } catch { /* already closing */ }
+      resolve(r);
+    };
+    const timer = window.setTimeout(() => done({ ok: false, code: "timeout" }), timeoutMs);
+
+    ws.addEventListener("message", (evt) => {
+      try {
+        const data = JSON.parse(evt.data) as AgentEvent;
+        if (data.type === "hello") done({ ok: true });
+      } catch { /* ignore */ }
+    });
+    ws.addEventListener("close", (evt) => {
+      sawClose = true;
+      // Server closes 4401 on bad token — that's our signal to say "not the word".
+      if (evt.code === 4401) done({ ok: false, code: "unauthorized" });
+      else done({ ok: false, code: "dropped" });
+    });
+    ws.addEventListener("error", () => {
+      done({ ok: false, code: sawClose ? "unauthorized" : "unreachable" });
+    });
+  });
 }
 
 export function saveAgentConfig(cfg: AgentConfig): void {
