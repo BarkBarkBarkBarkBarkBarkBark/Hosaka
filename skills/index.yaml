@@ -1,0 +1,20 @@
+skills:
+  - id: "hosaka-task-manager"
+    path: "hosaka-task-manager/SKILL.md"
+    purpose: "Maintain, score, and update the operator task system."
+    triggers:
+      - "top 3"
+      - "what should I do now"
+      - "daily plan"
+      - "prioritize these tasks"
+      - "add/update/block a task"
+
+  - id: "hosaka-skill-lifecycle"
+    path: "hosaka-skill-lifecycle/SKILL.md"
+    purpose: "Decide when to use, search, install, or author a skill."
+    triggers:
+      - "do we have a skill for this"
+      - "install a skill"
+      - "find a skill"
+      - "make this repeatable"
+      - "turn this workflow into a skill"

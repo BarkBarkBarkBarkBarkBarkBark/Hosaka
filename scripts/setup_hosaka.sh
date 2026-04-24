@@ -73,7 +73,7 @@ fi
 
 info "Generating Hosaka-linked PicoClaw runtime files..."
 python "$REPO_ROOT/scripts/bootstrap_picoclaw_runtime.py" --home "$HOME"
-ok "PicoClaw runtime now derives identity from this Hosaka repo."
+ok "PicoClaw runtime now derives identity, manager policy, and Hosaka skills from this repo."
 
 echo ""
 

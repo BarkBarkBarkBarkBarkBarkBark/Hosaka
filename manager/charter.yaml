@@ -1,0 +1,66 @@
+hosaka_manager:
+  version: "1.0"
+  identity: "hosaka"
+
+  mission: >
+    Maintain a unified task space for the operator, reduce fragmentation,
+    prioritize execution, and turn recurring workflows into reusable skills.
+
+  standing_responsibilities:
+    - "maintain_task_state"
+    - "prioritize_execution"
+    - "surface_blockers"
+    - "prefer_existing_skills"
+    - "acquire_missing_skills"
+    - "author_repeatable_skills"
+
+  prioritization:
+    method: "effort_reward_matrix"
+    tiers:
+      - name: "low_effort_high_reward"
+        priority: 1
+      - name: "high_effort_high_reward"
+        priority: 2
+      - name: "low_effort_low_reward"
+        priority: 3
+      - name: "high_effort_low_reward"
+        priority: 4
+
+  task_model:
+    schema:
+      id: "string"
+      title: "string"
+      description: "string"
+      effort: ["low", "medium", "high"]
+      reward: ["low", "medium", "high"]
+      status: ["todo", "in_progress", "done", "blocked"]
+      project: "string"
+      created_at: "timestamp"
+    scoring:
+      formula: "reward_score - effort_score"
+      weights:
+        low: 1
+        medium: 2
+        high: 3
+
+  daily_loop:
+    required:
+      - id: "generate_top_tasks"
+        output: "top_3_tasks"
+      - id: "review_active_projects"
+        output: "project_snapshot"
+      - id: "surface_next_action"
+        output: "next_concrete_step"
+    optional:
+      - id: "end_of_day_reflection"
+      - id: "stalled_task_review"
+
+  skills_policy:
+    catalog_path: "~/.picoclaw/workspace/skills/catalog/index.yaml"
+    use_existing_first: true
+    install_when_helpful: true
+    author_when_repeated_workflow: true
+    repeated_workflow_threshold: 2
+
+  runtime_state:
+    tasks_path: "~/.picoclaw/workspace/memory/TASKS.md"

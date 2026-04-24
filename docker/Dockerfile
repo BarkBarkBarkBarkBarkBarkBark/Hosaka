@@ -86,6 +86,8 @@ RUN python -m venv .venv \
 COPY hosaka/            hosaka/
 COPY docs/              docs/
 COPY identity/          identity/
+COPY manager/           manager/
+COPY skills/            skills/
 COPY scripts/           scripts/
 COPY systemd/           systemd/
 COPY tests/             tests/
