@@ -1,4 +1,4 @@
-# hosaka — windows launcher (PowerShell).
+# hosaka - windows launcher (PowerShell).
 #
 # Same UX as the mac/linux launcher: wraps docker, speaks to a local
 # hosaka container, and optionally routes the tui/web UI at a remote
@@ -50,8 +50,13 @@ function Env-File-Args {
 }
 
 function Cmd-Up {
-    if (-not (Have-Docker)) { Die "docker not running — start Docker Desktop" }
-    if (Container-Running) { OK "hosaka already running at http://127.0.0.1:$Port"; return }
+    if (-not (Have-Docker)) { Die "docker not running - start Docker Desktop" }
+    if (Container-Running) {
+        OK "hosaka already running at http://127.0.0.1:$Port"
+        Write-Host "    launcher : $PSCommandPath" -ForegroundColor DarkGray
+        Write-Host "    state    : $StateDir" -ForegroundColor DarkGray
+        return
+    }
     try { & docker rm -f $Container *> $null } catch {}
     Note "starting local node -> http://127.0.0.1:$Port"
     $args = @("run", "-d", "--rm",
@@ -61,7 +66,11 @@ function Cmd-Up {
               "-e", "HOSAKA_BOOT_MODE=headless",
               "-e", "HOSAKA_DESKTOP_MODE=1") + (Env-File-Args) + @($Image)
     & docker @args *> $null
-    OK "up. try: hosaka open | hosaka tui"
+    OK "up -> http://127.0.0.1:$Port"
+    Write-Host "    launcher : $PSCommandPath" -ForegroundColor DarkGray
+    Write-Host "    state    : $StateDir" -ForegroundColor DarkGray
+    Write-Host "    image    : $Image" -ForegroundColor DarkGray
+    Write-Host "    try      : hosaka open  |  hosaka tui" -ForegroundColor DarkGray
 }
 
 function Cmd-Down {
@@ -86,7 +95,7 @@ function Cmd-Tui {
         & docker exec -it $Container /opt/hosaka-field-terminal/.venv/bin/python -m hosaka --boot console
         return
     }
-    Note "no local node running — starting a one-shot console"
+    Note "no local node running - starting a one-shot console"
     & docker run --rm -it `
         -v "${StateDir}:/var/lib/hosaka" `
         -e "HOSAKA_BOOT_MODE=console" `
@@ -106,7 +115,7 @@ function Cmd-Open {
 }
 
 function Cmd-Logs { if (Container-Running) { & docker logs -f $Container } else { Die "local node not running" } }
-function Cmd-Shell { if (Container-Running) { & docker exec -it $Container bash } else { Die "local node not running — try: hosaka up" } }
+function Cmd-Shell { if (Container-Running) { & docker exec -it $Container bash } else { Die "local node not running - try: hosaka up" } }
 
 function Cmd-Status {
     Write-Host ""
@@ -118,7 +127,7 @@ function Cmd-Status {
     else { Write-Host "stopped" -ForegroundColor DarkGray }
     $link = Current-Link
     if ($link) { Write-Host "    linked to   : $(Link-Url $link)  (remote)" -ForegroundColor Yellow }
-    else { Write-Host "    linked to   : (not linked — using local)" -ForegroundColor DarkGray }
+    else { Write-Host "    linked to   : (not linked - using local)" -ForegroundColor DarkGray }
     if (Get-Command tailscale -ErrorAction SilentlyContinue) {
         $ts = & tailscale status --self=false 2>$null | Select-Object -First 5
         if ($ts) {
@@ -146,7 +155,7 @@ function Cmd-Link($host_) {
 }
 
 function Cmd-Unlink {
-    if (Test-Path $LinkFile) { Remove-Item $LinkFile; OK "unlinked — back to local node" }
+    if (Test-Path $LinkFile) { Remove-Item $LinkFile; OK "unlinked - back to local node" }
     else { Note "not linked" }
 }
 
@@ -174,7 +183,7 @@ function Cmd-Version {
 
 function Cmd-Help {
     @"
-hosaka — client for the Hosaka Field Terminal.
+hosaka - client for the Hosaka Field Terminal.
 
   hosaka up                  start the local node (web UI on http://127.0.0.1:$Port)
   hosaka down                stop the local node
@@ -195,7 +204,7 @@ signal steady. no wrong way.
 "@ | Write-Host
 }
 
-# ── dispatch ─────────────────────────────────────────────────────────────────
+# -- dispatch -----------------------------------------------------------------
 $cmd = $args[0]; $rest = @()
 if ($args.Count -gt 1) { $rest = $args[1..($args.Count-1)] }
 

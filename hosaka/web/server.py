@@ -74,6 +74,13 @@ orchestrator = build_default_orchestrator(
     Path(os.getenv(STATE_PATH_ENV)) if os.getenv(STATE_PATH_ENV) else None
 )
 
+# Load persisted LLM config and inject into env so openai_adapter picks it up
+try:
+    from hosaka.llm.llm_config import apply_to_env as _llm_apply, load as _llm_load
+    _llm_apply(_llm_load())
+except Exception as _llm_exc:  # noqa: BLE001
+    log.warning("could not load llm config: %s", _llm_exc)
+
 # ── rate-limit state (per-connection, keyed by remote addr) ──────────────────
 
 _rate: dict[str, list[float]] = {}
@@ -403,13 +410,80 @@ def health() -> JSONResponse:
         except OSError:
             pass
 
+    public_mode = os.environ.get("HOSAKA_PUBLIC_MODE", "").lower() in ("1", "true", "yes")
+
     return JSONResponse({
         "web": "ok",
+        "commit": os.environ.get("HOSAKA_COMMIT", "dev"),
         "picoclaw_bin": _picoclaw_available(),
         "picoclaw_gateway": PicoclawGatewayClient.is_gateway_reachable(),
         "openai_key": openai_ok(),
         "ui_built": ui_built,
+        "settings_enabled": not public_mode,
     })
+
+
+# ── /api/llm-key  (LLM provider config — never returns the key itself) ─────────
+
+@app.get("/api/llm-key")
+def get_llm_key() -> JSONResponse:
+    """Return LLM provider metadata (provider, model, base_url) — never the key."""
+    from hosaka.llm.llm_config import load as _llm_load
+    cfg = _llm_load()
+    return JSONResponse({
+        "provider":   cfg.get("provider", "openai"),
+        "model":      cfg.get("model", ""),
+        "base_url":   cfg.get("base_url", ""),
+        "configured": bool(cfg.get("api_key")),
+    })
+
+
+@app.patch("/api/llm-key")
+async def patch_llm_key(request: Request) -> JSONResponse:
+    """Store provider/model/api_key/base_url and apply immediately."""
+    from hosaka.llm.llm_config import apply_to_env as _llm_apply, load as _llm_load, save as _llm_save
+    try:
+        body: dict = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+    cfg = _llm_load()
+    for field in ("provider", "model", "api_key", "base_url"):
+        if field in body and body[field] is not None:
+            cfg[field] = str(body[field])
+    _llm_save(cfg)
+    _llm_apply(cfg)
+    return JSONResponse({"ok": True})
+
+
+# ── /api/config  (system settings — hostname, backend, picoclaw) ─────────────
+
+@app.get("/api/config")
+def get_config() -> JSONResponse:
+    """Return persisted system config (hostname, backend endpoint, picoclaw toggle)."""
+    s = orchestrator.summary()
+    return JSONResponse({
+        "hostname": s.get("hostname", ""),
+        "backend_endpoint": s.get("backend_endpoint", ""),
+        "picoclaw_enabled": bool(s.get("picoclaw_enabled", False)),
+    })
+
+
+@app.patch("/api/config")
+async def patch_config(request: Request) -> JSONResponse:
+    """Update system config fields — JSON body, all fields optional."""
+    try:
+        body: dict = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+    if "hostname" in body:
+        orchestrator.set_field("hostname", str(body["hostname"]))
+    if "backend_endpoint" in body:
+        orchestrator.set_field("backend_endpoint", str(body["backend_endpoint"]))
+    if "picoclaw_enabled" in body:
+        enabled = bool(body["picoclaw_enabled"])
+        orchestrator.set_field("picoclaw_enabled", enabled)
+        orchestrator.set_field("picoclaw_ready", enabled)
+    return JSONResponse({"ok": True})
 
 
 # ── /api/video  (inject a video URL into the web panel from the terminal) ────

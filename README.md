@@ -129,24 +129,37 @@ tar -xzf picoclaw.tar.gz && chmod +x picoclaw && sudo mv picoclaw /usr/local/bin
 picoclaw onboard
 ```
 
-### 2. Set your OpenAI API key
+### 2. Configure your LLM backend
 
-Open `~/.picoclaw/config.json` and add your key to the model entry:
+Hosted Docker users (the common case) can skip manual config — Hosaka
+prompts you automatically:
 
-```json
-{
-  "model_list": [
-    {
-      "model_name": "gpt-4o-mini",
-      "model": "openai/gpt-4o-mini",
-      "api_key": "sk-your-key-here",
-      "api_base": "https://api.openai.com/v1"
-    }
-  ]
-}
-```
+- **Inline shell prompt**: type anything in the terminal on first launch
+  and the shell asks:
+  ```
+    no llm backend configured.
+    configure one now? [Y/n]
+  ```
+  Walks you through provider, model, base URL (for local/Ollama), and
+  API key (input is masked — never logged or sent as chat context).
 
-If you skip this step, Hosaka will prompt you for your key on first launch.
+- **Settings drawer**: click the ⚙ gear icon anytime → **LLM Backend**
+  section. Supports OpenAI and any OpenAI-compatible endpoint (Ollama,
+  LM Studio, etc.). Your API key is stored on the server in
+  `/var/lib/hosaka/llm.json` and applied to the running process
+  immediately — no restart required.
+
+- **Environment variables** (appliance / advanced):
+  ```bash
+  export OPENAI_API_KEY=sk-...
+  export OPENAI_MODEL=gpt-4o-mini            # optional, default
+  export OPENAI_BASE_URL=http://localhost:11434/v1  # for Ollama etc.
+  ```
+
+Any of these approaches works — mix and match.
+
+> **Privacy**: the API key is stored on-device only. It is never sent
+> to Hosaka's servers, never logged, and never included in chat context.
 
 ### 3. Clone and run
 
@@ -385,6 +398,26 @@ want full-duplex (interrupt while it's talking), you need a real AEC —
 
 ## Configuration
 
+### LLM backend
+
+Set via the **⚙ Settings drawer → LLM Backend** in the web UI, or via
+the **inline terminal prompt** on first keystroke, or via env vars:
+
+| Variable | Default | Description |
+|---|---|---|
+| `OPENAI_API_KEY` | — | Required for OpenAI (and most compatible endpoints) |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Model name |
+| `OPENAI_BASE_URL` | `https://api.openai.com` | Override for Ollama, LM Studio, etc. |
+
+Persisted config lives in `/var/lib/hosaka/llm.json` (or
+`~/.hosaka/llm.json` for non-root installs) and is applied on startup.
+PATCH `/api/llm-key` applies it to the running process without restart.
+
+### System settings
+
+All of the following are editable at runtime in the **⚙ Settings
+drawer → System** section, or via PATCH `/api/config`:
+
 | Variable | Default | Description |
 |---|---|---|
 | `HOSAKA_STATE_PATH` | `~/.hosaka/state.json` | Persistent state |
@@ -393,6 +426,7 @@ want full-duplex (interrupt while it's talking), you need a real AEC —
 | `HOSAKA_WEB_PORT` | `8421` | LAN setup web server port |
 | `PICOCLAW_SESSION` | `hosaka:main` | Agent session key |
 | `PICOCLAW_MODEL` | *(default)* | Override model |
+| `HOSAKA_PUBLIC_MODE` | unset | Set to `1` / `true` / `yes` to hide the ⚙ settings drawer from all users. Intended for the **public web deployment** of this repo where strangers should not be able to reconfigure the LLM backend or system settings. When set, `/api/health` returns `settings_enabled: false`; the frontend reads this on mount and never renders the gear button or `SettingsDrawer`. The check is **server-side** — it cannot be bypassed from the browser. Local Docker installs should leave this unset (settings enabled by default). **Do not remove this flag** — it is the deliberate access control boundary between the operator-owned appliance and the public-facing hosted instance. |
 
 ---
 

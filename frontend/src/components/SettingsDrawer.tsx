@@ -22,17 +22,38 @@ import {
   type FontSize,
   type UiConfig,
 } from "../uiConfig";
+import {
+  DEFAULT_PROVIDER_CONFIG,
+  PROVIDERS,
+  fetchLlmStatus,
+  loadProviderConfig,
+  saveLlmToServer,
+  type LlmProvider,
+  type ProviderConfig,
+} from "../llm/llmProvider";
 
 type Props = {
   open: boolean;
   onClose: () => void;
 };
 
+type SysConfig = { hostname: string; backend_endpoint: string; picoclaw_enabled: boolean };
+
 export function SettingsDrawer({ open, onClose }: Props) {
   const { t } = useTranslation("ui");
   const [cfg, setCfg] = useState<LlmConfig>(loadConfig);
   const [agentCfg, setAgentCfg] = useState<AgentConfig>(loadAgentConfig);
   const [uiCfg, setUiCfg] = useState<UiConfig>(loadUiConfig);
+  const [sysCfg, setSysCfg] = useState<SysConfig>({ hostname: "", backend_endpoint: "", picoclaw_enabled: false });
+  const [sysLoaded, setSysLoaded] = useState(false);
+
+  // LLM provider state
+  const [llmCfg, setLlmCfg] = useState<ProviderConfig>(loadProviderConfig);
+  const [llmKey, setLlmKey] = useState("");
+  const [llmKeyRevealed, setLlmKeyRevealed] = useState(false);
+  const [llmConfigured, setLlmConfigured] = useState(false);
+  const [llmSaving, setLlmSaving] = useState(false);
+
   const [agentPassRevealed, setAgentPassRevealed] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
 
@@ -41,12 +62,41 @@ export function SettingsDrawer({ open, onClose }: Props) {
       setCfg(loadConfig());
       setAgentCfg(loadAgentConfig());
       setUiCfg(loadUiConfig());
+      setLlmCfg(loadProviderConfig());
+      setLlmKey("");
+      setSysLoaded(false);
+      fetch("/api/config")
+        .then((r) => r.json())
+        .then((d: SysConfig) => { setSysCfg(d); setSysLoaded(true); })
+        .catch(() => setSysLoaded(true));
+      fetchLlmStatus().then((s) => {
+        setLlmCfg({ provider: s.provider, model: s.model, base_url: s.base_url });
+        setLlmConfigured(s.configured);
+      });
     }
   }, [open]);
 
   const flash = () => {
     setSavedFlash(true);
     window.setTimeout(() => setSavedFlash(false), 800);
+  };
+
+  const saveSys = (patch: Partial<SysConfig>) => {
+    const next = { ...sysCfg, ...patch };
+    setSysCfg(next);
+    fetch("/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then(() => flash()).catch(() => {});
+  };
+
+  const saveLlm = async () => {
+    if (!llmKey.trim() && !llmConfigured) return;
+    setLlmSaving(true);
+    const ok = await saveLlmToServer(llmCfg, llmKey.trim());
+    setLlmSaving(false);
+    if (ok) { setLlmConfigured(true); setLlmKey(""); flash(); }
   };
 
   const commit = (next: LlmConfig) => {
@@ -87,6 +137,134 @@ export function SettingsDrawer({ open, onClose }: Props) {
             {t("settingsDrawer.close")}
           </button>
         </header>
+
+        <section className="drawer-section">
+          <h3>System</h3>
+          <p className="dim small">Device identity and runtime settings — stored on the server.</p>
+
+          <label className="drawer-field">
+            <span>Hostname</span>
+            <input
+              type="text"
+              placeholder="hosaka-field-terminal"
+              value={sysCfg.hostname}
+              disabled={!sysLoaded}
+              onChange={(e) => setSysCfg((s) => ({ ...s, hostname: e.target.value }))}
+              onBlur={() => saveSys({ hostname: sysCfg.hostname })}
+              spellCheck={false}
+            />
+          </label>
+
+          <label className="drawer-field">
+            <span>Backend endpoint</span>
+            <input
+              type="url"
+              placeholder="https://api.example.com"
+              value={sysCfg.backend_endpoint}
+              disabled={!sysLoaded}
+              onChange={(e) => setSysCfg((s) => ({ ...s, backend_endpoint: e.target.value }))}
+              onBlur={() => saveSys({ backend_endpoint: sysCfg.backend_endpoint })}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </label>
+
+          <label className="drawer-field">
+            <span>Picoclaw gateway</span>
+            <select
+              value={sysCfg.picoclaw_enabled ? "on" : "off"}
+              disabled={!sysLoaded}
+              onChange={(e) => saveSys({ picoclaw_enabled: e.target.value === "on" })}
+            >
+              <option value="on">enabled</option>
+              <option value="off">disabled</option>
+            </select>
+          </label>
+
+          <div className="drawer-actions">
+            <span className={`drawer-flash ${savedFlash ? "on" : ""}`}>{t("settingsDrawer.saved")}</span>
+          </div>
+        </section>
+
+        <section className="drawer-section">
+          <h3>LLM Backend {llmConfigured && <span className="dim small"> ✓ configured</span>}</h3>
+          <p className="dim small">Provider, model, and API key stored on the server — never sent to the LLM as context.</p>
+
+          <label className="drawer-field">
+            <span>Provider</span>
+            <select
+              value={llmCfg.provider}
+              onChange={(e) => setLlmCfg((s) => ({ ...s, provider: e.target.value as LlmProvider, model: PROVIDERS.find((p) => p.id === e.target.value)?.defaultModel ?? s.model }))}
+            >
+              {PROVIDERS.map((p) => (
+                <option key={p.id} value={p.id}>{p.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="drawer-field">
+            <span>Model</span>
+            <input
+              type="text"
+              value={llmCfg.model}
+              placeholder={PROVIDERS.find((p) => p.id === llmCfg.provider)?.defaultModel ?? "gpt-4o-mini"}
+              onChange={(e) => setLlmCfg((s) => ({ ...s, model: e.target.value }))}
+              spellCheck={false}
+            />
+          </label>
+
+          {llmCfg.provider === "openai-compatible" && (
+            <label className="drawer-field">
+              <span>Base URL</span>
+              <input
+                type="url"
+                value={llmCfg.base_url}
+                placeholder="http://localhost:11434/v1"
+                onChange={(e) => setLlmCfg((s) => ({ ...s, base_url: e.target.value.trim() }))}
+                spellCheck={false}
+                autoComplete="off"
+              />
+            </label>
+          )}
+
+          <label className="drawer-field">
+            <span>API key {llmConfigured && !llmKey && <span className="dim">(set — enter new to replace)</span>}</span>
+            <div className="drawer-key">
+              <input
+                type={llmKeyRevealed ? "text" : "password"}
+                placeholder={llmConfigured ? "••••••••" : "sk-..."}
+                value={llmKey}
+                onChange={(e) => setLlmKey(e.target.value)}
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <button
+                className="btn btn-ghost"
+                type="button"
+                onClick={() => setLlmKeyRevealed((r) => !r)}
+              >
+                {llmKeyRevealed ? "hide" : "show"}
+              </button>
+            </div>
+          </label>
+
+          <div className="drawer-actions">
+            <button
+              className="btn"
+              disabled={llmSaving || (!llmKey.trim() && !llmConfigured)}
+              onClick={() => void saveLlm()}
+            >
+              {llmSaving ? "saving…" : "Save LLM config"}
+            </button>
+            <button
+              className="btn btn-ghost"
+              onClick={() => { setLlmCfg({ ...DEFAULT_PROVIDER_CONFIG }); setLlmKey(""); }}
+            >
+              {t("settingsDrawer.reset")}
+            </button>
+            <span className={`drawer-flash ${savedFlash ? "on" : ""}`}>{t("settingsDrawer.saved")}</span>
+          </div>
+        </section>
 
         <section className="drawer-section">
           <h3>{t("settingsDrawer.channel.heading")}</h3>

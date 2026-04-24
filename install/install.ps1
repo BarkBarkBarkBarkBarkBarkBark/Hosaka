@@ -1,4 +1,4 @@
-# hosaka — one-line installer for windows
+# hosaka - one-line installer for windows
 #
 #   iwr https://install.hosaka.xyz/windows | iex
 #
@@ -30,36 +30,36 @@ Write-Host ""
 Write-Host "  hosaka client installer (windows)" -ForegroundColor Cyan
 Write-Host ""
 
-# ── docker check ─────────────────────────────────────────────────────────────
+# -- docker check -------------------------------------------------------------
 $docker = Get-Command docker -ErrorAction SilentlyContinue
 if (-not $docker) {
-    Warn "docker not found — hosaka needs Docker Desktop as the runtime"
+    Warn "docker not found - hosaka needs Docker Desktop as the runtime"
     Write-Host "    install with:  winget install Docker.DockerDesktop" -ForegroundColor Cyan
     Write-Host "           or:    https://www.docker.com/products/docker-desktop"
     Write-Host ""
     Write-Host "    re-run this installer after docker is on PATH."
     exit 1
 }
-try { & docker info *> $null } catch { Die "docker installed but daemon not running — start Docker Desktop and re-run" }
+try { & docker info *> $null } catch { Die "docker installed but daemon not running - start Docker Desktop and re-run" }
 OK "docker present"
 
-# ── tailscale (optional) ─────────────────────────────────────────────────────
+# -- tailscale (optional) -----------------------------------------------------
 if (Get-Command tailscale -ErrorAction SilentlyContinue) {
-    OK "tailscale present — you can link a remote node with: hosaka link <hostname>"
+    OK "tailscale present - you can link a remote node with: hosaka link <hostname>"
 } else {
-    Note "tailscale not detected (optional) — install from https://tailscale.com/download to link clients"
+    Note "tailscale not detected (optional) - install from https://tailscale.com/download to link clients"
 }
 
-# ── install dir ──────────────────────────────────────────────────────────────
+# -- install dir --------------------------------------------------------------
 $InstallDir = Join-Path $env:LOCALAPPDATA "Hosaka\bin"
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
-Note "fetching launcher → $InstallDir"
+Note "fetching launcher -> $InstallDir"
 Invoke-WebRequest -Uri $CmdUrl -OutFile (Join-Path $InstallDir "hosaka.cmd") -UseBasicParsing
 Invoke-WebRequest -Uri $Ps1Url -OutFile (Join-Path $InstallDir "hosaka.ps1") -UseBasicParsing
 OK "installed launcher"
 
-# ── PATH ─────────────────────────────────────────────────────────────────────
+# -- PATH ---------------------------------------------------------------------
 $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
 if ($userPath -notlike "*$InstallDir*") {
     [Environment]::SetEnvironmentVariable("PATH", "$InstallDir;$userPath", "User")
@@ -68,7 +68,7 @@ if ($userPath -notlike "*$InstallDir*") {
     OK "$InstallDir already on PATH"
 }
 
-# ── background pull ──────────────────────────────────────────────────────────
+# -- background pull ----------------------------------------------------------
 if ($env:HOSAKA_NO_PULL -ne "1") {
     Note "warming up container image in the background ($Image)"
     Start-Job -ScriptBlock { param($i) docker pull $i *> $null } -ArgumentList $Image | Out-Null

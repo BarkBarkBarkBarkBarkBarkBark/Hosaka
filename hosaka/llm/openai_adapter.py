@@ -8,8 +8,16 @@ from typing import Generator
 
 import httpx
 
-OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+_OPENAI_DEFAULT_BASE = "https://api.openai.com"
 REQUEST_TIMEOUT = float(os.getenv("HOSAKA_CHAT_TIMEOUT", "120"))
+
+
+def _base_url() -> str:
+    return os.getenv("OPENAI_BASE_URL", _OPENAI_DEFAULT_BASE).rstrip("/")
+
+
+def _chat_url() -> str:
+    return f"{_base_url()}/v1/chat/completions"
 
 
 def _api_key() -> str | None:
@@ -41,7 +49,7 @@ def chat_stream(messages: list[dict[str, str]]) -> Generator[str, None, None]:
         "Content-Type": "application/json",
     }
     with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
-        with client.stream("POST", OPENAI_URL, json=payload, headers=headers) as resp:
+        with client.stream("POST", _chat_url(), json=payload, headers=headers) as resp:
             resp.raise_for_status()
             for line in resp.iter_lines():
                 if not line or not line.startswith("data: "):

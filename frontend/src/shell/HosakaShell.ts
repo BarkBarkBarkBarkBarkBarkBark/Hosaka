@@ -83,12 +83,31 @@ export class HosakaShell {
   private netscanTimer: number | null = null;
   private suggestion: string | null = null;
 
+  // Inline LLM config flow
+  private llmConfigured = true;   // optimistic until checked
+  private llmPrompted   = false;  // only prompt once per session
+  private inConfigFlow  = false;
+  private configMasked  = false;
+  private configBuf     = "";
+  private configResolve: ((v: string) => void) | null = null;
+
   constructor(private readonly term: Terminal) {}
 
   start(): void {
     this.writeBanner();
     this.writePrompt();
     this.term.onData((data) => this.onData(data));
+    void this.checkLlmConfig();
+  }
+
+  private async checkLlmConfig(): Promise<void> {
+    try {
+      const r = await fetch("/api/llm-key");
+      const d = await r.json() as { configured?: boolean };
+      this.llmConfigured = d.configured ?? false;
+    } catch {
+      this.llmConfigured = false;
+    }
   }
 
   private writeln(s = ""): void {
@@ -148,6 +167,12 @@ export class HosakaShell {
   }
 
   private onData(data: string): void {
+    // Config flow takes full control of input
+    if (this.inConfigFlow) {
+      this.handleConfigInput(data);
+      return;
+    }
+
     if (data === "\x1b[A") return this.historyPrev();
     if (data === "\x1b[B") return this.historyNext();
     if (data === "\x1b[D") return this.moveLeft();
@@ -188,11 +213,137 @@ export class HosakaShell {
       } else if (ch === "\x1b" && this.suggestion) {
         this.clearSuggestion();
       } else if (code >= 32 && code !== 127) {
+        // First printable char when LLM not configured → offer inline setup
+        if (!this.llmConfigured && !this.llmPrompted && !this.busy && this.buffer.length === 0 && ch !== "/") {
+          this.llmPrompted = true;
+          void this.promptLlmConfig();
+          return;
+        }
         if (this.suggestion) this.clearSuggestion();
         this.insert(ch);
       }
     }
   }
+
+  // ── inline config flow helpers ──────────────────────────────────────────────
+
+  /** Called by onData when inConfigFlow=true.  Handles typed characters for
+   *  readLine() promises: echoes normally or as bullets for masked fields. */
+  private handleConfigInput(data: string): void {
+    for (const ch of data) {
+      const code = ch.charCodeAt(0);
+      if (ch === "\r") {
+        this.inConfigFlow = false;
+        const val = this.configBuf;
+        this.configBuf = "";
+        this.writeln("");
+        this.configResolve?.(val);
+        this.configResolve = null;
+      } else if (ch === "\x7f" || ch === "\b") {
+        if (this.configBuf.length > 0) {
+          this.configBuf = this.configBuf.slice(0, -1);
+          this.write("\b \b");
+        }
+      } else if (ch === "\x03") {
+        // Ctrl-C cancels the flow
+        this.inConfigFlow = false;
+        this.configBuf = "";
+        this.writeln("");
+        this.configResolve?.("");
+        this.configResolve = null;
+      } else if (code >= 32 && code !== 127) {
+        this.configBuf += ch;
+        this.write(this.configMasked ? "•" : ch);
+      }
+    }
+  }
+
+  /** Returns a promise that resolves when the user presses Enter. */
+  private readLine(masked = false): Promise<string> {
+    return new Promise((resolve) => {
+      this.inConfigFlow = true;
+      this.configMasked = masked;
+      this.configBuf    = "";
+      this.configResolve = resolve;
+    });
+  }
+
+  private async promptLlmConfig(): Promise<void> {
+    this.busy = true;
+    this.writeln("");
+    this.writeln(`  ${AMBER}no llm backend configured.${R}`);
+    this.write(`  ${GRAY}configure one now?${R} ${CYAN}[Y/n]${R} `);
+
+    const answer = await this.readLine();
+    if (answer.trim().toLowerCase() === "n") {
+      this.writeln(`  ${GRAY}ok — use ${CYAN}/settings${R}${GRAY} or the gear icon any time.${R}`);
+      this.writeln("");
+      this.busy = false;
+      this.writePrompt();
+      return;
+    }
+
+    // Provider
+    this.writeln(`  ${DARK_GRAY}providers: ${CYAN}openai${R}${DARK_GRAY} / ${CYAN}openai-compatible${R}${DARK_GRAY} (Ollama, local, etc.)${R}`);
+    this.write(`  ${GRAY}provider${R} ${DARK_GRAY}[openai]${R}: `);
+    const providerRaw = await this.readLine();
+    const provider = providerRaw.trim() || "openai";
+
+    // Model
+    const defaultModel = provider === "openai" ? "gpt-4o-mini" : "llama3";
+    this.write(`  ${GRAY}model${R} ${DARK_GRAY}[${defaultModel}]${R}: `);
+    const modelRaw = await this.readLine();
+    const model = modelRaw.trim() || defaultModel;
+
+    // Base URL (openai-compatible only)
+    let base_url = "";
+    if (provider === "openai-compatible") {
+      this.write(`  ${GRAY}base url${R} ${DARK_GRAY}[http://localhost:11434/v1]${R}: `);
+      const urlRaw = await this.readLine();
+      base_url = urlRaw.trim() || "http://localhost:11434/v1";
+    }
+
+    // API key (masked — never touches llmHistory or chat context)
+    this.write(`  ${GRAY}api key${R} ${DARK_GRAY}(input hidden)${R}: `);
+    const api_key = await this.readLine(true);
+
+    if (!api_key.trim()) {
+      this.writeln(`  ${RED}no key entered — skipping.${R} ${GRAY}use ${CYAN}/settings${R}${GRAY} to configure later.${R}`);
+      this.writeln("");
+      this.busy = false;
+      this.writePrompt();
+      return;
+    }
+
+    // Send to server
+    this.write(`  ${DARK_GRAY}saving…${R}`);
+    try {
+      const body = { provider, model, base_url, api_key };
+      const r = await fetch("/api/llm-key", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = await r.json() as { ok?: boolean };
+      this.write("\r\x1b[K");
+      if (d.ok) {
+        this.llmConfigured = true;
+        this.writeln(`  ${GREEN}llm configured.${R} ${GRAY}${provider} / ${model}${R}`);
+        this.writeln(`  ${DARK_GRAY}your key is stored on the server and never logged or sent as chat context.${R}`);
+      } else {
+        this.writeln(`  ${RED}server returned an error.${R} ${GRAY}try the ${CYAN}⚙${R}${GRAY} gear icon instead.${R}`);
+      }
+    } catch {
+      this.write("\r\x1b[K");
+      this.writeln(`  ${RED}could not reach server.${R} ${GRAY}try again after ${CYAN}hosaka up${R}${GRAY}.${R}`);
+    }
+
+    this.writeln("");
+    this.busy = false;
+    this.writePrompt();
+  }
+
+  // ── editing ────────────────────────────────────────────────────────────────
 
   private insert(ch: string): void {
     const before = this.buffer.slice(0, this.cursor);
@@ -541,12 +692,6 @@ export class HosakaShell {
   }
 
   private openSettings(): void {
-    const show = import.meta.env.VITE_SHOW_SETTINGS === "1";
-    if (!show) {
-      this.writeln(`  ${GRAY}${st("settingsCmd.managed")}${R}`);
-      this.writeln(`  ${GRAY}${st("settingsCmd.tryAlt")}${R}`);
-      return;
-    }
     try {
       window.dispatchEvent(new CustomEvent("hosaka:open-settings"));
       this.writeln(`  ${GRAY}${st("settingsCmd.opened")}${R}`);

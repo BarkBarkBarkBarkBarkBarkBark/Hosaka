@@ -12,6 +12,17 @@
 # No systemd — the container IS the process supervisor.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── stage 1: build the frontend SPA ──────────────────────────────────────────
+FROM node:22-slim AS frontend-builder
+
+WORKDIR /build/frontend
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci --prefer-offline
+
+COPY frontend/ ./
+RUN npm run build
+# output lands in /build/hosaka/web/ui (vite.config.ts outDir)
+
 FROM python:3.12-slim-bookworm AS base
 
 # ── system packages (match a real Pi's toolset) ──────────────────────────────
@@ -47,12 +58,17 @@ RUN ARCH=$(dpkg --print-architecture) \
     && picoclaw version
 
 # ── application directory structure ──────────────────────────────────────────
+# HOSAKA_COMMIT is stamped in at build time by CI (--build-arg HOSAKA_COMMIT=<sha>).
+# Falls back to "dev" when building locally without passing the arg.
+ARG HOSAKA_COMMIT=dev
+
 ENV APP_ROOT=/opt/hosaka-field-terminal \
     HOSAKA_STATE_PATH=/var/lib/hosaka/state.json \
     HOSAKA_BOOT_MODE=headless \
     HOSAKA_WEB_HOST=0.0.0.0 \
     HOSAKA_WEB_PORT=8421 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    HOSAKA_COMMIT=${HOSAKA_COMMIT}
 
 RUN mkdir -p /opt/hosaka-field-terminal /var/lib/hosaka /var/log/hosaka
 
@@ -85,6 +101,9 @@ COPY scripts/           scripts/
 COPY systemd/           systemd/
 COPY tests/             tests/
 COPY README.md          .
+
+# ── inject the pre-built frontend SPA ────────────────────────────────────────
+COPY --from=frontend-builder /build/hosaka/web/ui hosaka/web/ui/
 
 RUN chmod +x scripts/*.sh
 

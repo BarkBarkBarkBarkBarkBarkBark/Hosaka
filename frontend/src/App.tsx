@@ -55,13 +55,19 @@ export type PanelId =
   | "books"
   | "voice";
 
-const SHOW_SETTINGS = import.meta.env.VITE_SHOW_SETTINGS === "1";
-
 export function App() {
   const { t } = useTranslation("ui");
   const [active, setActive] = useState<PanelId>("terminal");
   const [bootMessage, setBootMessage] = useState(t("boot.waking"));
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Server-driven: false in public/web deployments (HOSAKA_PUBLIC_MODE=1)
+  const [settingsEnabled, setSettingsEnabled] = useState(false);
+  useEffect(() => {
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((d: { settings_enabled?: boolean }) => setSettingsEnabled(d.settings_enabled ?? true))
+      .catch(() => setSettingsEnabled(true)); // fail open on localhost
+  }, []);
 
   // Immersive mode: hide topbar/footer/dock-buttons and collapse the web
   // panel's hint line so the browsed page gets ~all of the viewport. Toggled
@@ -137,7 +143,7 @@ export function App() {
           <SignalBadge label={bootMessage} />
           <PlantBadge />
           <ModeSwitch />
-          {SHOW_SETTINGS && (
+          {settingsEnabled && (
             <button
               className="icon-btn"
               aria-label={t("settings")}
@@ -245,7 +251,7 @@ export function App() {
         </Suspense>
       </main>
 
-      {SHOW_SETTINGS && (
+      {settingsEnabled && (
         <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       )}
 
