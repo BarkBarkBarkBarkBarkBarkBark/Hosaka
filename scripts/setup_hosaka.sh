@@ -71,6 +71,10 @@ if [[ ! -f "$HOME/.picoclaw/config.json" ]]; then
   picoclaw onboard
 fi
 
+info "Generating Hosaka-linked PicoClaw runtime files..."
+python "$REPO_ROOT/scripts/bootstrap_picoclaw_runtime.py" --home "$HOME"
+ok "PicoClaw runtime now derives identity from this Hosaka repo."
+
 echo ""
 
 # ── step 2: install Hosaka ───────────────────────────────────────────────────

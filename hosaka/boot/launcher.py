@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from hosaka.main_console import run_main_console
+from hosaka.picoclaw_runtime import ensure_picoclaw_runtime
 from hosaka.setup.orchestrator import build_default_orchestrator
 from hosaka.tui.terminal import run_setup_flow
 
@@ -130,6 +131,11 @@ def start_picoclaw_gateway() -> subprocess.Popen | None:  # type: ignore[type-ar
         print("Hosaka: picoclaw config not found — run 'picoclaw onboard' first.")
         print("Hosaka: continuing without gateway — the console will prompt for API key.")
         return None
+
+    try:
+        ensure_picoclaw_runtime(home=Path.home())
+    except Exception as exc:  # noqa: BLE001
+        print(f"Hosaka: warning — could not refresh picoclaw runtime files: {exc}")
 
     log_path = Path(os.getenv("HOSAKA_PICOCLAW_LOG", "/var/log/hosaka/picoclaw.log"))
     stdout: int | object = subprocess.DEVNULL

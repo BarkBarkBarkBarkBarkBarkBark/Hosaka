@@ -72,19 +72,7 @@ ENV APP_ROOT=/opt/hosaka-field-terminal \
 
 RUN mkdir -p /opt/hosaka-field-terminal /var/lib/hosaka /var/log/hosaka
 
-# ── bootstrap picoclaw config so gateway can start on first boot ─────────
-# 'picoclaw onboard' is interactive; instead, seed a minimal config.
-# Users add their API key at first launch (Hosaka prompts for it).
-RUN mkdir -p /root/.picoclaw/workspace
-COPY <<'EOF' /root/.picoclaw/config.json
-{
-  "agents": { "defaults": { "model_name": "gpt-4o-mini", "workspace": "/root/.picoclaw/workspace", "restrict_to_workspace": false } },
-  "gateway": { "host": "127.0.0.1", "port": 18790 },
-  "model_list": [
-    { "model_name": "gpt-4o-mini", "model": "openai/gpt-4o-mini", "api_key": "", "api_base": "https://api.openai.com/v1" }
-  ]
-}
-EOF
+RUN mkdir -p /root/.picoclaw
 
 WORKDIR /opt/hosaka-field-terminal
 
@@ -97,6 +85,7 @@ RUN python -m venv .venv \
 # ── copy application code ────────────────────────────────────────────────────
 COPY hosaka/            hosaka/
 COPY docs/              docs/
+COPY identity/          identity/
 COPY scripts/           scripts/
 COPY systemd/           systemd/
 COPY tests/             tests/
@@ -106,6 +95,7 @@ COPY README.md          .
 COPY --from=frontend-builder /build/hosaka/web/ui hosaka/web/ui/
 
 RUN chmod +x scripts/*.sh
+RUN python scripts/bootstrap_picoclaw_runtime.py --home /root --seed-config
 
 # ── expose the web setup / progress API ──────────────────────────────────────
 EXPOSE 8421
