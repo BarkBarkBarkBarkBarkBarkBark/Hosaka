@@ -259,9 +259,13 @@ app = FastAPI(
 # ── v1 API (single source of truth for remote clients) ───────────────────────
 from hosaka.web.api_v1 import router as v1_router  # noqa: E402
 from hosaka.web.voice_api import router as voice_router  # noqa: E402
+from hosaka.web.nodes import router as nodes_router  # noqa: E402
+from hosaka.web.sync_ws import router as sync_router  # noqa: E402
 
 app.include_router(v1_router)
 app.include_router(voice_router)
+app.include_router(nodes_router)
+app.include_router(sync_router)
 
 
 # ── /device — minimal HTML mirror of the TTY device dashboard ─────────────────
@@ -421,6 +425,7 @@ def health() -> JSONResponse:
         "ui_built": ui_built,
         "settings_enabled": not public_mode,
         "web_panel_enabled": not public_mode,
+        "nodes_enabled": not public_mode,
     })
 
 

@@ -30,30 +30,37 @@ export type LlmResult =
   | { ok: true; text: string; model: string }
   | { ok: false; code: "proxy_down" | "rate_limited" | "empty" | "unknown" };
 
-const STORAGE_KEY = "hosaka.llm.v1";
-
 export const DEFAULT_CONFIG: LlmConfig = {
   model: "gemini-2.5-flash-lite",
 };
 
+// Read/write the gemini model preference through the shared sync Store.
+// On the appliance this means the preference propagates to peer nodes; on
+// the hosted build the LocalStore keeps it in localStorage as before.
+// This is purely a model-name preference — NO API key is ever involved.
+import { getStore } from "../sync/store";
+
 export function loadConfig(): LlmConfig {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_CONFIG };
-    const parsed = JSON.parse(raw) as Partial<LlmConfig>;
-    return {
-      ...DEFAULT_CONFIG,
-      model: (GEMINI_MODELS as readonly string[]).includes(parsed.model ?? "")
-        ? (parsed.model as GeminiModel)
-        : DEFAULT_CONFIG.model,
-    };
-  } catch {
-    return { ...DEFAULT_CONFIG };
-  }
+  const raw = getStore().get<Partial<LlmConfig> & { [k: string]: unknown }>(
+    "llm",
+    DEFAULT_CONFIG,
+  );
+  return {
+    ...DEFAULT_CONFIG,
+    model: (GEMINI_MODELS as readonly string[]).includes(raw.model ?? "")
+      ? (raw.model as GeminiModel)
+      : DEFAULT_CONFIG.model,
+  };
 }
 
 export function saveConfig(cfg: LlmConfig): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+  getStore().update<Partial<LlmConfig> & { [k: string]: unknown }>(
+    "llm",
+    DEFAULT_CONFIG,
+    (d) => {
+      d.model = cfg.model;
+    },
+  );
 }
 
 const SYSTEM_PROMPT = `You are the voice of HOSAKA, a cyberdeck field terminal that survived the cascade.

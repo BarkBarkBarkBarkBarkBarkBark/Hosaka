@@ -13,7 +13,16 @@ export type AgentConfig = {
   enabled: boolean;
 };
 
-const STORAGE_KEY = "hosaka.agent.v2";
+// Split storage:
+//   - URL + enabled flag → synced doc ("llm" doc, agent.* sub-keys). Safe
+//     to share across devices — it's where your agent lives, not a secret.
+//   - Passphrase → LOCAL-ONLY plain localStorage. The passphrase is a
+//     shared secret for the Fly.io-hosted agent; treating it as sensitive
+//     and per-device is the conservative choice until Phase 4 adds
+//     passphrase-derived encryption for synced LLM docs.
+const PASSPHRASE_KEY = "hosaka.agent.passphrase";
+// Legacy composite key used pre-sync; read-only fallback for one release.
+const LEGACY_STORAGE_KEY = "hosaka.agent.v2";
 
 // Baked-in default so users don't have to paste the URL.  Override at build
 // time with `VITE_HOSAKA_AGENT_URL=wss://... npm run build` or at runtime in
@@ -40,19 +49,58 @@ export function loadAgentConfig(): AgentConfig {
   // Hosted builds require the user to say the word out loud; once the
   // server validates it we persist enabled=true so it survives navigation
   // within the tab, but it resets on a fresh session / cleared storage.
+
+  // Shared fields (url, enabled) from the synced llm doc.
+  let url = DEFAULT_AGENT_CONFIG.url;
+  let enabled = DEFAULT_AGENT_CONFIG.enabled;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_AGENT_CONFIG };
-    const stored = JSON.parse(raw) as Partial<AgentConfig>;
-    return {
-      url: stored.url || DEFAULT_AGENT_CONFIG.url,
-      passphrase: stored.passphrase || DEFAULT_AGENT_CONFIG.passphrase,
-      enabled: GATED ? (stored.enabled ?? false) : true,
-    };
+    // Lazy-import store to avoid a circular dep at module load.
+    const raw = getStore().get<AgentStoreFields>("llm", {});
+    if (raw.agent_url) url = raw.agent_url;
+    if (GATED && typeof raw.agent_enabled === "boolean") enabled = raw.agent_enabled;
   } catch {
-    return { ...DEFAULT_AGENT_CONFIG };
+    // Fall through to defaults.
   }
+
+  // Passphrase: local-only. Separate storage key = won't leak to peers.
+  let passphrase = "";
+  try {
+    const p = localStorage.getItem(PASSPHRASE_KEY);
+    if (p) passphrase = p;
+  } catch {
+    // storage blocked
+  }
+
+  // One-shot migration from the pre-sync composite key. We read and
+  // forward to the new locations, but intentionally keep the legacy key
+  // around for one release so a rollback doesn't lose the operator's URL.
+  if (url === DEFAULT_AGENT_CONFIG.url && !passphrase) {
+    try {
+      const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (raw) {
+        const stored = JSON.parse(raw) as Partial<AgentConfig>;
+        if (stored.url) url = stored.url;
+        if (stored.passphrase) {
+          passphrase = stored.passphrase;
+          try { localStorage.setItem(PASSPHRASE_KEY, stored.passphrase); } catch {}
+        }
+        if (GATED && typeof stored.enabled === "boolean") enabled = stored.enabled;
+      }
+    } catch {}
+  }
+
+  return { url, passphrase, enabled };
 }
+
+type AgentStoreFields = {
+  agent_url?: string;
+  agent_enabled?: boolean;
+};
+
+// Avoid an import cycle by deferring the import of sync/store to the
+// function call site. Vite hoists this to a module-level import in the
+// bundle anyway, but keeping the declaration here documents intent.
+import { getStore } from "../sync/store";
 
 // Try to unlock the channel by opening a probe WebSocket with `candidate` as
 // the token. Resolves `{ ok: true }` if the server sends the `hello` frame
@@ -109,7 +157,26 @@ export async function attemptUnlock(
 }
 
 export function saveAgentConfig(cfg: AgentConfig): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+  // Synced (non-sensitive) bits go to the shared llm doc.
+  try {
+    getStore().update<AgentStoreFields>("llm", {}, (d) => {
+      d.agent_url = cfg.url;
+      if (GATED) d.agent_enabled = cfg.enabled;
+    });
+  } catch {
+    // store unavailable; fall through so we at least persist the passphrase.
+  }
+
+  // Passphrase stays device-local.
+  try {
+    if (cfg.passphrase) {
+      localStorage.setItem(PASSPHRASE_KEY, cfg.passphrase);
+    } else {
+      localStorage.removeItem(PASSPHRASE_KEY);
+    }
+  } catch {
+    // storage blocked: in-memory copy will still work for this session.
+  }
 }
 
 export type AgentHello = {

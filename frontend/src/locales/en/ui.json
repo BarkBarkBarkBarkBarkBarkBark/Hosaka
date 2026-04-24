@@ -19,6 +19,7 @@
     "wiki": "Wiki",
     "web": "Web",
     "books": "Books",
+    "nodes": "Nodes",
     "jump": "view"
   },
 
@@ -188,6 +189,40 @@
     "reopenLoop": "reopen loop",
     "delete": "delete",
     "closedSection": "closed"
+  },
+
+  "nodes": {
+    "heading": "nodes",
+    "sub": "your hosaka devices on this tailnet. edits sync between them.",
+    "installHeading": "tailscale not installed",
+    "installBody": "hosaka uses tailscale to find and sync with your other devices. it's free for personal use (up to 3 users, 100 devices).",
+    "installMac": "brew install --cask tailscale",
+    "installLinux": "curl -fsSL https://tailscale.com/install.sh | sh",
+    "installDocs": "tailscale.com/download ↗",
+    "offlineHeading": "not on a tailnet",
+    "offlineBody": "sign in to your tailnet to see your other hosaka devices.",
+    "joinBtn": "sign in to tailnet",
+    "joining": "waiting for tailscale…",
+    "joinUrl": "click here to authenticate ↗",
+    "joinCopy": "copy url",
+    "joinCopied": "copied ✓",
+    "joinDone": "connected.",
+    "joinError": "could not join: {{msg}}",
+    "selfHeading": "this node",
+    "selfHostname": "hostname",
+    "selfIp": "tailnet ip",
+    "selfDns": "magic dns",
+    "peersHeading": "peers",
+    "peersEmpty": "no peers yet. install hosaka on another device and sign it in to the same tailnet.",
+    "peerOnline": "online",
+    "peerOffline": "offline",
+    "peerNotHosaka": "not running hosaka",
+    "peerOpen": "open ↗",
+    "peerCopy": "copy ip",
+    "peerCopied": "copied ✓",
+    "logout": "leave tailnet",
+    "logoutConfirm": "really leave the tailnet? you'll need to sign in again to resume syncing.",
+    "refresh": "refresh"
   },
 
   "messages": {

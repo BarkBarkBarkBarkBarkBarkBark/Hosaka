@@ -1119,8 +1119,23 @@ export class HosakaShell {
     }
     if (sub === "list") {
       try {
-        const raw = localStorage.getItem("hosaka.todo.v1");
-        const loops: { text: string; closed: boolean }[] = raw ? JSON.parse(raw) : [];
+        // Prefer the synced Automerge doc if it has been hydrated by now;
+        // fall back to the legacy localStorage blob on a cold boot so the
+        // terminal command works even before the TodoPanel has ever been
+        // opened (the panel is what triggers the first doc load).
+        type ShellLoop = { text: string; closed: boolean };
+        let loops: ShellLoop[] = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const repoAny = (window as any).__hosakaRepo as
+          | { getDoc: <T>(n: string) => T | null }
+          | undefined;
+        const syncedDoc = repoAny?.getDoc<{ items: ShellLoop[] }>("todo");
+        if (syncedDoc && Array.isArray(syncedDoc.items)) {
+          loops = syncedDoc.items;
+        } else {
+          const raw = localStorage.getItem("hosaka.todo.v1");
+          loops = raw ? (JSON.parse(raw) as ShellLoop[]) : [];
+        }
         const open = loops.filter((l) => !l.closed);
         if (open.length === 0) {
           this.writeln(`  ${GRAY}${st("todoCmd.noOpenLoops")}${R}`);

@@ -1,9 +1,13 @@
 // LLM provider configuration helpers for the frontend.
 //
-// Non-sensitive fields (provider, model, base_url) are cached in localStorage
-// so the UI reflects the current state without an extra fetch on every open.
-// The API key is NEVER stored in localStorage — it only travels over the
-// wire to PATCH /api/llm-key and is held server-side only.
+// Non-sensitive fields (provider, model, base_url) flow through the shared
+// sync Store — on the appliance they propagate to peer nodes over the
+// tailnet, on hosted builds they stay in the LocalStore's localStorage.
+// The API key itself is NEVER stored client-side in any form; it travels
+// only over the wire to PATCH /api/llm-key and lives in the server-side
+// OS keychain from there.
+
+import { getStore } from "../sync/store";
 
 export type LlmProvider = "openai" | "openai-compatible";
 
@@ -20,7 +24,14 @@ export type ProviderConfig = {
 
 export type LlmStatus = ProviderConfig & { configured: boolean };
 
-const STORAGE_KEY = "hosaka.llm-provider.v1";
+// Shape of the synced "llm" doc. We co-locate both the provider config and
+// the gemini model preference here; both are non-sensitive strings.
+type LlmDoc = Partial<ProviderConfig> & {
+  model?: string;    // also used by the gemini client for its own model field
+  provider?: LlmProvider;
+  base_url?: string;
+};
+const LLM_DOC_DEFAULTS: LlmDoc = {};
 
 export const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
   provider: "openai",
@@ -29,17 +40,20 @@ export const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
 };
 
 export function loadProviderConfig(): ProviderConfig {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_PROVIDER_CONFIG };
-    return { ...DEFAULT_PROVIDER_CONFIG, ...(JSON.parse(raw) as Partial<ProviderConfig>) };
-  } catch {
-    return { ...DEFAULT_PROVIDER_CONFIG };
-  }
+  const raw = getStore().get<LlmDoc>("llm", LLM_DOC_DEFAULTS);
+  return {
+    provider: raw.provider ?? DEFAULT_PROVIDER_CONFIG.provider,
+    model:    raw.model    ?? DEFAULT_PROVIDER_CONFIG.model,
+    base_url: raw.base_url ?? DEFAULT_PROVIDER_CONFIG.base_url,
+  };
 }
 
 export function saveProviderConfig(cfg: ProviderConfig): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+  getStore().update<LlmDoc>("llm", LLM_DOC_DEFAULTS, (d) => {
+    d.provider = cfg.provider;
+    d.model    = cfg.model;
+    d.base_url = cfg.base_url;
+  });
 }
 
 /** Fetch current server-side LLM status (never returns the key). */

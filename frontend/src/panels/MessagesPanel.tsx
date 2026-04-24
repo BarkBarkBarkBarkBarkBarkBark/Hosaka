@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../i18n";
+import { useSyncedDoc } from "../sync/useSyncedDoc";
 
 type Msg = {
   id: string;
@@ -15,28 +16,16 @@ type Config = {
   username: string;
 };
 
-const STORAGE_KEY = "hosaka.messages.v1";
-const CONFIG_KEY = "hosaka.messages.config.v1";
+type MessagesDoc = {
+  entries: Msg[];
+  config: Config;
+};
 
-function loadMessages(): Msg[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as Msg[];
-  } catch {
-    return [];
-  }
-}
-
-function loadConfig(): Config {
-  try {
-    const raw = localStorage.getItem(CONFIG_KEY);
-    if (!raw) throw new Error("empty");
-    return JSON.parse(raw) as Config;
-  } catch {
-    return { webhook: "", kind: "generic", username: "operator" };
-  }
-}
+const MAX_MESSAGES = 200;
+const INITIAL: MessagesDoc = {
+  entries: [],
+  config: { webhook: "", kind: "generic", username: "operator" },
+};
 
 function buildPayload(cfg: Config, text: string): unknown {
   switch (cfg.kind) {
@@ -61,8 +50,9 @@ function id(): string {
 
 export function MessagesPanel() {
   const { t } = useTranslation("ui");
-  const [messages, setMessages] = useState<Msg[]>(loadMessages);
-  const [config, setConfig] = useState<Config>(loadConfig);
+  const [doc, update] = useSyncedDoc<MessagesDoc>("messages", INITIAL);
+  const messages = Array.isArray(doc.entries) ? doc.entries : [];
+  const config = doc.config ?? INITIAL.config;
   const [draft, setDraft] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const logRef = useRef<HTMLDivElement | null>(null);
@@ -70,18 +60,35 @@ export function MessagesPanel() {
   const orbReplies = t("messages.orbReplies", { returnObjects: true }) as string[];
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-200)));
-  }, [messages]);
-
-  useEffect(() => {
-    localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-  }, [config]);
-
-  useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
-  }, [messages]);
+  }, [messages.length]);
 
-  const push = (m: Msg) => setMessages((prev) => [...prev, m]);
+  const push = (m: Msg) => {
+    update((d) => {
+      if (!Array.isArray(d.entries)) d.entries = [];
+      d.entries.push(m);
+      // Keep the log bounded. Dropping the oldest entry converges across
+      // peers because Automerge sorts by actor+timestamp, not insertion.
+      if (d.entries.length > MAX_MESSAGES) {
+        d.entries.splice(0, d.entries.length - MAX_MESSAGES);
+      }
+    });
+  };
+
+  const setConfig = (patch: Partial<Config>) => {
+    update((d) => {
+      if (!d.config) d.config = { ...INITIAL.config };
+      Object.assign(d.config, patch);
+    });
+  };
+
+  const setStatus = (msgId: string, status: Msg["status"]) => {
+    update((d) => {
+      if (!Array.isArray(d.entries)) return;
+      const i = d.entries.findIndex((m) => m.id === msgId);
+      if (i >= 0) d.entries[i].status = status;
+    });
+  };
 
   const send = async () => {
     const text = draft.trim();
@@ -106,9 +113,7 @@ export function MessagesPanel() {
             orbReplies[Math.floor(Math.random() * orbReplies.length)] ?? "...",
         });
       }, 600 + Math.random() * 800);
-      setMessages((prev) =>
-        prev.map((m) => (m.id === mine.id ? { ...m, status: "sent" } : m)),
-      );
+      setStatus(mine.id, "sent");
       return;
     }
 
@@ -119,11 +124,7 @@ export function MessagesPanel() {
         body: JSON.stringify(buildPayload(config, text)),
       });
       const ok = res.ok;
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === mine.id ? { ...m, status: ok ? "sent" : "failed" } : m,
-        ),
-      );
+      setStatus(mine.id, ok ? "sent" : "failed");
       if (!ok) {
         push({
           id: id(),
@@ -133,9 +134,7 @@ export function MessagesPanel() {
         });
       }
     } catch (err: unknown) {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === mine.id ? { ...m, status: "failed" } : m)),
-      );
+      setStatus(mine.id, "failed");
       push({
         id: id(),
         at: Date.now(),
@@ -145,7 +144,7 @@ export function MessagesPanel() {
     }
   };
 
-  const clearLog = () => setMessages([]);
+  const clearLog = () => update((d) => { d.entries = []; });
 
   return (
     <div className="messages-wrap">
@@ -185,7 +184,7 @@ export function MessagesPanel() {
               placeholder={t("messages.webhookPlaceholder")}
               value={config.webhook}
               onChange={(e) =>
-                setConfig({ ...config, webhook: e.target.value.trim() })
+                setConfig({ webhook: e.target.value.trim() })
               }
             />
           </label>
@@ -194,7 +193,7 @@ export function MessagesPanel() {
             <select
               value={config.kind}
               onChange={(e) =>
-                setConfig({ ...config, kind: e.target.value as Config["kind"] })
+                setConfig({ kind: e.target.value as Config["kind"] })
               }
             >
               <option value="generic">{t("messages.kindGeneric")}</option>
@@ -207,7 +206,7 @@ export function MessagesPanel() {
             <input
               type="text"
               value={config.username}
-              onChange={(e) => setConfig({ ...config, username: e.target.value })}
+              onChange={(e) => setConfig({ username: e.target.value })}
             />
           </label>
           <p className="dim small" dangerouslySetInnerHTML={{ __html: t("messages.storageNote") }} />

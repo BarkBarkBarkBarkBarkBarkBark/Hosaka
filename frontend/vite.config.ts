@@ -17,6 +17,28 @@ const wantSourcemaps = process.env.HOSAKA_SOURCEMAP === "1";
 export default defineConfig({
   base,
   plugins: [react()],
+  resolve: {
+    alias: [
+      // @automerge/automerge's "browser" export imports its WASM via ESM-
+      // import syntax (needs vite-plugin-wasm). Route directly to the
+      // `fullfat_base64.js` build which inlines the WASM as base64 — works
+      // out of the box, costs ~1.2 MB of inlined wasm once per page load.
+      // Using a literal file path (not the package specifier) sidesteps
+      // the `exports` map's "browser" condition entirely.
+      {
+        find: /^@automerge\/automerge$/,
+        replacement: path.resolve(
+          __dirname,
+          "node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js",
+        ),
+      },
+    ],
+  },
+  optimizeDeps: {
+    // Same reason — dev mode pre-bundling would otherwise follow the
+    // bundler entry and hit the same WASM-import error as `vite build`.
+    exclude: ["@automerge/automerge"],
+  },
   server: {
     host: "0.0.0.0",
     port: 5173,

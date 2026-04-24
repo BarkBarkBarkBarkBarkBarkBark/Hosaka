@@ -22,6 +22,7 @@
 // fetched only if the operator flips to them — a real win on Pi 3B.
 
 import { useSyncExternalStore } from "react";
+import { getStore } from "./sync/store";
 
 type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
 type Bundle = Record<string, Json>;
@@ -30,7 +31,11 @@ type Catalogs = Record<string, Bundles>; // lang -> ns -> bundle
 
 const SUPPORTED = ["en", "es", "fr", "it", "ja", "pt"] as const;
 const FALLBACK_LANG = "en";
-const STORAGE_KEY = "hosaka.lang";
+// Pre-sync key (kept as a fallback for cold-boot and rollback safety). Current
+// reads/writes go through getStore().get("lang", { code }).
+const LEGACY_LANG_KEY = "hosaka.lang";
+type LangDoc = { code: string };
+const DEFAULT_LANG_DOC: LangDoc = { code: FALLBACK_LANG };
 
 // Fallback language: inlined into the entry bundle so first paint never waits
 // on a fetch. `eager + query:'?url'` would give us URLs; we want the parsed
@@ -79,14 +84,26 @@ async function loadLang(lang: string): Promise<void> {
 
 function detectInitialLang(): string {
   if (typeof window === "undefined") return FALLBACK_LANG;
+
+  // Preferred source of truth: the synced "lang" doc. Falls back through
+  // the legacy bare-string localStorage key (pre-Phase-3) and then to the
+  // browser's navigator.language.
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
+    const fromStore = getStore().get<LangDoc>("lang", DEFAULT_LANG_DOC);
+    if (fromStore.code && SUPPORTED.includes(fromStore.code as (typeof SUPPORTED)[number])) {
+      return fromStore.code;
+    }
+  } catch {
+    // Store not ready yet — rare, but fall through.
+  }
+
+  try {
+    const stored = window.localStorage.getItem(LEGACY_LANG_KEY);
     if (stored && SUPPORTED.includes(stored as (typeof SUPPORTED)[number])) {
       return stored;
     }
-  } catch {
-    // localStorage may be blocked; fall through to navigator detection.
-  }
+  } catch {}
+
   const nav = (window.navigator?.language || FALLBACK_LANG).split("-")[0];
   return SUPPORTED.includes(nav as (typeof SUPPORTED)[number]) ? nav : FALLBACK_LANG;
 }
@@ -103,6 +120,25 @@ function notify() {
 // until the chunk lands, then notify() re-renders consumers.
 if (currentLang !== FALLBACK_LANG) {
   void loadLang(currentLang).then(notify);
+}
+
+// When another node on the tailnet changes the language, the synced doc
+// flips and we need to load that bundle + re-render. We subscribe lazily
+// at module scope so the hook doesn't have to pay a subscription cost
+// per component.
+try {
+  getStore().subscribe("lang", () => {
+    const next = getStore().get<LangDoc>("lang", DEFAULT_LANG_DOC).code;
+    if (!next || next === currentLang) return;
+    if (!SUPPORTED.includes(next as (typeof SUPPORTED)[number])) return;
+    currentLang = next;
+    void loadLang(next).then(() => {
+      eventBus.get("languageChanged")?.forEach((cb) => cb(next));
+      notify();
+    });
+  });
+} catch {
+  // Store unavailable in SSR / tests — ignore.
 }
 
 function getNested(bundle: Bundle | undefined, key: string): Json | undefined {
@@ -193,9 +229,18 @@ const i18n: I18n = {
     await loadLang(lang);
     currentLang = lang;
     try {
-      window.localStorage.setItem(STORAGE_KEY, lang);
+      // Write through the synced Store so other devices on the tailnet
+      // pick up the change. The LocalStore backend also persists to
+      // localStorage under `hosaka.sync.lang`, so hosted builds still
+      // remember the language across reloads.
+      getStore().update<LangDoc>("lang", DEFAULT_LANG_DOC, (d) => {
+        d.code = lang;
+      });
+      // Keep the legacy bare-string key in sync for one release so a
+      // rollback just works. Remove in a future version.
+      window.localStorage.setItem(LEGACY_LANG_KEY, lang);
     } catch {
-      // localStorage blocked: still update in-memory.
+      // Storage blocked (private mode, quota); still update in-memory.
     }
     eventBus.get("languageChanged")?.forEach((cb) => cb(lang));
     notify();

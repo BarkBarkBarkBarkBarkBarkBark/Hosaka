@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "../i18n";
+import { useSyncedDoc } from "../sync/useSyncedDoc";
 
 type Loop = {
   id: string;
@@ -8,26 +9,32 @@ type Loop = {
   ts: number;
 };
 
-const STORAGE_KEY = "hosaka.todo.v1";
+type TodoDoc = {
+  items: Loop[];
+};
 
-function loadLoops(): Loop[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as Loop[];
-  } catch {
-    return [];
-  }
-}
-
-function saveLoops(loops: Loop[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(loops));
-}
+// Stable reference — passing a fresh object literal to useSyncedDoc on
+// every render would defeat its internal caching.
+const INITIAL: TodoDoc = { items: [] };
 
 export function TodoPanel() {
   const { t } = useTranslation("ui");
-  const [loops, setLoops] = useState<Loop[]>(loadLoops);
+  const [doc, update] = useSyncedDoc<TodoDoc>("todo", INITIAL);
+  const loops = Array.isArray(doc.items) ? doc.items : [];
   const [draft, setDraft] = useState("");
+
+  const addLoop = (text: string) => {
+    const loop: Loop = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      text,
+      closed: false,
+      ts: Date.now(),
+    };
+    update((d) => {
+      if (!Array.isArray(d.items)) d.items = [];
+      d.items.unshift(loop);
+    });
+  };
 
   useEffect(() => {
     const onAdd = (e: Event) => {
@@ -37,31 +44,25 @@ export function TodoPanel() {
     window.addEventListener("hosaka:todo-add", onAdd as EventListener);
     return () =>
       window.removeEventListener("hosaka:todo-add", onAdd as EventListener);
-  }, [loops]);
-
-  const persist = (next: Loop[]) => {
-    setLoops(next);
-    saveLoops(next);
-  };
-
-  const addLoop = (text: string) => {
-    const next: Loop = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      text,
-      closed: false,
-      ts: Date.now(),
-    };
-    persist([next, ...loops]);
-  };
+    // addLoop has a stable-by-closure ref; we intentionally leave deps
+    // empty so the listener isn't thrashed on every keystroke in draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggle = (id: string) => {
-    persist(
-      loops.map((l) => (l.id === id ? { ...l, closed: !l.closed } : l)),
-    );
+    update((d) => {
+      if (!Array.isArray(d.items)) return;
+      const i = d.items.findIndex((l) => l.id === id);
+      if (i >= 0) d.items[i].closed = !d.items[i].closed;
+    });
   };
 
   const remove = (id: string) => {
-    persist(loops.filter((l) => l.id !== id));
+    update((d) => {
+      if (!Array.isArray(d.items)) return;
+      const i = d.items.findIndex((l) => l.id === id);
+      if (i >= 0) d.items.splice(i, 1);
+    });
   };
 
   const submit = () => {

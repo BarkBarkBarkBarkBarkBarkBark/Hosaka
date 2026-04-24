@@ -85,11 +85,24 @@ if ! docker info >/dev/null 2>&1; then
     exit 1
 fi
 
-# ── tailscale check (optional, informational) ────────────────────────────────
+# ── tailscale check (optional but recommended for node sync) ─────────────────
+# Tailscale powers the Nodes panel + cross-device sync. Hosaka works without
+# it (single-node mode), but the "see your other devices" and "todo list syncs
+# everywhere" features need it.
 if command -v tailscale >/dev/null 2>&1; then
-    ok "tailscale present — you can link to a remote hosaka with: hosaka link <hostname>"
+    ok "tailscale present — nodes panel will show your tailnet peers"
 else
-    note "tailscale not detected (optional) — install from https://tailscale.com/download to link clients"
+    note "tailscale not detected (optional) — needed for multi-device sync"
+    case "$OS" in
+        mac)
+            printf '    install with:  %sbrew install --cask tailscale%s\n' "$C_CYAN" "$C_RESET"
+            printf '           or:    https://tailscale.com/download\n'
+            ;;
+        linux)
+            printf '    install with:  %scurl -fsSL https://tailscale.com/install.sh | sh%s\n' "$C_CYAN" "$C_RESET"
+            ;;
+    esac
+    printf '    after installing, open the Nodes panel in hosaka to sign in.\n'
 fi
 
 # ── install launcher ─────────────────────────────────────────────────────────

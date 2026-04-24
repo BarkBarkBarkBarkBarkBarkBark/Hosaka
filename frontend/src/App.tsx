@@ -42,6 +42,9 @@ const BooksPanel = lazy(() =>
 const VoicePanel = lazy(() =>
   import("./panels/VoicePanel").then((m) => ({ default: m.VoicePanel })),
 );
+const NodesPanel = lazy(() =>
+  import("./panels/NodesPanel").then((m) => ({ default: m.NodesPanel })),
+);
 
 export type PanelId =
   | "terminal"
@@ -53,7 +56,8 @@ export type PanelId =
   | "wiki"
   | "web"
   | "books"
-  | "voice";
+  | "voice"
+  | "nodes";
 
 export function App() {
   const { t } = useTranslation("ui");
@@ -64,18 +68,34 @@ export function App() {
   // returns false; missing endpoint fails closed (no gear, no web tab).
   const [settingsEnabled, setSettingsEnabled] = useState(false);
   const [webPanelEnabled, setWebPanelEnabled] = useState(false);
+  const [nodesEnabled, setNodesEnabled] = useState(false);
   useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
-      .then((d: { settings_enabled?: boolean; web_panel_enabled?: boolean }) => {
-        setSettingsEnabled(d.settings_enabled ?? false);
-        setWebPanelEnabled(d.web_panel_enabled ?? false);
-      })
+      .then(
+        (d: {
+          settings_enabled?: boolean;
+          web_panel_enabled?: boolean;
+          nodes_enabled?: boolean;
+        }) => {
+          setSettingsEnabled(d.settings_enabled ?? false);
+          setWebPanelEnabled(d.web_panel_enabled ?? false);
+          setNodesEnabled(d.nodes_enabled ?? false);
+        },
+      )
       .catch(() => {
         setSettingsEnabled(false);
         setWebPanelEnabled(false);
+        setNodesEnabled(false);
       });
   }, []);
+
+  useEffect(() => {
+    if (!nodesEnabled) return;
+    // Kick off the Automerge sync WS once we know sync is permitted by
+    // the server. Idempotent — repo.ts guards against double-connect.
+    void import("./sync/repo").then((m) => m.startSync());
+  }, [nodesEnabled]);
 
   // Immersive mode: hide topbar/footer/dock-buttons and collapse the web
   // panel's hint line so the browsed page gets ~all of the viewport. Toggled
@@ -107,7 +127,8 @@ export function App() {
 
   useEffect(() => {
     if (!webPanelEnabled && active === "web") setActive("terminal");
-  }, [webPanelEnabled, active]);
+    if (!nodesEnabled && active === "nodes") setActive("terminal");
+  }, [webPanelEnabled, nodesEnabled, active]);
 
   const panels = useMemo<{ id: PanelId; label: string; glyph: string }[]>(() => {
     const all: { id: PanelId; label: string; glyph: string }[] = [
@@ -120,9 +141,14 @@ export function App() {
       { id: "wiki", label: t("tabs.wiki", "wiki"), glyph: "W" },
       { id: "web", label: t("tabs.web", "web"), glyph: "⌁" },
       { id: "books", label: t("tabs.books", "books"), glyph: "📖" },
+      { id: "nodes", label: t("tabs.nodes", "nodes"), glyph: "◈" },
     ];
-    return webPanelEnabled ? all : all.filter((p) => p.id !== "web");
-  }, [t, webPanelEnabled]);
+    return all.filter((p) => {
+      if (p.id === "web" && !webPanelEnabled) return false;
+      if (p.id === "nodes" && !nodesEnabled) return false;
+      return true;
+    });
+  }, [t, webPanelEnabled, nodesEnabled]);
 
   useEffect(() => {
     const timer = setTimeout(() => setBootMessage(t("boot.steady")), 900);
@@ -258,6 +284,11 @@ export function App() {
           {visited.has("voice") && (
             <div className="hosaka-panel" hidden={active !== "voice"}>
               <VoicePanel active={active === "voice"} />
+            </div>
+          )}
+          {nodesEnabled && visited.has("nodes") && (
+            <div className="hosaka-panel" hidden={active !== "nodes"}>
+              <NodesPanel />
             </div>
           )}
         </Suspense>

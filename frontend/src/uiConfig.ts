@@ -1,5 +1,8 @@
-// UI appearance preferences — stored in localStorage so they survive
-// tab refreshes, but are never sent to any server.
+// UI appearance preferences — read through the shared sync Store so they
+// cross-sync between devices on the appliance build (and stay local-only
+// on the hosted build, which is the default Store backend).
+
+import { getStore } from "./sync/store";
 
 export type FontSize = "small" | "normal" | "large";
 
@@ -9,29 +12,25 @@ export type UiConfig = {
 
 export const FONT_SIZES: FontSize[] = ["small", "normal", "large"];
 
-const STORAGE_KEY = "hosaka.ui.v1";
-
 export const DEFAULT_UI_CONFIG: UiConfig = {
   fontSize: "normal",
 };
 
 export function loadUiConfig(): UiConfig {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_UI_CONFIG };
-    const parsed = JSON.parse(raw) as Partial<UiConfig>;
-    return {
-      fontSize: (FONT_SIZES as readonly string[]).includes(parsed.fontSize ?? "")
-        ? (parsed.fontSize as FontSize)
-        : DEFAULT_UI_CONFIG.fontSize,
-    };
-  } catch {
-    return { ...DEFAULT_UI_CONFIG };
-  }
+  const raw = getStore().get<UiConfig>("ui", DEFAULT_UI_CONFIG);
+  // Validate so we don't apply a bogus CSS font-size if a peer somehow
+  // wrote a garbage value (or a legacy blob made it through migration).
+  return {
+    fontSize: (FONT_SIZES as readonly string[]).includes(raw.fontSize ?? "")
+      ? (raw.fontSize as FontSize)
+      : DEFAULT_UI_CONFIG.fontSize,
+  };
 }
 
 export function saveUiConfig(cfg: UiConfig): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+  getStore().update<UiConfig>("ui", DEFAULT_UI_CONFIG, (d) => {
+    d.fontSize = cfg.fontSize;
+  });
 }
 
 // Map font-size values to CSS root font-size percentages.
