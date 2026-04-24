@@ -410,6 +410,8 @@ def health() -> JSONResponse:
         except OSError:
             pass
 
+    public_mode = os.environ.get("HOSAKA_PUBLIC_MODE", "").lower() in ("1", "true", "yes")
+
     return JSONResponse({
         "web": "ok",
         "commit": os.environ.get("HOSAKA_COMMIT", "dev"),
@@ -417,6 +419,7 @@ def health() -> JSONResponse:
         "picoclaw_gateway": PicoclawGatewayClient.is_gateway_reachable(),
         "openai_key": openai_ok(),
         "ui_built": ui_built,
+        "settings_enabled": not public_mode,
     })
 
 
