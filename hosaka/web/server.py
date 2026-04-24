@@ -420,6 +420,7 @@ def health() -> JSONResponse:
         "openai_key": openai_ok(),
         "ui_built": ui_built,
         "settings_enabled": not public_mode,
+        "web_panel_enabled": not public_mode,
     })
 
 

@@ -60,13 +60,21 @@ export function App() {
   const [active, setActive] = useState<PanelId>("terminal");
   const [bootMessage, setBootMessage] = useState(t("boot.waking"));
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Server-driven: false in public/web deployments (HOSAKA_PUBLIC_MODE=1)
+  // Server-driven via /api/health: local Python returns true; hosted Vercel edge
+  // returns false; missing endpoint fails closed (no gear, no web tab).
   const [settingsEnabled, setSettingsEnabled] = useState(false);
+  const [webPanelEnabled, setWebPanelEnabled] = useState(false);
   useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
-      .then((d: { settings_enabled?: boolean }) => setSettingsEnabled(d.settings_enabled ?? true))
-      .catch(() => setSettingsEnabled(true)); // fail open on localhost
+      .then((d: { settings_enabled?: boolean; web_panel_enabled?: boolean }) => {
+        setSettingsEnabled(d.settings_enabled ?? false);
+        setWebPanelEnabled(d.web_panel_enabled ?? false);
+      })
+      .catch(() => {
+        setSettingsEnabled(false);
+        setWebPanelEnabled(false);
+      });
   }, []);
 
   // Immersive mode: hide topbar/footer/dock-buttons and collapse the web
@@ -97,20 +105,24 @@ export function App() {
     setVisited((s) => (s.has(active) ? s : new Set(s).add(active)));
   }, [active]);
 
-  const panels = useMemo<{ id: PanelId; label: string; glyph: string }[]>(
-    () => [
+  useEffect(() => {
+    if (!webPanelEnabled && active === "web") setActive("terminal");
+  }, [webPanelEnabled, active]);
+
+  const panels = useMemo<{ id: PanelId; label: string; glyph: string }[]>(() => {
+    const all: { id: PanelId; label: string; glyph: string }[] = [
       { id: "terminal", label: t("tabs.terminal"), glyph: "›_" },
       { id: "voice", label: t("tabs.voice", "voice"), glyph: "◎" },
       { id: "reading", label: t("tabs.reading"), glyph: "❑" },
       { id: "todo", label: t("tabs.openLoops"), glyph: "▣" },
       { id: "video", label: t("tabs.video", "video"), glyph: "▶" },
       { id: "games", label: t("tabs.games", "games"), glyph: "◆" },
-      { id: "wiki",  label: t("tabs.wiki",  "wiki"),  glyph: "W" },
-      { id: "web",   label: t("tabs.web",   "web"),   glyph: "⌁" },
+      { id: "wiki", label: t("tabs.wiki", "wiki"), glyph: "W" },
+      { id: "web", label: t("tabs.web", "web"), glyph: "⌁" },
       { id: "books", label: t("tabs.books", "books"), glyph: "📖" },
-    ],
-    [t],
-  );
+    ];
+    return webPanelEnabled ? all : all.filter((p) => p.id !== "web");
+  }, [t, webPanelEnabled]);
 
   useEffect(() => {
     const timer = setTimeout(() => setBootMessage(t("boot.steady")), 900);
@@ -233,7 +245,7 @@ export function App() {
               <WikiPanel active={active === "wiki"} />
             </div>
           )}
-          {visited.has("web") && (
+          {webPanelEnabled && visited.has("web") && (
             <div className="hosaka-panel" hidden={active !== "web"}>
               <WebPanel active={active === "web"} />
             </div>

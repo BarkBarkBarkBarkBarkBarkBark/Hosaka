@@ -5,11 +5,37 @@
 ##
 
 meta:
-  last_updated: "2026-04-23"
+  last_updated: "2026-04-24"
   repo: "https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka"
   image_registry: "ghcr.io/barkbarkbarkbarkbarkbarkbark/hosaka"
 
 entries:
+
+  - commit: "pending"
+    date: "2026-04-24"
+    type: fix
+    session: "2026-04-24"
+    title: "web_panel_enabled + fail-closed /api/health; hosted Vercel edge health"
+    problem: |
+      Hosted field-terminal had no /api/health. App.tsx failed open on fetch error,
+      so strangers saw the settings gear. The web browsing tab was always shown.
+      VITE_SHOW_SETTINGS in .env files was never read by the frontend.
+    fix: |
+      - /api/health JSON now includes web_panel_enabled (mirrors settings_enabled
+        from HOSAKA_PUBLIC_MODE on the Python server).
+      - App.tsx reads both flags, defaults false, catch sets both false.
+      - Web tab is omitted from the dock and WebPanel is not mounted when disabled.
+      - hosaka_field-terminal adds api/health.ts (edge) returning false for both.
+      - Removed dead VITE_SHOW_SETTINGS from .env samples; AGENTS.md updated.
+    files:
+      - path: "frontend/src/App.tsx"
+        change: "webPanelEnabled state; filter web panel; guard WebPanel; fail-closed health fetch."
+      - path: "hosaka/web/server.py"
+        change: "web_panel_enabled key in /api/health response."
+      - path: "hosaka_field-terminal/api/health.ts"
+        change: "New edge handler for hosted feature flags."
+      - path: "frontend/.env.appliance"
+        change: "Removed unused VITE_SHOW_SETTINGS."
 
   - commit: "2a163ba"
     date: "2026-04-23"
