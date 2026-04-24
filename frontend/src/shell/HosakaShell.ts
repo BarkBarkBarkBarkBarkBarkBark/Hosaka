@@ -101,12 +101,31 @@ export class HosakaShell {
   }
 
   private async checkLlmConfig(): Promise<void> {
+    // Hosted/gated builds (terminal.hosaka.xyz) don't run the picoclaw
+    // backend on the same origin — there is no /api/llm-key to PATCH and
+    // visitors don't own the container. Skip the inline config flow
+    // entirely so the magic-word UX isn't intercepted by an API-key prompt.
+    if (GATED) {
+      this.llmConfigured = true;
+      this.llmPrompted = true;
+      return;
+    }
     try {
       const r = await fetch("/api/llm-key");
+      // Treat a missing endpoint as "host doesn't expose this; assume OK".
+      // Without this the SPA would offer to configure an LLM that has no
+      // backend to receive the PATCH — a confusing dead-end for the user.
+      if (!r.ok) {
+        this.llmConfigured = true;
+        this.llmPrompted = true;
+        return;
+      }
       const d = await r.json() as { configured?: boolean };
       this.llmConfigured = d.configured ?? false;
     } catch {
-      this.llmConfigured = false;
+      // Network failure (offline, CORS, etc.) — also fail closed-but-quiet.
+      this.llmConfigured = true;
+      this.llmPrompted = true;
     }
   }
 
