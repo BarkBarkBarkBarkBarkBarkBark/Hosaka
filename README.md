@@ -96,6 +96,43 @@ python scripts/dump_openapi.py docs/openapi.json
 mkdocs serve              # http://127.0.0.1:8000
 ```
 
+## Agent Contract
+
+Hosaka now ships its agent behavior as repo-owned canon instead of relying on
+hand-edited files in `~/.picoclaw`.
+
+Canonical source files:
+
+- `identity/AGENT.md` - Hosaka's identity, communication style, task/skill role
+- `identity/SOUL.md` - deeper lore / tone
+- `identity/USER.md` - operator-facing defaults
+- `manager/charter.yaml` - task policy, scoring, prioritization, daily loop
+- `manager/bootstrap_tasks.md` - runtime task template
+- `skills/index.yaml` - built-in Hosaka skill catalog
+- `skills/hosaka-task-manager/SKILL.md` - task-system workflow
+- `skills/hosaka-skill-lifecycle/SKILL.md` - skill search / install / authoring workflow
+
+These are materialized into the PicoClaw runtime with:
+
+```bash
+python scripts/bootstrap_picoclaw_runtime.py --home "$HOME"
+```
+
+That generator writes:
+
+- `~/.picoclaw/workspace/AGENT.md`
+- `~/.picoclaw/workspace/SOUL.md`
+- `~/.picoclaw/workspace/USER.md`
+- `~/.picoclaw/workspace/manager/charter.yaml`
+- `~/.picoclaw/workspace/memory/TASKS.md`
+- `~/.picoclaw/workspace/skills/catalog/index.yaml`
+- `~/.picoclaw/workspace/skills/hosaka-task-manager/SKILL.md`
+- `~/.picoclaw/workspace/skills/hosaka-skill-lifecycle/SKILL.md`
+
+Because the generator runs from repo-owned sources, Hosaka's identity,
+task-management role, and built-in skill behavior survive appliance installs,
+Docker image builds, and future deployments.
+
 ## Remote configuration from your laptop
 
 After `install_hosaka_lean.sh` runs on the Pi it generates
@@ -127,6 +164,12 @@ curl -L https://github.com/sipeed/picoclaw/releases/download/v0.2.4/picoclaw_Lin
   -o picoclaw.tar.gz
 tar -xzf picoclaw.tar.gz && chmod +x picoclaw && sudo mv picoclaw /usr/local/bin/
 picoclaw onboard
+```
+
+Then generate Hosaka's runtime contract into the PicoClaw workspace:
+
+```bash
+python scripts/bootstrap_picoclaw_runtime.py --home "$HOME"
 ```
 
 ### 2. Configure your LLM backend
@@ -168,6 +211,7 @@ git clone https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka.git
 cd Hosaka
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-hosaka.txt
+python scripts/bootstrap_picoclaw_runtime.py --home "$HOME"
 picoclaw gateway &
 python -m hosaka
 ```
@@ -178,7 +222,9 @@ python -m hosaka
 ./scripts/setup_hosaka.sh
 ```
 
-One command. Installs everything, enables systemd services, starts onboarding.
+One command. Installs everything, runs `picoclaw onboard` if needed,
+regenerates Hosaka's PicoClaw runtime files from repo-owned canon, enables
+systemd services, and starts onboarding.
 
 After install you'll have a `hosaka` command on the path — see "Operator CLI"
 below for the build/kiosk mode toggle and one-shot deploys.
@@ -248,6 +294,11 @@ Net bundle: **~4.8 MB → ~700 KB**. Build memory peak: **~750 MB → ~250 MB**.
 ./docker/dev.sh test           # run tests
 ./docker/dev.sh stop           # shut down
 ```
+
+The Docker build copies `identity/`, `manager/`, and `skills/` into the image
+and runs `scripts/bootstrap_picoclaw_runtime.py --home /root --seed-config`,
+so the desktop/client container ships the same Hosaka identity, manager
+charter, task template, and built-in skill catalog as the appliance.
 
 ---
 
