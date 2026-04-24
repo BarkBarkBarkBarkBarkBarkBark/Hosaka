@@ -55,8 +55,6 @@ export type PanelId =
   | "books"
   | "voice";
 
-const SHOW_SETTINGS = import.meta.env.VITE_SHOW_SETTINGS === "1";
-
 export function App() {
   const { t } = useTranslation("ui");
   const [active, setActive] = useState<PanelId>("terminal");
@@ -137,16 +135,14 @@ export function App() {
           <SignalBadge label={bootMessage} />
           <PlantBadge />
           <ModeSwitch />
-          {SHOW_SETTINGS && (
-            <button
-              className="icon-btn"
-              aria-label={t("settings")}
-              title={t("settings")}
-              onClick={() => setSettingsOpen(true)}
-            >
-              ⚙
-            </button>
-          )}
+          <button
+            className="icon-btn"
+            aria-label={t("settings")}
+            title={t("settings")}
+            onClick={() => setSettingsOpen(true)}
+          >
+            ⚙
+          </button>
         </div>
       </header>
 

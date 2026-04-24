@@ -413,6 +413,37 @@ def health() -> JSONResponse:
     })
 
 
+# ── /api/config  (system settings — hostname, backend, picoclaw) ─────────────
+
+@app.get("/api/config")
+def get_config() -> JSONResponse:
+    """Return persisted system config (hostname, backend endpoint, picoclaw toggle)."""
+    s = orchestrator.summary()
+    return JSONResponse({
+        "hostname": s.get("hostname", ""),
+        "backend_endpoint": s.get("backend_endpoint", ""),
+        "picoclaw_enabled": bool(s.get("picoclaw_enabled", False)),
+    })
+
+
+@app.patch("/api/config")
+async def patch_config(request: Request) -> JSONResponse:
+    """Update system config fields — JSON body, all fields optional."""
+    try:
+        body: dict = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+    if "hostname" in body:
+        orchestrator.set_field("hostname", str(body["hostname"]))
+    if "backend_endpoint" in body:
+        orchestrator.set_field("backend_endpoint", str(body["backend_endpoint"]))
+    if "picoclaw_enabled" in body:
+        enabled = bool(body["picoclaw_enabled"])
+        orchestrator.set_field("picoclaw_enabled", enabled)
+        orchestrator.set_field("picoclaw_ready", enabled)
+    return JSONResponse({"ok": True})
+
+
 # ── /api/video  (inject a video URL into the web panel from the terminal) ────
 
 _video_queue: list[dict] = []

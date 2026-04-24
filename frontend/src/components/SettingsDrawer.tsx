@@ -28,11 +28,15 @@ type Props = {
   onClose: () => void;
 };
 
+type SysConfig = { hostname: string; backend_endpoint: string; picoclaw_enabled: boolean };
+
 export function SettingsDrawer({ open, onClose }: Props) {
   const { t } = useTranslation("ui");
   const [cfg, setCfg] = useState<LlmConfig>(loadConfig);
   const [agentCfg, setAgentCfg] = useState<AgentConfig>(loadAgentConfig);
   const [uiCfg, setUiCfg] = useState<UiConfig>(loadUiConfig);
+  const [sysCfg, setSysCfg] = useState<SysConfig>({ hostname: "", backend_endpoint: "", picoclaw_enabled: false });
+  const [sysLoaded, setSysLoaded] = useState(false);
   const [agentPassRevealed, setAgentPassRevealed] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
 
@@ -41,12 +45,27 @@ export function SettingsDrawer({ open, onClose }: Props) {
       setCfg(loadConfig());
       setAgentCfg(loadAgentConfig());
       setUiCfg(loadUiConfig());
+      setSysLoaded(false);
+      fetch("/api/config")
+        .then((r) => r.json())
+        .then((d: SysConfig) => { setSysCfg(d); setSysLoaded(true); })
+        .catch(() => setSysLoaded(true));
     }
   }, [open]);
 
   const flash = () => {
     setSavedFlash(true);
     window.setTimeout(() => setSavedFlash(false), 800);
+  };
+
+  const saveSys = (patch: Partial<SysConfig>) => {
+    const next = { ...sysCfg, ...patch };
+    setSysCfg(next);
+    fetch("/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then(() => flash()).catch(() => {});
   };
 
   const commit = (next: LlmConfig) => {
@@ -87,6 +106,54 @@ export function SettingsDrawer({ open, onClose }: Props) {
             {t("settingsDrawer.close")}
           </button>
         </header>
+
+        <section className="drawer-section">
+          <h3>System</h3>
+          <p className="dim small">Device identity and runtime settings — stored on the server.</p>
+
+          <label className="drawer-field">
+            <span>Hostname</span>
+            <input
+              type="text"
+              placeholder="hosaka-field-terminal"
+              value={sysCfg.hostname}
+              disabled={!sysLoaded}
+              onChange={(e) => setSysCfg((s) => ({ ...s, hostname: e.target.value }))}
+              onBlur={() => saveSys({ hostname: sysCfg.hostname })}
+              spellCheck={false}
+            />
+          </label>
+
+          <label className="drawer-field">
+            <span>Backend endpoint</span>
+            <input
+              type="url"
+              placeholder="https://api.example.com"
+              value={sysCfg.backend_endpoint}
+              disabled={!sysLoaded}
+              onChange={(e) => setSysCfg((s) => ({ ...s, backend_endpoint: e.target.value }))}
+              onBlur={() => saveSys({ backend_endpoint: sysCfg.backend_endpoint })}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </label>
+
+          <label className="drawer-field">
+            <span>Picoclaw gateway</span>
+            <select
+              value={sysCfg.picoclaw_enabled ? "on" : "off"}
+              disabled={!sysLoaded}
+              onChange={(e) => saveSys({ picoclaw_enabled: e.target.value === "on" })}
+            >
+              <option value="on">enabled</option>
+              <option value="off">disabled</option>
+            </select>
+          </label>
+
+          <div className="drawer-actions">
+            <span className={`drawer-flash ${savedFlash ? "on" : ""}`}>{t("settingsDrawer.saved")}</span>
+          </div>
+        </section>
 
         <section className="drawer-section">
           <h3>{t("settingsDrawer.channel.heading")}</h3>
