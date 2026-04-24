@@ -120,41 +120,37 @@ curl -fsSL https://install.hosaka.xyz/bin/hosaka | head -3
 ## Image registry
 
 The launcher pulls `ghcr.io/barkbarkbarkbarkbarkbarkbark/hosaka:latest`
-by default. Publish from CI with a workflow like:
+by default. CI builds and pushes the image on every push to `main`
+(multi-arch: `linux/amd64` + `linux/arm64`) and stamps the git commit
+SHA as `HOSAKA_COMMIT` so `/api/health` always reports the exact
+build in the running container.
 
 ```yaml
-# .github/workflows/image.yml
-name: image
-on:
-  push: { tags: ["v*"] }
-  workflow_dispatch:
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    permissions: { contents: read, packages: write }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ghcr.io/barkbarkbarkbarkbarkbarkbark/hosaka:latest
-            ghcr.io/barkbarkbarkbarkbarkbarkbark/hosaka:${{ github.ref_name }}
+# .github/workflows/image.yml  (abbreviated)
+- uses: docker/build-push-action@v6
+  with:
+    context: .
+    file: docker/Dockerfile
+    platforms: linux/amd64,linux/arm64
+    push: true
+    build-args: HOSAKA_COMMIT=${{ github.sha }}
+    tags: |
+      ghcr.io/barkbarkbarkbarkbarkbarkbark/hosaka:latest
+      ghcr.io/barkbarkbarkbarkbarkbarkbark/hosaka:${{ github.ref_name }}
 ```
 
 Make the package public from the GitHub UI (Packages → hosaka →
 Settings → Change visibility → Public) so anonymous `docker pull`
 works.
+
+### Verifying the deployed commit
+
+```powershell
+iwr http://127.0.0.1:8421/api/health -UseBasicParsing | ConvertFrom-Json | Select commit, ui_built
+```
+
+Both `commit` (git SHA) and `ui_built: true` should be present after
+`hosaka update && hosaka up`.
 
 ## Verifying locally
 
