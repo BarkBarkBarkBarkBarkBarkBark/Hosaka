@@ -1,0 +1,281 @@
+##
+## Hosaka Change Log — dense context for agents and human review
+## Format: reverse-chronological. Each entry maps to one git commit (or a logical group).
+## All dates are UTC. Session = the coding session in which the change was discovered + applied.
+##
+
+meta:
+  last_updated: "2026-04-23"
+  repo: "https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka"
+  image_registry: "ghcr.io/barkbarkbarkbarkbarkbarkbark/hosaka"
+
+entries:
+
+  - commit: "2a163ba"
+    date: "2026-04-23"
+    type: fix
+    session: "2026-04-23 session 2"
+    title: "settings_enabled server flag — fixes black screen + gates settings for public/web mode"
+    problem: |
+      Two separate issues combined into one commit:
+
+      1. BLACK SCREEN ON NEW IMAGE
+         Root cause: `SHOW_SETTINGS` was referenced as a bare variable in App.tsx JSX
+         (`SHOW_SETTINGS && <button ...>` and `SHOW_SETTINGS && <SettingsDrawer ...>`),
+         but the `const SHOW_SETTINGS = ...` declaration had been deleted in a prior session.
+         Vite does NOT strip undeclared bare variable references from minified output —
+         it emits the name as-is. At runtime the browser threw:
+           ReferenceError: SHOW_SETTINGS is not defined
+         This crashed the React tree before it could paint anything. The splash screen
+         MutationObserver fired on the first (failed) React mount attempt, so the splash
+         faded correctly — then nothing rendered, leaving a black screen with no error
+         visible to the user. Confirmed by curling the container's Vite asset files and
+         grepping the minified JS for SHOW_SETTINGS.
+
+      2. WEB DEPLOYMENT vs LOCAL SETTINGS ACCESS
+         The same repo is deployed as a public-facing hosted instance (web) AND as a
+         local Docker appliance. On the web instance, strangers should not be able to
+         access the settings drawer (which exposes LLM API key input, base URL config,
+         system settings, etc.). There was no mechanism to distinguish the two deployments.
+    fix: |
+      - Added HOSAKA_PUBLIC_MODE env var. When set to "1", "true", or "yes":
+          server.py /api/health returns { settings_enabled: false }
+        Otherwise: { settings_enabled: true } (default, fail-open).
+      - App.tsx now fetches /api/health on mount, reads settings_enabled, stores in
+        React state (settingsEnabled). The gear button and <SettingsDrawer> are both
+        gated: {settingsEnabled && <...>}. If the fetch fails (e.g. localhost dev),
+        it fails open (settingsEnabled = true).
+      - SHOW_SETTINGS bare variable references completely removed.
+      - The check is server-side and cannot be bypassed from the browser.
+    files:
+      - path: "frontend/src/App.tsx"
+        change: |
+          Replaced SHOW_SETTINGS bare variable with settingsEnabled state var.
+          Added useEffect that fetches /api/health on mount and sets settingsEnabled
+          from d.settings_enabled ?? true. Both gear button and SettingsDrawer
+          are conditionally rendered on settingsEnabled.
+      - path: "hosaka/web/server.py"
+        change: |
+          Added public_mode = os.environ.get("HOSAKA_PUBLIC_MODE", "").lower() in ("1", "true", "yes")
+          Added "settings_enabled": not public_mode to /api/health JSON response.
+    caveats:
+      - "The inline terminal LLM config prompt in HosakaShell.ts is NOT gated by
+         HOSAKA_PUBLIC_MODE. If public mode is on, users can still type a character and
+         trigger the inline LLM config flow. Future work: checkLlmConfig() should also
+         fetch /api/health and set llmPrompted=true (skip flow) when settings_enabled=false."
+      - "HOSAKA_PUBLIC_MODE intentionally named _MODE not _NODE or _HOST. Do not rename
+         without updating server.py, App.tsx, and this log."
+
+  - commit: "569b3ff"
+    date: "2026-04-23"
+    type: fix
+    session: "2026-04-23 session 2"
+    title: "CI smoke test — verify ui_built=True before publishing multi-arch image"
+    problem: |
+      CI could publish a broken image (e.g. frontend build step silently failed, or the
+      Dockerfile COPY from builder stage was misconfigured) without any gate. The first
+      sign of a broken image was a user seeing "UI not built yet" in the browser or a
+      black screen.
+    fix: |
+      Added a smoke-test job step to .github/workflows/image.yml that runs BEFORE the
+      multi-arch buildx push. The step:
+        1. Builds an amd64-only image (fast, single-arch).
+        2. Runs the container with docker run -d.
+        3. Polls http://localhost:8421/api/health for up to 60 s.
+        4. Asserts ui_built == True in the JSON response.
+        5. Fails CI if the assertion is not met — the multi-arch push is never reached.
+    files:
+      - path: ".github/workflows/image.yml"
+        change: |
+          Added smoke-test step after amd64-only build-for-test stage.
+          Step boots container, waits for /api/health, checks ui_built field.
+    caveats:
+      - "Smoke test only checks ui_built, not functional LLM calls. A deeper integration
+         test is out of scope for CI given the absence of a test API key in secrets."
+
+  - commit: "7497608"
+    date: "2026-04-23"
+    type: fix
+    session: "2026-04-23 session 2"
+    title: "CI :latest tag — push :latest on every main push, not only on v* tags"
+    problem: |
+      IRREGULARITY — SILENT REGRESSION.
+      The CI workflow (image.yml) was configured to push the :latest tag only when the
+      git ref matched refs/tags/v* (i.e. a semver release tag). On every push to main
+      it published :main, :edge, and :sha-<short> tags — but NOT :latest.
+      The hosaka CLI wrapper (scripts/hosaka) runs `docker pull :latest` for `hosaka update`.
+      Result: `hosaka update` always pulled the same old :latest image regardless of how
+      many commits had been pushed to main. New frontend features, bug fixes, and config
+      changes were invisible to users who ran hosaka update. The only way to get a new
+      image was to create a semver tag — which was never being done.
+      This was the root cause of "UI not built yet" persisting: users kept pulling an old
+      image that pre-dated the frontend build stage being added to the Dockerfile.
+    fix: |
+      Changed the :latest tag rule in the docker/metadata-action tags block from:
+        type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+      to:
+        type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+      Now :latest is published on every push to main.
+    files:
+      - path: ".github/workflows/image.yml"
+        change: "Changed enable condition for :latest tag from v* tags to main branch."
+    caveats:
+      - ":latest now moves on every commit to main — it is a rolling tag, not a stable
+         release tag. For pinned deployments, use the :sha-<commit> tags."
+      - "The :main and :edge tags remain as aliases. All three now point to the same image."
+
+  - commit: "a162e63"
+    date: "2026-04-23"
+    type: feat
+    session: "2026-04-23 session 1"
+    title: "LLM provider config — inline shell prompt, settings drawer picker, /api/llm-key endpoint"
+    problem: |
+      There was no UI or interactive way to configure the LLM backend after install.
+      Users had to manually set OPENAI_API_KEY as a Docker env var and restart.
+      No support for non-OpenAI providers (Ollama, LM Studio, etc.) or custom base URLs.
+      The settings drawer existed but had no LLM section.
+    fix: |
+      Four-part change:
+
+      1. hosaka/llm/llm_config.py (NEW FILE)
+         Persistent LLM config stored in /var/lib/hosaka/llm.json (or ~/.hosaka/llm.json).
+         Functions: load(), save(cfg), apply_to_env(cfg).
+         apply_to_env sets OPENAI_API_KEY, OPENAI_MODEL, OPENAI_BASE_URL in os.environ
+         at runtime — no restart required.
+
+      2. hosaka/llm/openai_adapter.py (MODIFIED)
+         Added OPENAI_BASE_URL support. Replaced hardcoded OPENAI_URL constant with
+         _base_url() and _chat_url() helper functions that read the env var.
+
+      3. hosaka/web/server.py (MODIFIED)
+         Added GET /api/llm-key → returns { configured: bool, provider: str, model: str, base_url: str }
+         Added PATCH /api/llm-key → accepts { provider, model, base_url, api_key },
+         calls llm_config.save() + apply_to_env(), returns updated status.
+         Added GET /api/config and PATCH /api/config for system settings (hostname, backend_endpoint,
+         picoclaw toggle).
+
+      4. frontend/src/llm/llmProvider.ts (NEW FILE)
+         Frontend helper module. Exports: LlmProvider type, PROVIDERS array,
+         ProviderConfig type, DEFAULT_PROVIDER_CONFIG, fetchLlmStatus(),
+         saveLlmToServer(), loadProviderConfig(), saveProviderConfig().
+
+      5. frontend/src/components/SettingsDrawer.tsx (MODIFIED)
+         Added LLM Backend section: provider dropdown (OpenAI / OpenAI-compatible / Ollama),
+         model field, base_url field (shown only for compatible/Ollama), API key field
+         with show/hide toggle, Save button that calls PATCH /api/llm-key.
+
+      6. frontend/src/shell/HosakaShell.ts (MODIFIED)
+         Added inline LLM config flow. On first printable keystroke, if LLM is not
+         configured (checked via GET /api/llm-key on start()), presents:
+           "no llm backend configured. configure one now? [Y/n]"
+         Interactive flow: provider, model, base URL (optional), masked API key input.
+         Handles backspace, Ctrl-C cancel. PATCH /api/llm-key on confirm.
+         State vars: llmConfigured, llmPrompted, inConfigFlow, configMasked, configBuf,
+         configResolve. readLine(masked=false) returns a Promise.
+    files:
+      - path: "hosaka/llm/llm_config.py"
+        change: "New file. Persistent LLM config read/write."
+      - path: "hosaka/llm/openai_adapter.py"
+        change: "Added _base_url()/_chat_url() replacing hardcoded OPENAI_URL."
+      - path: "hosaka/web/server.py"
+        change: "Added /api/llm-key GET+PATCH and /api/config GET+PATCH routes."
+      - path: "frontend/src/llm/llmProvider.ts"
+        change: "New file. Frontend LLM provider helpers."
+      - path: "frontend/src/components/SettingsDrawer.tsx"
+        change: "Added LLM Backend section with full provider/model/key UI."
+      - path: "frontend/src/shell/HosakaShell.ts"
+        change: "Added inline LLM config flow on first keystroke when unconfigured."
+    caveats:
+      - "API key stored on-device in /var/lib/hosaka/llm.json. Never sent to Hosaka
+         servers. Never logged. Never included in chat context."
+      - "Masked input in HosakaShell uses bullet characters (•) echoed by the client
+         — the actual key characters are never echoed."
+      - "The inline config flow is not gated by HOSAKA_PUBLIC_MODE (see commit 2a163ba)."
+
+  - commit: "5e33640"
+    date: "2026-04-23"
+    type: docs
+    session: "2026-04-23 session 2"
+    title: "README update — LLM config section and install/README CI workflow docs"
+    problem: |
+      README still described the old env-var-only LLM config method.
+      install/README had no mention of the CI tagging scheme or how to verify
+      the deployed commit.
+    fix: |
+      - README.md: replaced "Set your OpenAI API key" with "Configure your LLM backend"
+        covering all three methods (inline shell, settings drawer, env vars).
+        Configuration section split into LLM backend and System settings subsections.
+      - install/README.md: added image registry section describing the CI workflow
+        (builds on every main push, stamps HOSAKA_COMMIT). Added "Verifying the
+        deployed commit" snippet.
+    files:
+      - path: "README.md"
+        change: "LLM config section rewrite."
+      - path: "install/README.md"
+        change: "CI workflow and commit verification docs."
+
+known_irregularities:
+
+  - id: IR-001
+    title: "HOSAKA_PUBLIC_MODE not enforced on inline terminal LLM config flow"
+    severity: medium
+    description: |
+      When HOSAKA_PUBLIC_MODE=1, the settings drawer is correctly hidden.
+      However, the inline LLM config flow in HosakaShell.ts is triggered on the
+      first printable keystroke if llmConfigured=false, regardless of public mode.
+      A stranger on the web instance could type a character and be walked through
+      the LLM config prompt — potentially setting/overwriting the API key or
+      provider for all users of that instance.
+    workaround: |
+      Ensure the web-deployed instance always has an LLM backend configured before
+      going public. If the backend is configured (llmConfigured=true), the inline
+      prompt never fires.
+    recommended_fix: |
+      In HosakaShell.ts checkLlmConfig(), also fetch /api/health and check
+      settings_enabled. If false, set this.llmPrompted = true to permanently
+      skip the inline config flow. This would fully unify the public-mode access
+      control across both entry points.
+    tracking_commit: "2a163ba (see caveats)"
+
+  - id: IR-002
+    title: "CI :latest was never pushed on main commits before 2026-04-23"
+    severity: high
+    description: |
+      From the initial introduction of the CI pipeline until commit 7497608,
+      every push to main published :main, :edge, :sha-<hash> tags but NOT :latest.
+      Any user who ran `hosaka update` (which pulls :latest) received a stale image.
+      The bug was silent — hosaka update reported success (docker pull succeeded)
+      but pulled an unchanged image. This affected all installs done via the
+      one-line installer that use `hosaka update` for upgrades.
+    resolved_by: "7497608"
+
+  - id: IR-003
+    title: "SHOW_SETTINGS bare variable — deleted declaration, kept reference"
+    severity: critical
+    description: |
+      At some point in a session before 2026-04-23, the `const SHOW_SETTINGS = ...`
+      declaration was removed from App.tsx but the references in JSX were not removed.
+      Vite/esbuild does not warn on bare undeclared identifiers in JSX expressions —
+      it emits the name literally into the minified bundle. At runtime the browser
+      throws ReferenceError which crashes the React tree before first paint.
+      The splash screen fades (MutationObserver fires on the first React mount attempt)
+      then the page goes black. No error is visible to the user; DevTools console is
+      required to see the ReferenceError.
+    resolved_by: "2a163ba"
+    detection_method: |
+      Pull the running container's Vite asset file URL from the browser (Network tab
+      or view-source), curl it, grep for SHOW_SETTINGS. If the bare name appears in
+      the bundle without a preceding assignment, the var is undeclared.
+
+  - id: IR-004
+    title: "HOSAKA_PUBLIC_MODE env var name — not HOSAKA_PUBLIC_NODE"
+    severity: low
+    description: |
+      The environment variable controlling public/web deployment mode is named
+      HOSAKA_PUBLIC_MODE. It has been referred to as HOSAKA_PUBLIC_NODE (typo)
+      in conversation. The correct name is HOSAKA_PUBLIC_MODE. If you search the
+      codebase for PUBLIC_NODE you will find nothing — use PUBLIC_MODE.
+    files_to_check:
+      - "hosaka/web/server.py: os.environ.get('HOSAKA_PUBLIC_MODE', '')"
+      - "README.md: Configuration > System settings table"
+      - "change_log.yaml: entries[0].commit = 2a163ba"
