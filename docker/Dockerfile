@@ -58,12 +58,17 @@ RUN ARCH=$(dpkg --print-architecture) \
     && picoclaw version
 
 # ── application directory structure ──────────────────────────────────────────
+# HOSAKA_COMMIT is stamped in at build time by CI (--build-arg HOSAKA_COMMIT=<sha>).
+# Falls back to "dev" when building locally without passing the arg.
+ARG HOSAKA_COMMIT=dev
+
 ENV APP_ROOT=/opt/hosaka-field-terminal \
     HOSAKA_STATE_PATH=/var/lib/hosaka/state.json \
     HOSAKA_BOOT_MODE=headless \
     HOSAKA_WEB_HOST=0.0.0.0 \
     HOSAKA_WEB_PORT=8421 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    HOSAKA_COMMIT=${HOSAKA_COMMIT}
 
 RUN mkdir -p /opt/hosaka-field-terminal /var/lib/hosaka /var/log/hosaka
 

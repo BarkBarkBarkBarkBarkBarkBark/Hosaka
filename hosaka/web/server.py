@@ -405,6 +405,7 @@ def health() -> JSONResponse:
 
     return JSONResponse({
         "web": "ok",
+        "commit": os.environ.get("HOSAKA_COMMIT", "dev"),
         "picoclaw_bin": _picoclaw_available(),
         "picoclaw_gateway": PicoclawGatewayClient.is_gateway_reachable(),
         "openai_key": openai_ok(),
