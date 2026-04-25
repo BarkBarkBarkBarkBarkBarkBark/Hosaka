@@ -56,6 +56,8 @@ ok()   { printf '  %s %s\n' "$(c_green '✓')" "$*"; }
 warn() { printf '  %s %s\n' "$(c_amber '!')" "$*"; }
 die()  { printf '  %s %s\n' "$(c_red '✗')" "$*" >&2; exit 1; }
 
+have_cmd() { command -v "$1" >/dev/null 2>&1; }
+
 ensure_state_dir() {
   # Make sure the state dir exists AND is writable by the current user.
   # Older installs created /var/lib/hosaka root-owned, which broke `hosaka
@@ -117,6 +119,41 @@ read_runtime_mode() {
     console|device) echo "$raw"  ;;
     *)            echo "console" ;;
   esac
+}
+
+ensure_frontend_deps() {
+  local frontend="$REPO_ROOT/frontend"
+  local npm_cmd="install"
+
+  [[ -d "$frontend" ]] || die "no frontend at $frontend"
+  have_cmd npm || die "npm not available"
+
+  if [[ ! -d "$frontend/node_modules" ]]; then
+    note "frontend deps missing — running $(c_cyan 'npm install')"
+    ( cd "$frontend" && npm install )
+    return 0
+  fi
+
+  # package-lock drift is the usual cause when synced frontend code adds a
+  # dependency (for example `idb-keyval`) but the appliance still has an older
+  # node_modules tree from before the pull.
+  if [[ -f "$frontend/package-lock.json" && -f "$frontend/node_modules/.package-lock.json" ]]; then
+    if [[ "$frontend/package-lock.json" -nt "$frontend/node_modules/.package-lock.json" ]]; then
+      note "frontend lockfile changed — refreshing dependencies"
+      ( cd "$frontend" && npm install )
+      return 0
+    fi
+  elif [[ -f "$frontend/package-lock.json" ]]; then
+    note "frontend lockfile present but install stamp missing — refreshing dependencies"
+    ( cd "$frontend" && npm install )
+    return 0
+  fi
+
+  if ! ( cd "$frontend" && npm ls --depth=0 idb-keyval @automerge/automerge >/dev/null 2>&1 ); then
+    note "frontend dependency check failed — refreshing dependencies"
+    ( cd "$frontend" && npm install )
+    return 0
+  fi
 }
 
 # ── mode device (was: build) ─────────────────────────────────────────────────
@@ -280,6 +317,7 @@ cmd_build() {
   local target="build"
   [[ "${1:-}" == "--check" ]] && target="build:check"
   [[ -d "$REPO_ROOT/frontend" ]] || die "no frontend at $REPO_ROOT/frontend"
+  ensure_frontend_deps
   note "running $(c_cyan "npm run $target") in $REPO_ROOT/frontend"
   if [[ "$(read_runtime_mode)" != "device" ]]; then
     warn "not in device mode — run $(c_cyan 'hosaka mode device') first if this OOMs"
