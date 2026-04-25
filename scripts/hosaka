@@ -16,6 +16,7 @@
 #
 #   hosaka status                  what's running, RAM/CPU snapshot
 #   hosaka build [--check]         npm build (check = with tsc gate)
+#   hosaka update [--check]        git pull + build + rsync + restart webserver
 #   hosaka deploy [--check]        build + rsync into /opt + restart webserver
 #   hosaka logs [unit]             tail journalctl for one of our units
 #   hosaka reboot                  safe sync + reboot
@@ -57,6 +58,10 @@ warn() { printf '  %s %s\n' "$(c_amber '!')" "$*"; }
 die()  { printf '  %s %s\n' "$(c_red '✗')" "$*" >&2; exit 1; }
 
 have_cmd() { command -v "$1" >/dev/null 2>&1; }
+
+git_repo_clean() {
+  git -C "$REPO_ROOT" diff --quiet --ignore-submodules HEAD --
+}
 
 ensure_state_dir() {
   # Make sure the state dir exists AND is writable by the current user.
@@ -342,6 +347,58 @@ cmd_deploy() {
   fi
 }
 
+cmd_update() {
+  local target_branch=""
+  local deploy_arg=""
+
+  while (( $# )); do
+    case "$1" in
+      --check)
+        deploy_arg="--check"
+        shift
+        ;;
+      -b|--branch)
+        [[ $# -ge 2 ]] || die "$1 needs a branch name"
+        target_branch="$2"
+        shift 2
+        ;;
+      --branch=*)
+        target_branch="${1#*=}"
+        shift
+        ;;
+      *)
+        die "unknown update arg: $1"
+        ;;
+    esac
+  done
+
+  [[ -d "$REPO_ROOT/.git" ]] || die "no git checkout at $REPO_ROOT"
+  have_cmd git || die "git not available"
+
+  if ! git_repo_clean; then
+    die "repo has local changes — commit/stash them before hosaka update"
+  fi
+
+  if [[ -z "$target_branch" ]]; then
+    target_branch="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)"
+  fi
+
+  note "fetching latest git refs in $REPO_ROOT"
+  git -C "$REPO_ROOT" fetch --all --prune
+
+  note "checking out $(c_cyan "$target_branch")"
+  git -C "$REPO_ROOT" checkout "$target_branch"
+
+  note "pulling latest changes"
+  git -C "$REPO_ROOT" pull --ff-only origin "$target_branch"
+
+  if [[ -n "$deploy_arg" ]]; then
+    cmd_deploy "$deploy_arg"
+  else
+    cmd_deploy
+  fi
+}
+
 # ── logs / reboot ─────────────────────────────────────────────────────────────
 
 cmd_logs() {
@@ -446,6 +503,8 @@ hosaka — operator CLI for the Hosaka Field Terminal Pi
   hosaka status                     what's running + memory snapshot
   hosaka dashboard                  print the device dashboard once and exit
   hosaka build [--check]            npm run build (--check runs tsc gate first)
+  hosaka update [--check] [--branch BRANCH]
+                                    git pull + deploy from this checkout
   hosaka deploy [--check]           build + rsync into $DEPLOY_ROOT + restart web
   hosaka logs [unit]                follow journalctl for web/pico/<custom>
   hosaka reboot                     sync + reboot
@@ -457,8 +516,7 @@ hosaka — operator CLI for the Hosaka Field Terminal Pi
 
 Typical SSH-then-deploy flow:
   hosaka mode device                 # frees RAM
-  cd ~/Hosaka && git pull
-  hosaka deploy
+  cd ~/Hosaka && hosaka update
   hosaka mode console                # touchscreen back
 USAGE
 }
@@ -480,6 +538,7 @@ main() {
     status)    cmd_status "$@" ;;
     dashboard) exec /usr/local/bin/hosaka-device-dashboard --once ;;
     build)     cmd_build "$@" ;;
+    update)    cmd_update "$@" ;;
     deploy)    cmd_deploy "$@" ;;
     logs)      cmd_logs "$@" ;;
     reboot)    cmd_reboot "$@" ;;
