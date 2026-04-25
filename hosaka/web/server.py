@@ -43,6 +43,30 @@ UI_DIR = HERE / "ui"              # built SPA lives here after `npm run build`
 STATE_PATH_ENV = "HOSAKA_STATE_PATH"
 DEFAULT_PORT = int(os.getenv("HOSAKA_WEB_PORT", "8421"))
 
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+PUBLIC_MODE = _env_flag("HOSAKA_PUBLIC_MODE", False)
+if PUBLIC_MODE:
+    # Public mode is a hard boundary for the shared/public deployment.
+    # Do not let env overrides quietly re-enable sensitive local features.
+    SETTINGS_ENABLED = False
+    WEB_PANEL_ENABLED = False
+    NODES_UI_ENABLED = False
+    TAILSCALE_API_ENABLED = False
+    SYNC_ENABLED = False
+else:
+    SETTINGS_ENABLED = _env_flag("HOSAKA_SETTINGS_ENABLED", True)
+    WEB_PANEL_ENABLED = _env_flag("HOSAKA_WEB_PANEL_ENABLED", True)
+    NODES_UI_ENABLED = _env_flag("HOSAKA_NODES_UI_ENABLED", True)
+    TAILSCALE_API_ENABLED = _env_flag("HOSAKA_TAILSCALE_API_ENABLED", NODES_UI_ENABLED)
+    SYNC_ENABLED = _env_flag("HOSAKA_SYNC_ENABLED", NODES_UI_ENABLED)
+
 # picoclaw
 ACCESS_TOKEN = os.environ.get("HOSAKA_ACCESS_TOKEN", "").strip()
 PICOCLAW_BIN = os.environ.get("PICOCLAW_BIN", "picoclaw")
@@ -264,8 +288,10 @@ from hosaka.web.sync_ws import router as sync_router  # noqa: E402
 
 app.include_router(v1_router)
 app.include_router(voice_router)
-app.include_router(nodes_router)
-app.include_router(sync_router)
+if TAILSCALE_API_ENABLED:
+    app.include_router(nodes_router)
+if SYNC_ENABLED:
+    app.include_router(sync_router)
 
 
 # ── /device — minimal HTML mirror of the TTY device dashboard ─────────────────
@@ -414,8 +440,6 @@ def health() -> JSONResponse:
         except OSError:
             pass
 
-    public_mode = os.environ.get("HOSAKA_PUBLIC_MODE", "").lower() in ("1", "true", "yes")
-
     return JSONResponse({
         "web": "ok",
         "commit": os.environ.get("HOSAKA_COMMIT", "dev"),
@@ -423,9 +447,13 @@ def health() -> JSONResponse:
         "picoclaw_gateway": PicoclawGatewayClient.is_gateway_reachable(),
         "openai_key": openai_ok(),
         "ui_built": ui_built,
-        "settings_enabled": not public_mode,
-        "web_panel_enabled": not public_mode,
-        "nodes_enabled": not public_mode,
+        "public_mode": PUBLIC_MODE,
+        "settings_enabled": SETTINGS_ENABLED,
+        "web_panel_enabled": WEB_PANEL_ENABLED,
+        "nodes_enabled": NODES_UI_ENABLED,
+        "nodes_ui_enabled": NODES_UI_ENABLED,
+        "tailscale_api_enabled": TAILSCALE_API_ENABLED,
+        "sync_enabled": SYNC_ENABLED,
     })
 
 

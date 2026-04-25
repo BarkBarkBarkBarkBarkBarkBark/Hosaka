@@ -69,6 +69,7 @@ export function App() {
   const [settingsEnabled, setSettingsEnabled] = useState(false);
   const [webPanelEnabled, setWebPanelEnabled] = useState(false);
   const [nodesEnabled, setNodesEnabled] = useState(false);
+  const [syncEnabled, setSyncEnabled] = useState(false);
   useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
@@ -77,25 +78,30 @@ export function App() {
           settings_enabled?: boolean;
           web_panel_enabled?: boolean;
           nodes_enabled?: boolean;
+          nodes_ui_enabled?: boolean;
+          sync_enabled?: boolean;
         }) => {
+          const nextNodesEnabled = d.nodes_ui_enabled ?? d.nodes_enabled ?? false;
           setSettingsEnabled(d.settings_enabled ?? false);
           setWebPanelEnabled(d.web_panel_enabled ?? false);
-          setNodesEnabled(d.nodes_enabled ?? false);
+          setNodesEnabled(nextNodesEnabled);
+          setSyncEnabled(d.sync_enabled ?? nextNodesEnabled);
         },
       )
       .catch(() => {
         setSettingsEnabled(false);
         setWebPanelEnabled(false);
         setNodesEnabled(false);
+        setSyncEnabled(false);
       });
   }, []);
 
   useEffect(() => {
-    if (!nodesEnabled) return;
+    if (!syncEnabled) return;
     // Kick off the Automerge sync WS once we know sync is permitted by
     // the server. Idempotent — repo.ts guards against double-connect.
     void import("./sync/repo").then((m) => m.startSync());
-  }, [nodesEnabled]);
+  }, [syncEnabled]);
 
   // Immersive mode: hide topbar/footer/dock-buttons and collapse the web
   // panel's hint line so the browsed page gets ~all of the viewport. Toggled
