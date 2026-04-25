@@ -38,6 +38,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from hosaka.network import tailscale as ts
+from hosaka.web.beacon_registry import get_registry
 
 log = logging.getLogger("hosaka.sync")
 
@@ -268,6 +269,7 @@ class _PeerLink:
                         "type": "hello",
                         "node_id": f"peer:{self.ip}",
                         "role": "peer",
+                        "beacon": get_registry().local_beacon(),
                     }))
                     for doc, raw in self.hub.latest.items():
                         await ws.send(json.dumps({
@@ -336,6 +338,10 @@ async def ws_sync(ws: WebSocket) -> None:
                 except (ValueError, TypeError):
                     preview = {}
                 if preview.get("type") == "hello" and preview.get("role") == "peer":
+                    beacon = preview.get("beacon")
+                    if isinstance(beacon, dict):
+                        source_ip = ws.client.host if ws.client else None
+                        get_registry().register_remote(beacon, source_ip=source_ip)
                     role = "peer"
                     await hub.detach_browser(ws)
                     continue

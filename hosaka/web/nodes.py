@@ -21,6 +21,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from hosaka.network import tailscale as ts
+from hosaka.web.beacon_registry import BEACON_PROTOCOL_VERSION, get_registry
 
 router = APIRouter()
 
@@ -47,8 +48,15 @@ def tailscale_status() -> JSONResponse:
 
     return JSONResponse({
         **ts.self_info(),
+        "beacon": get_registry().local_beacon(),
         "peer_count": len(status.get("Peer") or {}),
     })
+
+
+@router.get("/api/beacon")
+def beacon_snapshot() -> JSONResponse:
+    """Return the local beacon plus the last seen peer beacons."""
+    return JSONResponse(get_registry().snapshot())
 
 
 # ── /api/tailscale/up  (SSE stream of browser login flow) ─────────────────────
@@ -122,6 +130,7 @@ async def _probe_peer(client: httpx.AsyncClient, peer: dict[str, Any]) -> dict[s
         "reachable": True,
         "commit": data.get("commit"),
         "ui_built": bool(data.get("ui_built")),
+        "beacon": data.get("beacon") if isinstance(data.get("beacon"), dict) else None,
     }
 
 
@@ -143,9 +152,28 @@ async def list_nodes() -> JSONResponse:
     async with httpx.AsyncClient() as client:
         probed = await asyncio.gather(*(_probe_peer(client, p) for p in peers))
 
+    registry = get_registry()
+    nodes: list[dict[str, Any]] = []
+    for peer in probed:
+        beacon = peer.get("beacon") if isinstance(peer.get("beacon"), dict) else None
+        if beacon is not None:
+            beacon = registry.register_remote(beacon, source_ip=peer.get("ip")) or beacon
+        else:
+            beacon = registry.get_for_ip(peer.get("ip"))
+
+        enriched = dict(peer)
+        enriched["beacon"] = beacon
+        if beacon is not None:
+            enriched.setdefault("commit", beacon.get("commit"))
+            enriched["node_id"] = beacon.get("node_id")
+            enriched["capabilities"] = beacon.get("capabilities") or []
+            enriched["beacon_seen_at"] = beacon.get("last_seen")
+        nodes.append(enriched)
+
     return JSONResponse({
+        "beacon_protocol": BEACON_PROTOCOL_VERSION,
         "installed": True,
         "connected": True,
-        "self": info,
-        "nodes": list(probed),
+        "self": {**info, "beacon": registry.local_beacon()},
+        "nodes": nodes,
     })

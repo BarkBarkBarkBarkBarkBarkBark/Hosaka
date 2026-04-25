@@ -19,13 +19,28 @@ type TailscaleStatus = {
   ip?: string;
   os?: string;
   peer_count?: number;
+  beacon?: Beacon;
 };
 
 type NodesResponse = {
+  beacon_protocol?: number;
   installed: boolean;
   connected: boolean;
   self: TailscaleStatus | null;
   nodes: Peer[];
+};
+
+type Beacon = {
+  protocol: number;
+  node_id: string;
+  hostname?: string;
+  dns_name?: string;
+  ip?: string;
+  os?: string;
+  commit?: string;
+  version?: string;
+  capabilities?: string[];
+  last_seen?: number;
 };
 
 type Peer = {
@@ -37,6 +52,10 @@ type Peer = {
   last_seen?: string;
   reachable?: boolean;
   commit?: string;
+  node_id?: string;
+  capabilities?: string[];
+  beacon_seen_at?: number;
+  beacon?: Beacon | null;
 };
 
 type JoinState =
@@ -221,6 +240,20 @@ export function NodesPanel() {
                     </dd>
                   </>
                 )}
+                {resp.self.beacon?.node_id && (
+                  <>
+                    <dt>{t("nodes.selfBeacon", "beacon")}</dt>
+                    <dd>
+                      <code>{resp.self.beacon.node_id}</code>
+                    </dd>
+                  </>
+                )}
+                {!!resp.self.beacon?.capabilities?.length && (
+                  <>
+                    <dt>{t("nodes.selfCapabilities", "caps")}</dt>
+                    <dd>{resp.self.beacon.capabilities.join(", ")}</dd>
+                  </>
+                )}
               </dl>
               <button className="btn btn-ghost" onClick={logout}>
                 {t("nodes.logout")}
@@ -259,6 +292,27 @@ export function NodesPanel() {
                         <> {" · "} <em>{t("nodes.peerNotHosaka")}</em></>
                       )}
                     </span>
+                    {(p.node_id || p.commit || (p.capabilities && p.capabilities.length > 0)) && (
+                      <span className="nodes-peer-meta">
+                        {p.node_id && (
+                          <>
+                            {t("nodes.peerBeacon", "beacon")} <code>{p.node_id.slice(0, 8)}</code>
+                          </>
+                        )}
+                        {p.commit && (
+                          <>
+                            {p.node_id && " · "}
+                            {t("nodes.peerCommit", "commit")} <code>{p.commit.slice(0, 8)}</code>
+                          </>
+                        )}
+                        {p.capabilities && p.capabilities.length > 0 && (
+                          <>
+                            {(p.node_id || p.commit) && " · "}
+                            {t("nodes.peerCapabilities", "caps")} {p.capabilities.join(", ")}
+                          </>
+                        )}
+                      </span>
+                    )}
                   </div>
                   <div className="nodes-peer-actions">
                     {p.reachable && (

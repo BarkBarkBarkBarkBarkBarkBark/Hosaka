@@ -32,6 +32,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from hosaka.setup.orchestrator import build_default_orchestrator
+from hosaka.web.beacon_registry import get_registry
 
 log = logging.getLogger("hosaka.web")
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -447,6 +448,7 @@ def health() -> JSONResponse:
         "picoclaw_gateway": PicoclawGatewayClient.is_gateway_reachable(),
         "openai_key": openai_ok(),
         "ui_built": ui_built,
+        "beacon": get_registry().local_beacon(),
         "public_mode": PUBLIC_MODE,
         "settings_enabled": SETTINGS_ENABLED,
         "web_panel_enabled": WEB_PANEL_ENABLED,

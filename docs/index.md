@@ -46,5 +46,7 @@ hosakactl mode device --persist
    FastAPI OpenAPI schema.
 3. [Wifi setup](wifi.md) — multiple ways to add a network (kiosk UI, `/device`
    page, `hosakactl wifi add`, TTY hotkey).
-4. [Claims audit](claims.md) — what this codebase actually does vs. what older
+4. [Beacon protocol](beacon_protocol.md) — how Hosaka nodes advertise
+   presence, commit, and capability metadata on the tailnet.
+5. [Claims audit](claims.md) — what this codebase actually does vs. what older
    docs claimed it did.

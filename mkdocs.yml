@@ -24,6 +24,7 @@ nav:
   - Client (hosakactl): client.md
   - Modes (console / device): modes.md
   - Wifi setup: wifi.md
+  - Beacon protocol: beacon_protocol.md
   - Adding a panel: panels.md
   - Sync ACL design (Phase 4): sync_acl_design.md
   - Claims audit: claims.md
