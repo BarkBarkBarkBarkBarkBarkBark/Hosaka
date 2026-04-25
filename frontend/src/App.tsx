@@ -18,6 +18,9 @@ const TerminalPanel = lazy(() =>
 const MessagesPanel = lazy(() =>
   import("./panels/MessagesPanel").then((m) => ({ default: m.MessagesPanel })),
 );
+const InboxPanel = lazy(() =>
+  import("./panels/InboxPanel").then((m) => ({ default: m.InboxPanel })),
+);
 const ReadingPanel = lazy(() =>
   import("./panels/ReadingPanel").then((m) => ({ default: m.ReadingPanel })),
 );
@@ -48,6 +51,7 @@ const NodesPanel = lazy(() =>
 
 export type PanelId =
   | "terminal"
+  | "inbox"
   | "messages"
   | "reading"
   | "todo"
@@ -70,6 +74,7 @@ export function App() {
   const [webPanelEnabled, setWebPanelEnabled] = useState(false);
   const [nodesEnabled, setNodesEnabled] = useState(false);
   const [syncEnabled, setSyncEnabled] = useState(false);
+  const [inboxEnabled, setInboxEnabled] = useState(false);
   useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
@@ -80,12 +85,14 @@ export function App() {
           nodes_enabled?: boolean;
           nodes_ui_enabled?: boolean;
           sync_enabled?: boolean;
+          inbox_enabled?: boolean;
         }) => {
           const nextNodesEnabled = d.nodes_ui_enabled ?? d.nodes_enabled ?? false;
           setSettingsEnabled(d.settings_enabled ?? false);
           setWebPanelEnabled(d.web_panel_enabled ?? false);
           setNodesEnabled(nextNodesEnabled);
           setSyncEnabled(d.sync_enabled ?? nextNodesEnabled);
+          setInboxEnabled(d.inbox_enabled ?? false);
         },
       )
       .catch(() => {
@@ -93,6 +100,7 @@ export function App() {
         setWebPanelEnabled(false);
         setNodesEnabled(false);
         setSyncEnabled(false);
+        setInboxEnabled(false);
       });
   }, []);
 
@@ -134,11 +142,13 @@ export function App() {
   useEffect(() => {
     if (!webPanelEnabled && active === "web") setActive("terminal");
     if (!nodesEnabled && active === "nodes") setActive("terminal");
-  }, [webPanelEnabled, nodesEnabled, active]);
+    if (!inboxEnabled && active === "inbox") setActive("terminal");
+  }, [webPanelEnabled, nodesEnabled, inboxEnabled, active]);
 
   const panels = useMemo<{ id: PanelId; label: string; glyph: string }[]>(() => {
     const all: { id: PanelId; label: string; glyph: string }[] = [
       { id: "terminal", label: t("tabs.terminal"), glyph: "›_" },
+      { id: "inbox", label: t("tabs.inbox", "inbox"), glyph: "☰" },
       { id: "voice", label: t("tabs.voice", "voice"), glyph: "◎" },
       { id: "reading", label: t("tabs.reading"), glyph: "❑" },
       { id: "todo", label: t("tabs.openLoops"), glyph: "▣" },
@@ -150,11 +160,12 @@ export function App() {
       { id: "nodes", label: t("tabs.nodes", "nodes"), glyph: "◈" },
     ];
     return all.filter((p) => {
+      if (p.id === "inbox" && !inboxEnabled) return false;
       if (p.id === "web" && !webPanelEnabled) return false;
       if (p.id === "nodes" && !nodesEnabled) return false;
       return true;
     });
-  }, [t, webPanelEnabled, nodesEnabled]);
+  }, [t, inboxEnabled, webPanelEnabled, nodesEnabled]);
 
   useEffect(() => {
     const timer = setTimeout(() => setBootMessage(t("boot.steady")), 900);
@@ -245,6 +256,11 @@ export function App() {
           {visited.has("terminal") && (
             <div className="hosaka-panel" hidden={active !== "terminal"}>
               <TerminalPanel active={active === "terminal"} />
+            </div>
+          )}
+          {inboxEnabled && visited.has("inbox") && (
+            <div className="hosaka-panel" hidden={active !== "inbox"}>
+              <InboxPanel />
             </div>
           )}
           {visited.has("messages") && (

@@ -39,6 +39,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from hosaka.network import tailscale as ts
 from hosaka.web.beacon_registry import get_registry
+from hosaka.web import inbox_store
 
 log = logging.getLogger("hosaka.sync")
 
@@ -51,6 +52,7 @@ HOSAKA_PORT = int(os.getenv("HOSAKA_WEB_PORT", "8421"))
 # still relay (because we can't introspect encrypted payloads later), but
 # we won't persist snapshots for unknown docs — keep disk footprint tight.
 KNOWN_DOCS = {"todo", "messages", "ui", "lang", "llm"}
+SYNC_EVENTS_ENABLED = os.getenv("HOSAKA_SYNC_ENABLED", "1").strip().lower() in ("1", "true", "yes", "on")
 
 
 class SyncHub:
@@ -103,6 +105,15 @@ class SyncHub:
         if msg is None:
             return
 
+        if msg.get("type") == "event" and isinstance(msg.get("event"), dict):
+            row, is_new = inbox_store.ingest_event(msg["event"])
+            if not is_new:
+                return
+            payload = json.dumps({"type": "event", "event": row})
+            await self._fanout_local(payload, exclude=None)
+            await self._forward_to_peers(payload)
+            return
+
         self._persist(msg)
         await self._fanout_local(raw, exclude=None)
         await self._forward_to_peers(raw)
@@ -113,8 +124,19 @@ class SyncHub:
         msg = self._parse(raw)
         if msg is None:
             return
+        if msg.get("type") == "event" and isinstance(msg.get("event"), dict):
+            row, is_new = inbox_store.ingest_event(msg["event"])
+            if not is_new:
+                return
+            await self._fanout_local(json.dumps({"type": "event", "event": row}), exclude=None)
+            return
         self._persist(msg)
         await self._fanout_local(raw, exclude=None)
+
+    async def relay_event(self, event: dict[str, Any]) -> None:
+        payload = json.dumps({"type": "event", "event": event})
+        await self._fanout_local(payload, exclude=None)
+        await self._forward_to_peers(payload)
 
     # ── internals ──
 
@@ -277,6 +299,11 @@ class _PeerLink:
                             "doc": doc,
                             "b64": base64.b64encode(raw).decode("ascii"),
                         }))
+                    if SYNC_EVENTS_ENABLED:
+                        recent_events, _ = inbox_store.list_events(limit=128)
+                        for event in recent_events:
+                            if isinstance(event, dict):
+                                await ws.send(json.dumps({"type": "event", "event": event}))
                     async for raw in ws:
                         if isinstance(raw, (bytes, bytearray)):
                             raw = raw.decode("utf-8", errors="replace")
@@ -302,6 +329,18 @@ def get_hub() -> SyncHub:
     if _hub is None:
         _hub = SyncHub()
     return _hub
+
+
+def relay_inbox_event(event: dict[str, Any]) -> None:
+    """Best-effort relay of an inbox event to connected peers."""
+    if not SYNC_EVENTS_ENABLED:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    hub = get_hub()
+    loop.create_task(hub.relay_event(event))
 
 
 # ── endpoint ──────────────────────────────────────────────────────────────────

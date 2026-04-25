@@ -58,6 +58,19 @@ die()  { printf '  %s✗%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
 # ── helpers ──────────────────────────────────────────────────────────────────
 have_docker() { command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; }
 
+image_id_for_ref() {
+    local ref="$1"
+    docker image inspect "$ref" --format '{{.Id}}' 2>/dev/null || true
+}
+
+container_image_id() {
+    docker inspect "$HOSAKA_CONTAINER" --format '{{.Image}}' 2>/dev/null || true
+}
+
+image_digest_for_ref() {
+    docker image inspect "$ref" --format '{{index .RepoDigests 0}}' 2>/dev/null || true
+}
+
 current_link() {
     [ -f "$LINK_FILE" ] && tr -d '[:space:]' < "$LINK_FILE"
 }
@@ -202,14 +215,40 @@ cmd_status() {
 
 cmd_update() {
     have_docker || die "docker not available"
-    note "pulling $HOSAKA_IMAGE"
+    local before_local before_running after_local after_digest
+    before_local="$(image_id_for_ref "$HOSAKA_IMAGE")"
+    before_running="$(container_image_id)"
+
+    note "checking latest image for $HOSAKA_IMAGE"
     docker pull "$HOSAKA_IMAGE"
+
+    after_local="$(image_id_for_ref "$HOSAKA_IMAGE")"
+    after_digest="$(image_digest_for_ref "$HOSAKA_IMAGE")"
+
+    if [ -n "$after_digest" ]; then
+        note "latest digest: $after_digest"
+    fi
+
+    if [ -n "$before_local" ] && [ "$before_local" = "$after_local" ]; then
+        ok "image already current"
+        if container_running; then
+            ok "running node already matches local image"
+        fi
+        return 0
+    fi
+
     if container_running; then
-        note "restarting local node with fresh image"
+        if [ -n "$before_running" ] && [ "$before_running" = "$after_local" ]; then
+            ok "local cache refreshed; running node already on newest image"
+            return 0
+        fi
+        note "deploying newest image to local node"
         cmd_down
         cmd_up
+    else
+        note "newest image downloaded; start it with: hosaka up"
     fi
-    ok "updated"
+    ok "updated to newest image"
 }
 
 cmd_link() {

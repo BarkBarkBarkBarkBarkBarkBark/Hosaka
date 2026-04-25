@@ -24,10 +24,16 @@ import shutil
 import socket
 import subprocess
 import time
+import ipaddress
 from pathlib import Path
+from urllib.parse import urlparse
 
+import httpx
 from hosaka.ops.updater import APP_ROOT, UPDATE_SCRIPT
 from hosaka.web import channel_store as channel_store
+from hosaka.web import inbox_store as inbox_store
+from hosaka.web.beacon_registry import get_registry
+from hosaka.web.sync_ws import relay_inbox_event
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -238,6 +244,76 @@ class ChannelPostIn(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+InboxSeverity = Literal["info", "success", "warn", "error"]
+
+
+class InboxEventOut(BaseModel):
+    id: str
+    at: int
+    kind: Literal["notify", "ack"]
+    author: str
+    node_id: str
+    topic: str
+    severity: InboxSeverity
+    title: str
+    body: str
+    target: str
+    tags: list[str]
+    event_ref: Optional[str] = None
+    prev_hash: str
+    hash: str
+    acked: bool = False
+    ack_at: Optional[int] = None
+    ack_author: Optional[str] = None
+
+
+class InboxFeedOut(BaseModel):
+    chain_head: str
+    chain_ok: bool
+    node_id: str
+    notifications: list[InboxEventOut]
+
+
+class InboxPostIn(BaseModel):
+    title: str = Field(..., min_length=1, max_length=140)
+    body: str = Field("", max_length=4000)
+    author: str = Field("operator", max_length=64)
+    topic: str = Field("general", max_length=64)
+    severity: InboxSeverity = "info"
+    target: str = Field("broadcast", max_length=128)
+    tags: list[str] = Field(default_factory=list)
+
+
+class InboxAckIn(BaseModel):
+    author: str = Field("operator", max_length=64)
+
+
+class HttpHeaderIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=128)
+    value: str = Field(..., max_length=2000)
+
+
+class HttpGetIn(BaseModel):
+    url: str = Field(..., min_length=1, max_length=2000)
+    headers: list[HttpHeaderIn] = Field(default_factory=list)
+
+
+class HttpPostIn(BaseModel):
+    url: str = Field(..., min_length=1, max_length=2000)
+    headers: list[HttpHeaderIn] = Field(default_factory=list)
+    body: Optional[str] = Field(None, max_length=200000)
+    json_body: Optional[dict[str, Any]] = None
+
+
+class HttpResponseOut(BaseModel):
+    url: str
+    status: int
+    content_type: str
+    headers: dict[str, str]
+    body: str
+    truncated: bool = False
+
+
 # ── system info collectors ────────────────────────────────────────────────────
 
 
@@ -248,6 +324,91 @@ def _read_mode() -> ModeName:
     if raw == "console" or raw == "kiosk":
         return "console"
     return "device" if BOOT_MARKER.exists() else "console"
+
+
+def _local_node_id() -> str:
+    beacon = get_registry().local_beacon()
+    return str(beacon.get("node_id") or "unknown")
+
+
+HTTP_ALLOWED_HOSTS = [h.strip().lower() for h in os.getenv("HOSAKA_HTTP_ALLOWED_HOSTS", "").split(",") if h.strip()]
+HTTP_TIMEOUT = float(os.getenv("HOSAKA_HTTP_TIMEOUT", "15"))
+HTTP_MAX_BODY = int(os.getenv("HOSAKA_HTTP_MAX_BODY", "65536"))
+HTTP_ALLOW_PRIVATE = os.getenv("HOSAKA_HTTP_ALLOW_PRIVATE", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _host_allowed(host: str) -> bool:
+    if not HTTP_ALLOWED_HOSTS:
+        return False
+    host = host.lower().rstrip(".")
+    for allowed in HTTP_ALLOWED_HOSTS:
+        if allowed.startswith("."):
+            if host.endswith(allowed):
+                return True
+        elif host == allowed:
+            return True
+    return False
+
+
+def _assert_http_url_allowed(raw_url: str) -> str:
+    parsed = urlparse(raw_url)
+    if parsed.scheme not in {"http", "https"}:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "url must be http or https")
+    if not parsed.hostname:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "url missing hostname")
+
+    host = parsed.hostname.lower().rstrip(".")
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+
+    if ip is not None and not HTTP_ALLOW_PRIVATE:
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "private or loopback addresses are blocked")
+
+    if not _host_allowed(host):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "host not allowed; set HOSAKA_HTTP_ALLOWED_HOSTS to allow it",
+        )
+
+    return parsed.geturl()
+
+
+def _headers_to_dict(headers: list[HttpHeaderIn]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for item in headers:
+        name = item.name.strip()
+        if not name:
+            continue
+        out[name] = item.value
+    return out
+
+
+def _truncate_body(text: str) -> tuple[str, bool]:
+    if len(text) <= HTTP_MAX_BODY:
+        return text, False
+    return text[:HTTP_MAX_BODY], True
+
+
+async def _perform_http_request(method: str, url: str, *, headers: dict[str, str], body: str | None = None, json_body: dict[str, Any] | None = None) -> HttpResponseOut:
+    allowed_url = _assert_http_url_allowed(url)
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
+        response = await client.request(method, allowed_url, headers=headers, content=body, json=json_body)
+    raw_body = response.text
+    body_text, truncated = _truncate_body(raw_body)
+    safe_headers = {k: v for k, v in response.headers.items() if k.lower() in {
+        "content-type", "content-length", "cache-control", "etag", "last-modified", "location"
+    }}
+    return HttpResponseOut(
+        url=str(response.request.url),
+        status=response.status_code,
+        content_type=response.headers.get("content-type", ""),
+        headers=safe_headers,
+        body=body_text,
+        truncated=truncated,
+    )
 
 
 def _uptime_seconds() -> int:
@@ -649,4 +810,148 @@ def v1_channel_post(body: ChannelPostIn) -> ChannelMessageOut:
         parent_id=str(row["parent_id"]) if row.get("parent_id") else None,
         prev_hash=str(row.get("prev_hash", "")),
         hash=str(row["hash"]),
+    )
+
+
+# ── inbox / notifications (append-only gossipable event log) ─────────────────
+
+
+@router.get(
+    "/inbox/events",
+    response_model=InboxFeedOut,
+    summary="Append-only inbox / notification feed",
+    dependencies=[Depends(require_auth)],
+)
+def v1_inbox_events(limit: int = 200, topic: Optional[str] = None) -> InboxFeedOut:
+    rows, head, ok = inbox_store.list_notifications(limit=max(1, min(limit, 500)))
+    if topic:
+        wanted = topic.strip().lower()
+        rows = [row for row in rows if str(row.get("topic") or "").lower() == wanted]
+    out: list[InboxEventOut] = []
+    for row in rows:
+        try:
+            out.append(InboxEventOut(
+                id=str(row["id"]),
+                at=int(row["at"]),
+                kind=str(row.get("kind") or "notify"),
+                author=str(row.get("author") or "operator"),
+                node_id=str(row.get("node_id") or "unknown"),
+                topic=str(row.get("topic") or "general"),
+                severity=str(row.get("severity") or "info"),
+                title=str(row.get("title") or ""),
+                body=str(row.get("body") or ""),
+                target=str(row.get("target") or "broadcast"),
+                tags=list(row.get("tags") or []),
+                event_ref=str(row["event_ref"]) if row.get("event_ref") else None,
+                prev_hash=str(row.get("prev_hash") or ""),
+                hash=str(row.get("hash") or ""),
+                acked=bool(row.get("acked", False)),
+                ack_at=int(row["ack_at"]) if row.get("ack_at") else None,
+                ack_author=str(row["ack_author"]) if row.get("ack_author") else None,
+            ))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return InboxFeedOut(chain_head=head, chain_ok=ok, node_id=_local_node_id(), notifications=out)
+
+
+@router.post(
+    "/inbox/events",
+    response_model=InboxEventOut,
+    summary="Append a notification event",
+    dependencies=[Depends(require_write)],
+)
+def v1_inbox_post(body: InboxPostIn) -> InboxEventOut:
+    try:
+        row = inbox_store.append_notification(
+            body.title,
+            body.body,
+            author=body.author,
+            node_id=_local_node_id(),
+            topic=body.topic,
+            severity=body.severity,
+            target=body.target,
+            tags=body.tags,
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    relay_inbox_event(row)
+    return InboxEventOut(
+        id=str(row["id"]),
+        at=int(row["at"]),
+        kind=str(row["kind"]),
+        author=str(row.get("author") or "operator"),
+        node_id=str(row.get("node_id") or "unknown"),
+        topic=str(row.get("topic") or "general"),
+        severity=str(row.get("severity") or "info"),
+        title=str(row.get("title") or ""),
+        body=str(row.get("body") or ""),
+        target=str(row.get("target") or "broadcast"),
+        tags=list(row.get("tags") or []),
+        event_ref=str(row["event_ref"]) if row.get("event_ref") else None,
+        prev_hash=str(row.get("prev_hash") or ""),
+        hash=str(row.get("hash") or ""),
+    )
+
+
+@router.post(
+    "/inbox/events/{event_id}/ack",
+    response_model=InboxEventOut,
+    summary="Append an acknowledgement event for a notification",
+    dependencies=[Depends(require_write)],
+)
+def v1_inbox_ack(event_id: str, body: Optional[InboxAckIn] = None) -> InboxEventOut:
+    try:
+        row = inbox_store.append_ack(
+            event_id,
+            author=(body.author if body else "operator"),
+            node_id=_local_node_id(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    relay_inbox_event(row)
+    return InboxEventOut(
+        id=str(row["id"]),
+        at=int(row["at"]),
+        kind=str(row["kind"]),
+        author=str(row.get("author") or "operator"),
+        node_id=str(row.get("node_id") or "unknown"),
+        topic=str(row.get("topic") or "general"),
+        severity=str(row.get("severity") or "success"),
+        title=str(row.get("title") or ""),
+        body=str(row.get("body") or ""),
+        target=str(row.get("target") or "broadcast"),
+        tags=list(row.get("tags") or []),
+        event_ref=str(row["event_ref"]) if row.get("event_ref") else None,
+        prev_hash=str(row.get("prev_hash") or ""),
+        hash=str(row.get("hash") or ""),
+    )
+
+
+@router.post(
+    "/http/get",
+    response_model=HttpResponseOut,
+    summary="Perform an allowlisted outbound HTTP GET",
+    dependencies=[Depends(require_write)],
+)
+async def v1_http_get(body: HttpGetIn) -> HttpResponseOut:
+    return await _perform_http_request(
+        "GET",
+        body.url,
+        headers=_headers_to_dict(body.headers),
+    )
+
+
+@router.post(
+    "/http/post",
+    response_model=HttpResponseOut,
+    summary="Perform an allowlisted outbound HTTP POST",
+    dependencies=[Depends(require_write)],
+)
+async def v1_http_post(body: HttpPostIn) -> HttpResponseOut:
+    return await _perform_http_request(
+        "POST",
+        body.url,
+        headers=_headers_to_dict(body.headers),
+        body=body.body,
+        json_body=body.json_body,
     )

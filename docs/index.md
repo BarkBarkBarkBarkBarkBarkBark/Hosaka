@@ -48,5 +48,12 @@ hosakactl mode device --persist
    page, `hosakactl wifi add`, TTY hotkey).
 4. [Beacon protocol](beacon_protocol.md) — how Hosaka nodes advertise
    presence, commit, and capability metadata on the tailnet.
-5. [Claims audit](claims.md) — what this codebase actually does vs. what older
+5. [Inbox / notifications](inbox_notifications.md) — append-only operator
+   notices and acknowledgements, with optional peer gossip.
+6. [Local bridge + gateway implementation](local_bridge_gateway.md) — how to
+   add a safe localhost handoff bridge, which keys you need, and how to verify
+   the Docker runtime before you expose anything.
+7. [HTTP GET / POST surface](http_surface.md) — allowlisted outbound HTTP for
+   agent/operator workflows.
+8. [Claims audit](claims.md) — what this codebase actually does vs. what older
    docs claimed it did.

@@ -61,12 +61,14 @@ if PUBLIC_MODE:
     NODES_UI_ENABLED = False
     TAILSCALE_API_ENABLED = False
     SYNC_ENABLED = False
+    INBOX_ENABLED = False
 else:
     SETTINGS_ENABLED = _env_flag("HOSAKA_SETTINGS_ENABLED", True)
     WEB_PANEL_ENABLED = _env_flag("HOSAKA_WEB_PANEL_ENABLED", True)
     NODES_UI_ENABLED = _env_flag("HOSAKA_NODES_UI_ENABLED", True)
     TAILSCALE_API_ENABLED = _env_flag("HOSAKA_TAILSCALE_API_ENABLED", NODES_UI_ENABLED)
     SYNC_ENABLED = _env_flag("HOSAKA_SYNC_ENABLED", NODES_UI_ENABLED)
+    INBOX_ENABLED = _env_flag("HOSAKA_INBOX_ENABLED", True)
 
 # picoclaw
 ACCESS_TOKEN = os.environ.get("HOSAKA_ACCESS_TOKEN", "").strip()
@@ -456,6 +458,7 @@ def health() -> JSONResponse:
         "nodes_ui_enabled": NODES_UI_ENABLED,
         "tailscale_api_enabled": TAILSCALE_API_ENABLED,
         "sync_enabled": SYNC_ENABLED,
+        "inbox_enabled": INBOX_ENABLED,
     })
 
 
