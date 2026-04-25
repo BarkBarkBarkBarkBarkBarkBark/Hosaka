@@ -1,22 +1,24 @@
 [Unit]
 Description=Hosaka Web Server (FastAPI — serves SPA + API)
-# We bind to 127.0.0.1 only, so we don't actually need the network to be up
-# before we start. Dropping network-online.target shaves 3-8 s off boot on
-# the Pi 3B, which is otherwise spent waiting for a wired NIC that isn't
-# always present.
+# Default bind is loopback for the appliance's local kiosk path, but operators
+# can override HOSAKA_WEB_HOST=0.0.0.0 in /etc/hosaka/env when they want the
+# node to be reachable over Tailscale/LAN for Hosaka peer discovery.
+# We still don't need network-online.target here; the service can come up
+# before the network does and start answering once the interface arrives.
 After=local-fs.target
 After=hosaka-mode.service
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/hosaka-field-terminal
+Environment=HOSAKA_WEB_HOST=127.0.0.1
 EnvironmentFile=-/etc/hosaka/env
 Environment=HOSAKA_STATE_PATH=/var/lib/hosaka/state.json
 Environment=HOSAKA_BOOT_MODE=kiosk
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/hosaka-field-terminal/.venv/bin/uvicorn \
     hosaka.web.server:app \
-    --host 127.0.0.1 \
+    --host ${HOSAKA_WEB_HOST} \
     --port 8421 \
     --workers 1 \
     --log-level info
