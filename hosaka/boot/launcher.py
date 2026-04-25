@@ -148,6 +148,7 @@ def start_picoclaw_gateway() -> subprocess.Popen | None:  # type: ignore[type-ar
     except OSError:
         pass
 
+
     try:
         proc = subprocess.Popen(  # noqa: S603
             ["picoclaw", "gateway"],
@@ -165,6 +166,41 @@ def start_picoclaw_gateway() -> subprocess.Popen | None:  # type: ignore[type-ar
     except Exception as exc:  # noqa: BLE001
         print(f"Hosaka: could not start picoclaw gateway: {exc}")
         return None
+
+def start_tailscaled() -> subprocess.Popen | None:  # type: ignore[type-arg]
+    """Start the Tailscale daemon in userspace networking mode if available."""
+    if not shutil.which("tailscaled"):
+        return None
+    socket_path = "/var/run/tailscale/tailscaled.sock"
+    if os.path.exists(socket_path):
+        # Is it responding?
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                sock.connect(socket_path)
+            return None # Already listening
+        except OSError:
+            try:
+                os.remove(socket_path)
+            except OSError:
+                pass
+    try:
+        os.makedirs("/var/run/tailscale", exist_ok=True)
+    except OSError:
+        pass
+
+    print("Hosaka: starting Tailscale daemon (userspace networking)")
+    try:
+        log_path = Path("/var/log/hosaka/tailscaled.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_fp = open(log_path, "a", encoding="utf-8", buffering=1)
+    except OSError:
+        log_fp = subprocess.DEVNULL
+
+    return subprocess.Popen(
+        ["tailscaled", "--tun=userspace-networking", "--socks5-server=localhost:1055"],
+        stdout=log_fp,
+        stderr=log_fp,
+    )
 
 
 # ── main entry ────────────────────────────────────────────────────────────────
@@ -208,6 +244,7 @@ def launch() -> None:
     web_url = f"http://{orchestrator.state.local_ip}:{WEB_PORT}"
     web_process = start_web_server()
 
+    start_tailscaled()
     start_picoclaw_gateway()
 
     web_primary = BOOT_MODE in _WEB_PRIMARY_MODES
