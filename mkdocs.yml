@@ -27,6 +27,7 @@ nav:
   - Beacon protocol: beacon_protocol.md
   - Inbox / notifications: inbox_notifications.md
   - Local bridge + gateway implementation: local_bridge_gateway.md
+  - Hosaka doctor: doctor.md
   - HTTP GET / POST surface: http_surface.md
   - Adding a panel: panels.md
   - Sync ACL design (Phase 4): sync_acl_design.md

@@ -100,6 +100,8 @@ Implementation notes for the next phase live here too:
 
 - [`docs/local_bridge_gateway.md`](./docs/local_bridge_gateway.md) — local bridge,
   managed Fly gateway, required keys, and Docker initialization checks.
+- [`docs/doctor.md`](./docs/doctor.md) — the new `hosaka doctor` diagnostic
+  surface, designed to evolve cleanly into an MCP-friendly health/report tool.
 - [`docs/http_surface.md`](./docs/http_surface.md) — the allowlisted outbound
   HTTP GET/POST surface that ships with the Hosaka console.
 

@@ -53,7 +53,9 @@ hosakactl mode device --persist
 6. [Local bridge + gateway implementation](local_bridge_gateway.md) — how to
    add a safe localhost handoff bridge, which keys you need, and how to verify
    the Docker runtime before you expose anything.
-7. [HTTP GET / POST surface](http_surface.md) — allowlisted outbound HTTP for
+7. [Hosaka doctor](doctor.md) — structured runtime diagnostics for operators,
+   with an output shape that can later map cleanly into MCP.
+8. [HTTP GET / POST surface](http_surface.md) — allowlisted outbound HTTP for
    agent/operator workflows.
-8. [Claims audit](claims.md) — what this codebase actually does vs. what older
+9. [Claims audit](claims.md) — what this codebase actually does vs. what older
    docs claimed it did.

@@ -15,6 +15,7 @@
 # Convenience verbs:
 #
 #   hosaka status                  what's running, RAM/CPU snapshot
+#   hosaka doctor [flags]          end-to-end diagnostics (runtime, tailscale, drift)
 #   hosaka build [--check]         npm build (check = with tsc gate)
 #   hosaka update [--check]        git pull + build + rsync + restart webserver
 #   hosaka deploy [--check]        build + rsync into /opt + restart webserver
@@ -432,6 +433,24 @@ _ensure_picoclaw() {
   [[ -x "$PICOCLAW_BIN" ]] || die "picoclaw not found at $PICOCLAW_BIN (set PICOCLAW_BIN=...)"
 }
 
+_hosaka_python() {
+  local candidate
+  for candidate in \
+    "$REPO_ROOT/.venv/bin/python" \
+    "$(cd "$REPO_ROOT/.." && pwd)/.venv/bin/python" \
+  ; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  if command -v python >/dev/null 2>&1; then
+    command -v python
+    return 0
+  fi
+  die "no python available for hosaka commands"
+}
+
 _split_session_args() {
   # Pulls an optional leading `-s <name>` / `--session <name>` out of "$@"
   # and exports SESSION_OVERRIDE. Remaining args are left in REST[@].
@@ -472,14 +491,14 @@ cmd_tui() {
   # Full console with /chat, plant, ops, etc. Runs via the same venv the
   # webserver uses so hosaka.tui imports resolve without PYTHONPATH games.
   local py
-  if [[ -x "$REPO_ROOT/.venv/bin/python" ]]; then
-    py="$REPO_ROOT/.venv/bin/python"
-  elif command -v python >/dev/null 2>&1; then
-    py="$(command -v python)"
-  else
-    die "no python available for hosaka tui"
-  fi
+  py="$(_hosaka_python)"
   ( cd "$REPO_ROOT" && exec "$py" -m hosaka "$@" )
+}
+
+cmd_doctor() {
+  local py
+  py="$(_hosaka_python)"
+  ( cd "$REPO_ROOT" && exec "$py" -m hosaka.doctor "$@" )
 }
 
 # ── dispatch ──────────────────────────────────────────────────────────────────
@@ -502,6 +521,8 @@ hosaka — operator CLI for the Hosaka Field Terminal Pi
 
   hosaka status                     what's running + memory snapshot
   hosaka dashboard                  print the device dashboard once and exit
+  hosaka doctor [--json] [--strict] [--profile PROFILE] [--host URL]
+                                    run structured diagnostics; future MCP-friendly
   hosaka build [--check]            npm run build (--check runs tsc gate first)
   hosaka update [--check] [--branch BRANCH]
                                     git pull + deploy from this checkout
@@ -537,6 +558,7 @@ main() {
       ;;
     status)    cmd_status "$@" ;;
     dashboard) exec /usr/local/bin/hosaka-device-dashboard --once ;;
+    doctor)    cmd_doctor "$@" ;;
     build)     cmd_build "$@" ;;
     update)    cmd_update "$@" ;;
     deploy)    cmd_deploy "$@" ;;
