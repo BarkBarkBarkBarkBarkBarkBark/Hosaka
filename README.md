@@ -383,90 +383,102 @@ Hours of inactivity drain it. Reach colony state and it records a birth.
 
 ## Voice mode
 
-Talk to Hosaka. Wake word + OpenAI Realtime + a webcam for the `see()`
-tool. Runs in two places:
+Hosaka is now voice-first. The `◎ voice` tab opens a full-screen orb
+that acts as the primary control surface. On 5-inch and similar small
+screens the orb fills the display; tap **▲ transcript** to slide up a
+drawer with the conversation history, mode selector, and camera controls.
 
-- **Kiosk panel** — tap the `◎ voice` tab, hit the orb, say something.
-  Uses browser `getUserMedia` + WebRTC to OpenAI; the API key never
-  leaves the Pi (the backend mints a short-lived session token).
-- **Headless daemon** — `hosaka voice` (or the `hosaka-voice.service`
-  unit). Runs across the room with a USB mic/speaker; default wake
-  word is "hey jarvis" because that model is bundled with
-  openwakeword. A custom "hey hosaka" needs training — see
-  [openwakeword docs](https://github.com/dscripka/openWakeWord#training-new-models).
+### Two-lane architecture
 
-### Install
+Voice runs two lanes simultaneously:
 
-```bash
-./scripts/install_voice_deps.sh     # apt: portaudio, alsa, v4l, ffmpeg
-                                    # pip: sounddevice, openwakeword, opencv, ...
-export OPENAI_API_KEY=sk-...        # or put in /etc/hosaka/env
-```
+| Lane | Path | What it does |
+|------|------|-------------|
+| **Realtime** | Browser WebRTC → OpenAI Realtime API | Instant voice-to-voice. The model's "conscience" — personality, small talk, quick answers. |
+| **Agent** | Browser → Whisper STT → PicoClaw → reply | Real machine work: shell, git, file ops, repo inspection. Runs in the background. Hosaka acknowledges immediately, chimes when the result lands. |
 
-### Run
+Switch between lanes with the **local agent / openai realtime** toggle
+in the drawer. Public deployments stay locked to the Realtime demo lane;
+local builds expose both.
 
-```bash
-hosaka voice                         # foreground daemon
-# or inside the Hosaka console:
-/voice
+### Interaction
 
-# or as a systemd unit on the appliance:
-sudo cp systemd/hosaka-voice.service /etc/systemd/system/
-sudo systemctl enable --now hosaka-voice
-```
+- **Agent lane (hold to talk):** hold the orb → speak → release.
+  The UI immediately echoes "heard you. working on it." while PicoClaw
+  works. A two-tone chime signals completion and the reply appears.
+- **Realtime lane (tap to toggle):** tap the orb once to open the
+  WebRTC session; tap again to close. The model speaks back through
+  your browser's audio output.
 
-### Tools exposed to the voice
+### Tools the Realtime session can call
 
-The Realtime session has five tools it can call mid-conversation.
-Four are thin; the fifth hands off to the full agent:
+| Tool | What it does |
+|------|-------------|
+| `todo_add` | Appends to `~/.hosaka/voice_todos.jsonl`, mirrored into the Todo panel |
+| `set_mode` | Switches console/device mode |
+| `get_status` | Host · uptime · free RAM · CPU temperature |
+| `see` | Grabs a camera frame, runs vision, speaks the caption |
+| `ask_agent` | Hands the prompt to PicoClaw for real agentic tool use |
 
-| Tool         | What it does                                    |
-|--------------|-------------------------------------------------|
-| `todo_add`   | Appends to `~/.hosaka/voice_todos.jsonl` (the VoicePanel mirrors it into the Todo panel) |
-| `set_mode`   | Switches console/device mode via `hosaka mode`  |
-| `get_status` | One-line summary: host, uptime, free RAM, CPU C |
-| `see`        | Grabs a JPEG, runs `gpt-4o-mini` vision, speaks the caption |
-| `ask_agent`  | Routes to picoclaw for real agentic tool use (shell, git, files) |
+When you say "run `ls -la`" or "what's the biggest file in my home
+directory", the Realtime model calls `ask_agent` which routes to
+PicoClaw — the same code path as the Agent lane.
 
-If you say "what do you see" / "describe the room" the model calls
-`see()`. If you say "run `ls -la`" / "what's the biggest file in my
-home dir" it should say "on it" and hand off to `ask_agent`.
+### Audio format
+
+The browser records `audio/webm;codecs=opus`. Hosaka strips the codec
+parameter before sending to OpenAI Whisper, which only accepts bare
+MIME types. The filename extension is inferred from the content-type so
+Whisper can sniff the container format.
 
 ### Env knobs
 
-| Variable                          | Default                    | Note |
-|-----------------------------------|----------------------------|------|
-| `OPENAI_API_KEY`                  | —                          | Reuses the one `openai_adapter.py` already picks up |
-| `HOSAKA_VOICE_MODEL`              | `gpt-4o-realtime-preview`  | Whatever latest realtime SKU you pay for |
-| `HOSAKA_VOICE_VOICE`              | `verse`                    | One of the Realtime voice presets |
-| `HOSAKA_VOICE_WAKEWORD`           | `hey_jarvis`               | openwakeword preset or path to `.onnx` |
-| `HOSAKA_VOICE_WAKE_THRESHOLD`     | `0.5`                      | 0-1 trigger confidence |
-| `HOSAKA_VOICE_INPUT_DEVICE`       | system default             | sounddevice index or name (see `python -c "import sounddevice as sd;print(sd.query_devices())"`) |
-| `HOSAKA_VOICE_OUTPUT_DEVICE`      | system default             | same, for the speaker |
-| `HOSAKA_VOICE_CAMERA`             | `/dev/video0`              | V4L2 device path or numeric index |
-| `HOSAKA_VOICE_VISION_MODEL`       | `gpt-4o-mini`              | For the `see()` tool |
-| `HOSAKA_VOICE_TURN_TIMEOUT`       | `45`                       | Hard cap on one turn's mic time, seconds |
+| Variable | Default | Note |
+|---|---|---|
+| `OPENAI_API_KEY` | — | Reused from the LLM config; never sent to the browser |
+| `HOSAKA_VOICE_MODEL` | `gpt-4o-realtime-preview` | Realtime model SKU |
+| `HOSAKA_VOICE_VOICE` | `verse` | Realtime voice preset |
+| `HOSAKA_VOICE_TRANSCRIBE_MODEL` | `whisper-1` | STT model for the Agent lane |
+| `HOSAKA_VOICE_CAMERA` | `/dev/video0` | V4L2 device for the `see()` tool |
+| `HOSAKA_VOICE_VISION_MODEL` | `gpt-4o-mini` | Vision model for `see()` |
+| `HOSAKA_PUBLIC_MODE` | unset | `1` locks the voice panel to Realtime demo only |
 
-### Echo + half-duplex
+### Small-screen / kiosk layout
 
-We mute the microphone while Hosaka is speaking (the daemon's audio
-callback gates the input queue; the browser relies on the standard
-`echoCancellation: true` WebRTC constraint). This is the cheapest way
-to prevent the wake word from firing on Hosaka's own voice. If you
-want full-duplex (interrupt while it's talking), you need a real AEC —
-`speexdsp-python` on Pi will work, patches welcome.
+At ≤ 720 px the orb expands to fill the panel (≈ 72 vw). The transcript,
+mode selector, and camera controls live in a slide-up drawer triggered
+by the **▲ transcript** button at the bottom of the orb stage. This is
+the intended layout for a 5-inch HDMI display running the Electron kiosk.
 
-### Hardware notes
+### Headless daemon
 
-- A USB webcam with a built-in mic is the easiest wiring — the mic
-  shows up as a separate ALSA card; set `HOSAKA_VOICE_INPUT_DEVICE`
-  to that card's index.
-- The Pi 3B's built-in audio jack is fine for output. Anything louder
-  wants a USB speaker or a DAC.
-- `picoclaw` is a *soft* dependency — `ask_agent` falls back to
-  plain `gpt-4o-mini` chat when picoclaw isn't on the path.
+```bash
+hosaka voice                      # foreground mic/speaker daemon
+sudo systemctl enable --now hosaka-voice   # or as a systemd unit
+```
 
----
+The daemon uses the same tool surface as the browser panel, including
+`ask_agent` → PicoClaw. Wake word default is `hey_jarvis` (bundled
+openwakeword model); custom `hey hosaka` requires training — see
+[openwakeword docs](https://github.com/dscripka/openWakeWord#training-new-models).
+
+### Install voice deps
+
+```bash
+./scripts/install_voice_deps.sh   # portaudio, alsa, v4l, ffmpeg, sounddevice, …
+export OPENAI_API_KEY=sk-…
+```
+
+### Architecture notes (future self)
+
+The natural next step is feeding PicoClaw's `spoken` reply into the
+Realtime session's audio output so the agent lane can *talk back*
+without a second round-trip to the Realtime API. The structured
+`{ spoken, thought, did_work }` payload from `run_agent_voice_turn()`
+is already designed for this. See [`docs/voice.md`](./docs/voice.md)
+for full status, known gaps, and roadmap.
+
+
 
 ## Configuration
 

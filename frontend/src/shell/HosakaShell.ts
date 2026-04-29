@@ -37,6 +37,7 @@ import {
   newPortTracker,
   trackPacket,
 } from "./netscan";
+import { executeHosakaUiCommand } from "../ui/hosakaUi";
 
 // ANSI helpers
 const ESC = "\x1b[";
@@ -712,7 +713,7 @@ export class HosakaShell {
 
   private openSettings(): void {
     try {
-      window.dispatchEvent(new CustomEvent("hosaka:open-settings"));
+      executeHosakaUiCommand({ id: "ui.open_settings" });
       this.writeln(`  ${GRAY}${st("settingsCmd.opened")}${R}`);
     } catch {
       this.writeln(`  ${GRAY}${st("settingsCmd.notAvailable")}${R}`);
@@ -909,42 +910,34 @@ export class HosakaShell {
   }
 
   private switchToPanel(name: string): void {
-    const map: Record<string, string> = {
-      terminal: "terminal",
-      messages: "messages",
-      reading: "reading",
-      todo: "todo",
-      video: "video",
-      games: "games",
-      wiki: "wiki",
-      web: "web",
-      books: "books",
-    };
-    const id = map[name];
-    if (!id) {
+    const result = executeHosakaUiCommand({ id: "ui.open_panel", target: name });
+    if (!result.ok) {
       this.writeln(`  ${GRAY}${st("switchTab", { panel: name })}${R}`);
       return;
     }
-    window.dispatchEvent(
-      new CustomEvent("hosaka:open-tab", { detail: id }),
-    );
     this.writeln(`  ${GRAY}${st("panel.opened", { panel: name })}${R}`);
   }
 
   private openWebPreset(presetId: string): void {
-    window.dispatchEvent(new CustomEvent("hosaka:open-tab", { detail: "web" }));
-    window.dispatchEvent(new CustomEvent("hosaka:web-preset", { detail: presetId }));
+    const result = executeHosakaUiCommand({ id: "ui.open_web_preset", preset: presetId });
+    if (!result.ok) {
+      this.writeln(`  ${GRAY}${st("switchTab", { panel: presetId })}${R}`);
+      return;
+    }
     this.writeln(`  ${GRAY}${st("webPreset.opening", { preset: presetId })}${R}`);
   }
 
   private handleWeb(target: string): void {
-    window.dispatchEvent(new CustomEvent("hosaka:open-tab", { detail: "web" }));
+    const result = executeHosakaUiCommand({ id: "ui.open_web_target", target });
+    if (!result.ok) {
+      this.writeln(`  ${GRAY}${st("switchTab", { panel: "web" })}${R}`);
+      return;
+    }
     const trimmed = target.trim();
     if (!trimmed) {
       this.writeln(`  ${GRAY}${st("panel.opened", { panel: "web" })}${R}`);
       return;
     }
-    window.dispatchEvent(new CustomEvent("hosaka:web-open", { detail: trimmed }));
     this.writeln(`  ${GRAY}${st("webOpen.opening", { target: trimmed })}${R}`);
   }
 
@@ -1094,14 +1087,13 @@ export class HosakaShell {
       this.writeln(`  ${GRAY}${st("read.useLocal")}${R}`);
       return;
     }
-    window.dispatchEvent(new CustomEvent("hosaka:read", { detail: arg }));
-    window.dispatchEvent(new CustomEvent("hosaka:open-tab", { detail: "reading" }));
+    executeHosakaUiCommand({ id: "ui.show_document", slug: arg });
     this.writeln(`  ${GRAY}${st("read.opening", { slug: arg })}${R}`);
   }
 
   private handleTodo(arg: string): void {
     if (!arg) {
-      window.dispatchEvent(new CustomEvent("hosaka:open-tab", { detail: "todo" }));
+      executeHosakaUiCommand({ id: "ui.open_panel", target: "todo" });
       this.writeln(`  ${GRAY}${st("todoCmd.openedPanel")}${R}`);
       return;
     }
@@ -1113,7 +1105,7 @@ export class HosakaShell {
         this.writeln(`  ${GRAY}${st("todoCmd.addUsage")}${R}`);
         return;
       }
-      window.dispatchEvent(new CustomEvent("hosaka:todo-add", { detail: text }));
+      executeHosakaUiCommand({ id: "ui.todo_add", text });
       this.writeln(`  ${GRAY}${st("todoCmd.loopOpened")} ${CYAN}${text}${R}`);
       return;
     }
@@ -1153,12 +1145,12 @@ export class HosakaShell {
   }
 
   private handleBooks(arg: string): void {
-    window.dispatchEvent(new CustomEvent("hosaka:open-tab", { detail: "books" }));
     if (!arg) {
+      executeHosakaUiCommand({ id: "ui.open_panel", target: "books" });
       this.writeln(`  ${GRAY}${st("booksCmd.openedPanel")}${R}`);
       return;
     }
-    window.dispatchEvent(new CustomEvent("hosaka:books-search", { detail: arg }));
+    executeHosakaUiCommand({ id: "ui.search_books", query: arg });
     this.writeln(`  ${GRAY}${st("booksCmd.searching")} ${CYAN}${arg}${R}`);
   }
 

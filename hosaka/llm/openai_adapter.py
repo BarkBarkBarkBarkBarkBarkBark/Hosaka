@@ -11,6 +11,7 @@ import httpx
 
 _OPENAI_DEFAULT_BASE = "https://api.openai.com"
 REQUEST_TIMEOUT = float(os.getenv("HOSAKA_CHAT_TIMEOUT", "120"))
+TRANSCRIBE_TIMEOUT = float(os.getenv("HOSAKA_TRANSCRIBE_TIMEOUT", "120"))
 
 
 def _base_url() -> str:
@@ -19,6 +20,10 @@ def _base_url() -> str:
 
 def _chat_url() -> str:
     return f"{_base_url()}/v1/chat/completions"
+
+
+def _transcriptions_url() -> str:
+    return f"{_base_url()}/v1/audio/transcriptions"
 
 
 def _picoclaw_config_path() -> Path:
@@ -159,3 +164,63 @@ def chat_sync(messages: list[dict[str, str]]) -> str:
         resp = client.post(_chat_url(), json=payload, headers=headers)
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"]
+
+
+async def transcribe_audio_bytes(
+    audio_bytes: bytes,
+    *,
+    filename: str = "voice.webm",
+    content_type: str = "audio/webm",
+    model: str | None = None,
+    prompt: str | None = None,
+    language: str | None = None,
+) -> str:
+    """Run OpenAI audio transcription over raw uploaded audio bytes."""
+    key = _api_key()
+    if not key:
+        raise RuntimeError("OPENAI_API_KEY is not set.")
+
+    data: dict[str, str] = {
+        "model": (model or os.getenv("HOSAKA_VOICE_TRANSCRIBE_MODEL", "whisper-1")).strip() or "whisper-1",
+        "response_format": "json",
+    }
+    if prompt:
+        data["prompt"] = prompt
+    if language:
+        data["language"] = language
+
+    # OpenAI Whisper only accepts bare media types without codec parameters.
+    # Strip anything after the first semicolon (e.g. "audio/webm;codecs=opus" → "audio/webm").
+    bare_type = (content_type or "audio/webm").split(";")[0].strip().lower()
+
+    # Map the media type to an extension Whisper accepts.  If the caller
+    # already gave a well-formed filename we keep it; otherwise we derive one.
+    _MIME_TO_EXT: dict[str, str] = {
+        "audio/webm": "webm",
+        "audio/ogg": "ogg",
+        "audio/mp4": "m4a",
+        "audio/mpeg": "mp3",
+        "audio/mpga": "mp3",
+        "audio/wav": "wav",
+        "audio/x-wav": "wav",
+        "audio/flac": "flac",
+        "video/webm": "webm",
+        "video/mp4": "mp4",
+    }
+    ext = _MIME_TO_EXT.get(bare_type, "webm")
+    # Ensure the filename has a matching extension so Whisper can sniff the format.
+    import posixpath
+    base, _, old_ext = filename.rpartition(".")
+    if old_ext.lower() not in _MIME_TO_EXT.values():
+        filename = f"{filename}.{ext}" if not base else f"{base}.{ext}"
+
+    files = {
+        "file": (filename, audio_bytes, bare_type),
+    }
+    headers = {"Authorization": f"Bearer {key}"}
+
+    async with httpx.AsyncClient(timeout=TRANSCRIBE_TIMEOUT) as client:
+        resp = await client.post(_transcriptions_url(), data=data, files=files, headers=headers)
+        resp.raise_for_status()
+        payload = resp.json()
+        return str(payload.get("text") or "").strip()

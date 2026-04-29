@@ -18,19 +18,80 @@ the rest of the v1 surface.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
+import time
+import uuid
+from urllib.parse import urlparse
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Response
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, Response, UploadFile
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from hosaka.llm.openai_adapter import resolve_api_key
-from hosaka.web.api_v1 import require_auth, require_write
+from hosaka.web.api_v1 import _is_loopback, _load_token, require_auth
 from hosaka.voice import tools as voice_tools
 
 log = logging.getLogger("hosaka.web.voice")
 
 router = APIRouter(prefix="/api/v1/voice", tags=["voice"])
+_bearer = HTTPBearer(auto_error=False)
+_VOICE_JOB_TTL_SECONDS = 15 * 60
+_voice_jobs: dict[str, dict[str, Any]] = {}
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+PUBLIC_MODE = _env_flag("HOSAKA_PUBLIC_MODE", False)
+
+
+def _is_same_origin_browser(req) -> bool:
+    host = (req.headers.get("host") or "").split(":", 1)[0].strip().lower()
+    if not host:
+        return False
+    for key in ("origin", "referer"):
+        raw = (req.headers.get(key) or "").strip()
+        if not raw:
+            continue
+        try:
+            parsed = urlparse(raw)
+        except ValueError:
+            continue
+        if (parsed.hostname or "").strip().lower() == host:
+            return True
+    return False
+
+
+def require_voice_write(
+    req: Request,
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> None:
+    """Allow writes from the hosted SPA even when Docker hides loopback.
+
+    In local dev the browser talks to the container through a bridge IP, so
+    the client no longer looks like 127.0.0.1. Same-origin requests from the
+    Hosaka UI should still be treated as trusted local control-surface writes.
+    """
+    if _is_loopback(req) or _is_same_origin_browser(req):
+        return
+    expected = _load_token()
+    if not expected:
+        raise HTTPException(403, "no API token configured on this Pi")
+    if creds and creds.scheme.lower() == "bearer" and creds.credentials == expected:
+        return
+    raise HTTPException(401, "missing or invalid bearer token")
+
+
+def require_local_voice_agent() -> None:
+    if PUBLIC_MODE:
+        raise HTTPException(403, "local voice agent is disabled in public mode")
 
 
 # ── models ───────────────────────────────────────────────────────────────
@@ -70,6 +131,36 @@ class VoiceTodoOut(BaseModel):
 
 class VoiceTodosOut(BaseModel):
     todos: list[VoiceTodoOut]
+
+
+class AgentTurnOut(BaseModel):
+    ok: bool
+    operator_text: str
+    spoken_text: str
+    internal_note: str = ""
+    used_backend: str = "picoclaw"
+    transcript_visibility: str = "operator+status"
+
+
+class AgentJobCreateOut(BaseModel):
+    ok: bool
+    job_id: str
+    status: str
+    spoken_text: str = ""
+    internal_note: str = ""
+    used_backend: str = "picoclaw"
+
+
+class AgentJobOut(BaseModel):
+    ok: bool
+    job_id: str
+    status: str
+    operator_text: str = ""
+    spoken_text: str = ""
+    internal_note: str = ""
+    used_backend: str = "picoclaw"
+    error: str = ""
+    done: bool = False
 
 
 # ── ephemeral token ──────────────────────────────────────────────────────
@@ -128,13 +219,206 @@ async def voice_ephemeral_token() -> EphemeralOut:
     "/tools/{name}",
     response_model=ToolOut,
     summary="Run a voice tool server-side (called by the browser on function_call events)",
-    dependencies=[Depends(require_write)],
+    dependencies=[Depends(require_voice_write)],
 )
 def voice_tool_dispatch(name: str, body: ToolIn = Body(default_factory=ToolIn)) -> ToolOut:
     if name not in {t["name"] for t in voice_tools.TOOL_SCHEMAS}:
         raise HTTPException(404, f"unknown tool: {name}")
     output = voice_tools.dispatch(name, body.args)
     return ToolOut(ok=True, output=output)
+
+
+def _cleanup_voice_jobs() -> None:
+    cutoff = time.time() - _VOICE_JOB_TTL_SECONDS
+    stale = [job_id for job_id, job in _voice_jobs.items() if float(job.get("updated_at", 0)) < cutoff]
+    for job_id in stale:
+        _voice_jobs.pop(job_id, None)
+
+
+def _job_snapshot(job_id: str) -> dict[str, Any]:
+    job = _voice_jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "voice job not found")
+    return {
+        "ok": True,
+        "job_id": job_id,
+        "status": str(job.get("status") or "queued"),
+        "operator_text": str(job.get("operator_text") or ""),
+        "spoken_text": str(job.get("spoken_text") or ""),
+        "internal_note": str(job.get("internal_note") or ""),
+        "used_backend": str(job.get("used_backend") or "picoclaw"),
+        "error": str(job.get("error") or ""),
+        "done": bool(job.get("done", False)),
+    }
+
+
+def _update_job(job_id: str, **changes: Any) -> None:
+    job = _voice_jobs.get(job_id)
+    if not job:
+        return
+    job.update(changes)
+    job["updated_at"] = time.time()
+
+
+async def _run_agent_turn(content: bytes, *, filename: str, content_type: str) -> dict[str, Any]:
+    transcript = await voice_tools_transcribe_upload(
+        content,
+        filename=filename,
+        content_type=content_type,
+    )
+
+    if not transcript.strip():
+        return {
+            "operator_text": "",
+            "spoken_text": "i didn't catch that.",
+            "internal_note": "empty transcription",
+            "used_backend": "picoclaw",
+        }
+
+    result = await asyncio.to_thread(voice_tools.run_agent_voice_turn, transcript)
+    return {
+        "operator_text": str(result.get("operator_text") or transcript),
+        "spoken_text": str(result.get("spoken") or ""),
+        "internal_note": str(result.get("thought") or ""),
+        "used_backend": "picoclaw",
+    }
+
+
+async def _process_agent_job(
+    job_id: str,
+    content: bytes,
+    *,
+    filename: str,
+    content_type: str,
+) -> None:
+    try:
+        _update_job(job_id, status="transcribing", internal_note="whisper is transcribing")
+        transcript = await voice_tools_transcribe_upload(
+            content,
+            filename=filename,
+            content_type=content_type,
+        )
+
+        if not transcript.strip():
+            _update_job(
+                job_id,
+                status="completed",
+                operator_text="",
+                spoken_text="i didn't catch that.",
+                internal_note="empty transcription",
+                done=True,
+            )
+            return
+
+        _update_job(
+            job_id,
+            status="thinking",
+            operator_text=transcript,
+            internal_note="picoclaw is working",
+        )
+        result = await asyncio.to_thread(voice_tools.run_agent_voice_turn, transcript)
+        _update_job(
+            job_id,
+            status="completed",
+            operator_text=str(result.get("operator_text") or transcript),
+            spoken_text=str(result.get("spoken") or ""),
+            internal_note=str(result.get("thought") or ""),
+            used_backend="picoclaw",
+            done=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("voice agent job failed: %s", exc)
+        _update_job(
+            job_id,
+            status="error",
+            error=str(exc),
+            spoken_text="i hit a problem while working that voice request.",
+            internal_note="agent turn failed",
+            done=True,
+        )
+
+
+@router.post(
+    "/agent-turn",
+    response_model=AgentTurnOut,
+    summary="Transcribe uploaded speech and route the turn through PicoClaw",
+    dependencies=[Depends(require_voice_write), Depends(require_local_voice_agent)],
+)
+async def voice_agent_turn(audio: UploadFile = File(...)) -> AgentTurnOut:
+    content = await audio.read()
+    if not content:
+        raise HTTPException(400, "empty audio upload")
+
+    try:
+        result = await _run_agent_turn(
+            content,
+            filename=audio.filename or "voice.webm",
+            content_type=audio.content_type or "application/octet-stream",
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("voice agent transcription failed: %s", exc)
+        raise HTTPException(502, f"transcription failed: {exc}") from exc
+
+    return AgentTurnOut(
+        ok=True,
+        operator_text=str(result.get("operator_text") or ""),
+        spoken_text=str(result.get("spoken_text") or ""),
+        internal_note=str(result.get("internal_note") or ""),
+        used_backend=str(result.get("used_backend") or "picoclaw"),
+    )
+
+
+@router.post(
+    "/agent-jobs",
+    response_model=AgentJobCreateOut,
+    summary="Queue a local voice-agent turn and return immediately with a job id",
+    dependencies=[Depends(require_voice_write), Depends(require_local_voice_agent)],
+)
+async def voice_agent_job_create(audio: UploadFile = File(...)) -> AgentJobCreateOut:
+    content = await audio.read()
+    if not content:
+        raise HTTPException(400, "empty audio upload")
+
+    _cleanup_voice_jobs()
+    job_id = uuid.uuid4().hex
+    _voice_jobs[job_id] = {
+        "status": "queued",
+        "operator_text": "",
+        "spoken_text": "heard you. working on it.",
+        "internal_note": "turn queued",
+        "used_backend": "picoclaw",
+        "error": "",
+        "done": False,
+        "updated_at": time.time(),
+    }
+    asyncio.create_task(
+        _process_agent_job(
+            job_id,
+            content,
+            filename=audio.filename or "voice.webm",
+            content_type=audio.content_type or "application/octet-stream",
+        )
+    )
+    snapshot = _job_snapshot(job_id)
+    return AgentJobCreateOut(
+        ok=True,
+        job_id=job_id,
+        status=str(snapshot.get("status") or "queued"),
+        spoken_text=str(snapshot.get("spoken_text") or ""),
+        internal_note=str(snapshot.get("internal_note") or ""),
+        used_backend=str(snapshot.get("used_backend") or "picoclaw"),
+    )
+
+
+@router.get(
+    "/agent-jobs/{job_id}",
+    response_model=AgentJobOut,
+    summary="Read the current state of a queued local voice-agent turn",
+    dependencies=[Depends(require_voice_write), Depends(require_local_voice_agent)],
+)
+async def voice_agent_job_get(job_id: str) -> AgentJobOut:
+    _cleanup_voice_jobs()
+    return AgentJobOut(**_job_snapshot(job_id))
 
 
 # ── voice-added todo feed ────────────────────────────────────────────────
@@ -184,4 +468,32 @@ def voice_camera_snapshot() -> Response:
         content=jpeg,
         media_type="image/jpeg",
         headers={"Cache-Control": "no-store"},
+    )
+
+
+async def voice_tools_transcribe_upload(
+    content: bytes,
+    *,
+    filename: str,
+    content_type: str,
+) -> str:
+    return await resolve_transcription(content, filename=filename, content_type=content_type)
+
+
+async def resolve_transcription(
+    content: bytes,
+    *,
+    filename: str,
+    content_type: str,
+) -> str:
+    from hosaka.llm.openai_adapter import transcribe_audio_bytes
+
+    return await transcribe_audio_bytes(
+        content,
+        filename=filename,
+        content_type=content_type,
+        prompt=(
+            "Transcribe operator speech for a coding and device-control assistant. "
+            "Preserve filenames, shell terms, and short commands accurately."
+        ),
     )

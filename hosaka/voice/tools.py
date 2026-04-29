@@ -124,12 +124,12 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "name": "ask_agent",
         "description": (
-            "Hand a prompt to the full Hosaka/picoclaw agent. Use for "
-            "anything that needs tool use the Realtime session doesn't "
-            "have: running shell commands, editing files, web search, "
-            "git, package installs, code review. Slow (1-30 seconds) — "
-            "say 'on it' to the operator BEFORE calling, then relay the "
-            "agent's reply once it returns."
+            "Hand a prompt to the full Hosaka/picoclaw agent. This is the "
+            "default path for filesystem changes, file creation, codebase "
+            "inspection, shell commands, git, package installs, web search, "
+            "and any request that depends on the real machine state instead "
+            "of general knowledge. Slow (1-30 seconds) — say 'on it' to the "
+            "operator BEFORE calling, then relay the agent's reply once it returns."
         ),
         "parameters": {
             "type": "object",
@@ -147,6 +147,25 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 
 
 SYSTEM_INSTRUCTIONS = build_voice_system_prompt()
+
+VOICE_AGENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "spoken": {
+            "type": "string",
+            "description": "What Hosaka should say back to the operator out loud or show as the main reply.",
+        },
+        "thought": {
+            "type": "string",
+            "description": "Short quiet status note for the transcript. Do not expose detailed chain-of-thought.",
+        },
+        "did_work": {
+            "type": "boolean",
+            "description": "Whether tools or real machine actions were used.",
+        },
+    },
+    "required": ["spoken"],
+}
 
 
 # ── dispatcher ───────────────────────────────────────────────────────────
@@ -274,19 +293,111 @@ def _tool_ask_agent(args: dict[str, Any]) -> str:
     except ImportError as exc:
         return f"ask_agent: picoclaw adapter missing ({exc})"
     if not picoclaw_adapter.is_available():
-        from hosaka.llm import openai_adapter
-        if not openai_adapter.is_available():
-            return "ask_agent: no backend available"
-        try:
-            return openai_adapter.chat_sync(
-                [{"role": "user", "content": prompt}]
-            )[:1500]
-        except Exception as exc:  # noqa: BLE001
-            return f"ask_agent: openai call failed ({exc})"
+        return "ask_agent: picoclaw is unavailable on this host"
     try:
         return picoclaw_adapter.chat_sync(prompt)[:1500]
     except Exception as exc:  # noqa: BLE001
         return f"ask_agent: picoclaw failed ({exc})"
+
+
+def _strip_code_fence(text: str) -> str:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+    return cleaned.strip()
+
+
+def _extract_json_payload(text: str) -> dict[str, Any] | None:
+    cleaned = _strip_code_fence(text)
+    try:
+        payload = json.loads(cleaned)
+        return payload if isinstance(payload, dict) else None
+    except json.JSONDecodeError:
+        pass
+
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        payload = json.loads(cleaned[start : end + 1])
+        return payload if isinstance(payload, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
+def run_agent_voice_turn(operator_text: str) -> dict[str, Any]:
+    """Run one voice-originated agent turn through PicoClaw and format it.
+
+    Returns a small structured payload for transcript vs spoken response.
+    """
+    text = operator_text.strip()
+    if not text:
+        return {
+            "operator_text": "",
+            "spoken": "i didn't catch that.",
+            "thought": "empty transcription",
+            "did_work": False,
+            "raw": "",
+        }
+
+    try:
+        from hosaka.llm import picoclaw_adapter
+    except ImportError as exc:
+        return {
+            "operator_text": text,
+            "spoken": "the local agent stack is unavailable right now.",
+            "thought": f"picoclaw adapter missing ({exc})",
+            "did_work": False,
+            "raw": "",
+        }
+
+    if not picoclaw_adapter.is_available():
+        return {
+            "operator_text": text,
+            "spoken": "the local agent is not installed on this host.",
+            "thought": "picoclaw unavailable",
+            "did_work": False,
+            "raw": "",
+        }
+
+    prompt = (
+        "you are hosaka handling a voice command from the operator.\n"
+        "perform real work if needed using your normal tools and workspace access.\n"
+        "for filesystem edits, shell commands, repo inspection, environment checks, or long tasks, actually do the work instead of describing how.\n"
+        "then return strict json only, with no markdown fences, matching this schema:\n"
+        f"{json.dumps(VOICE_AGENT_SCHEMA, ensure_ascii=False)}\n"
+        "rules:\n"
+        "- `spoken` is concise, operator-facing, natural speech: one to three sentences.\n"
+        "- `thought` is a short quiet transcript note such as 'created test.md in home directory' or 'checking repo status'.\n"
+        "- do not expose chain-of-thought. summarize actions/results only.\n"
+        "- if you completed a request, say so clearly in `spoken`.\n"
+        "- if you need more time, say what is happening briefly in `spoken` and summarize the current action in `thought`.\n"
+        "- if no hidden note is useful, set `thought` to an empty string.\n"
+        "operator request:\n"
+        f"{text}"
+    )
+
+    raw = picoclaw_adapter.chat_sync(prompt)
+    payload = _extract_json_payload(raw) or {}
+    spoken = str(payload.get("spoken") or "").strip()
+    thought = str(payload.get("thought") or "").strip()
+    did_work = bool(payload.get("did_work", False))
+
+    if not spoken:
+        spoken = raw.strip() or "i'm here, but i don't have a clean reply yet."
+        if not thought:
+            thought = "agent returned an unstructured reply"
+
+    return {
+        "operator_text": text,
+        "spoken": spoken,
+        "thought": thought,
+        "did_work": did_work,
+        "raw": raw,
+    }
 
 
 _DISPATCH: dict[str, Callable[[dict[str, Any]], str]] = {

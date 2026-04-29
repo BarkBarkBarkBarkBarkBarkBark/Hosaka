@@ -91,6 +91,9 @@ def build_voice_system_prompt() -> str:
         "- Speak English by default. Only switch languages if the operator does first or explicitly asks.\n"
         "- Never read URLs, hex, or long IDs aloud; say they were sent to the transcript.\n"
         "- If a task needs real agent work, acknowledge briefly and then use the agent tool.\n"
+        "- Use the agent tool for file creation, file edits, codebase inspection, shell commands, git, installs, and environment-aware debugging.\n"
+        "- Do not claim you cannot change files or inspect the machine if the agent tool is available; use it.\n"
+        "- Prefer the real machine state and tool output over general model memory whenever the operator asks about this device or repo.\n"
         "- Prefer concrete actions over meta-commentary.\n"
         "- Do not call yourself PicoClaw unless explaining implementation details."
     )

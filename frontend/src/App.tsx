@@ -6,6 +6,7 @@ import { SettingsDrawer } from "./components/SettingsDrawer";
 import { LangPicker } from "./components/LangPicker";
 import { ModeSwitch } from "./components/ModeSwitch";
 import { applyFontSize, loadUiConfig } from "./uiConfig";
+import { FloatingOrb } from "./components/FloatingOrb";
 
 // Each panel becomes its own chunk so first paint of the kiosk only ships
 // the shell (header + dock + footer + the active panel). Big panels — xterm
@@ -323,6 +324,8 @@ export function App() {
       <footer className="hosaka-footer">
         <span className="hosaka-footer-dim">{t("footer")}</span>
       </footer>
+
+      <FloatingOrb voiceActive={active === "voice"} />
     </div>
   );
 }

@@ -36,6 +36,26 @@ x-hosaka-common: &hosaka-common
     - picoclaw-config:/root/.picoclaw
 
 services:
+  # ── frontend watcher — rebuild the SPA into hosaka/web/ui on edits ──────
+  frontend-watch:
+    image: node:22-slim
+    container_name: hosaka-frontend-watch
+    working_dir: /workspace/frontend
+    environment:
+      - NPM_CONFIG_CACHE=/tmp/.npm
+    command: >-
+      sh -lc '
+        if [ ! -x node_modules/.bin/vite ]; then
+          npm ci --prefer-offline --no-audit;
+        fi &&
+        npm run build:watch
+      '
+    volumes:
+      - ../frontend:/workspace/frontend
+      - ../hosaka:/workspace/hosaka
+      - frontend-node-modules:/workspace/frontend/node_modules
+    restart: unless-stopped
+
   # ── headless mode — background web UI, no terminal ─────────────────────
   hosaka:
     <<: *hosaka-common
@@ -77,3 +97,4 @@ services:
 volumes:
   hosaka-state:
   picoclaw-config:
+  frontend-node-modules:

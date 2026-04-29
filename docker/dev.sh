@@ -31,7 +31,7 @@ ok()    { echo -e "${GREEN}[hosaka-dev]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[hosaka-dev]${NC} $*"; }
 
 dc() {
-  docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" "$@"
+  LOCAL_UID="$(id -u)" LOCAL_GID="$(id -g)" docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" "$@"
 }
 
 case "${1:-up}" in
@@ -47,18 +47,21 @@ case "${1:-up}" in
     echo -e "${CYAN}║  ${NC}Web UI:     http://localhost:8421${CYAN}               ║${NC}"
     echo -e "${CYAN}║  ${NC}Picoclaw:   gateway on :18790 (inside container)${CYAN}║${NC}"
     echo -e "${CYAN}║                                                  ║${NC}"
-    echo -e "${CYAN}║  ${NC}Source is live-mounted — edits apply on restart${CYAN} ║${NC}"
+    echo -e "${CYAN}║  ${NC}Frontend edits rebuild immediately in dev${CYAN}     ║${NC}"
     echo -e "${CYAN}║                                                  ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════╝${NC}"
     echo ""
     info "Next steps:"
     echo "  ./docker/dev.sh tui          ★ Full interactive TUI (your main dev loop)"
     echo "  ./docker/dev.sh shell        Bash shell in container"
+    echo "  ./docker/dev.sh logs         Tail app + frontend watcher logs"
     echo "  ./docker/dev.sh test         Run test suite"
     echo ""
     ;;
 
   tui|console)
+    info "Starting frontend watcher (for live SPA rebuilds)..."
+    dc up -d frontend-watch
     info "Stopping headless service (if running)..."
     dc stop hosaka 2>/dev/null || true
     echo ""
@@ -97,7 +100,7 @@ case "${1:-up}" in
     ;;
 
   logs)
-    dc logs -f hosaka
+    dc logs -f hosaka frontend-watch
     ;;
 
   status)

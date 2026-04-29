@@ -1,0 +1,560 @@
+version: 0.1.0
+status: draft
+intent: >-
+	Canonical UI control surface for Hosaka. This spec de-duplicates the current
+	slash-command and CustomEvent bus into a small set of semantic commands that
+	work in the SPA today and can later map cleanly onto Electron windows.
+
+design_principles:
+	- call_intents_not_clicks
+	- prefer_canonical_targets_over_synonyms
+	- keep_payloads_json_serialisable
+	- browser_and_electron_share_one_command_vocabulary
+	- current_custom_events_are_compatibility_shims_not_the_long_term_api
+
+host_modes:
+	- id: spa-tabs
+		description: Current React SPA with a single active panel and dock tabs.
+	- id: electron-single-window
+		description: Current Electron kiosk host wrapping the SPA.
+	- id: electron-multi-window
+		description: >-
+			Planned host mode where some launchable surfaces may open as native
+			windows or BrowserViews instead of replacing the active tab.
+
+canonical_enums:
+	panel_id:
+		description: Canonical panel ids already present in App.tsx.
+		values:
+			- terminal
+			- inbox
+			- voice
+			- reading
+			- todo
+			- video
+			- games
+			- wiki
+			- web
+			- books
+			- nodes
+
+	shell_panel_id:
+		description: Panel ids currently reachable from HosakaShell slash commands.
+		values:
+			- terminal
+			- messages
+			- reading
+			- todo
+			- video
+			- games
+			- wiki
+			- web
+			- books
+
+	internal_page:
+		description: Canonical internal browser targets from browserAdapter.ts.
+		values:
+			- home
+			- terminal
+			- reading
+			- todo
+			- video
+			- games
+			- wiki
+			- web
+			- books
+			- messages
+
+	web_preset_id:
+		description: Current WebPanel preset ids.
+		values:
+			- cyberspace
+			- custom
+			- wiki
+			- hn
+			- gh
+			- archive
+			- reddit
+			- yt
+			- tiktok
+			- ig
+			- discord
+			- twitch
+			- reddit_new
+			- mastodon
+			- lobsters
+
+	surface_id:
+		description: >-
+			Unified launch targets. Existing panels come first; planned surfaces may
+			ship later. The agent should target these ids, not visible labels.
+		values:
+			- home
+			- terminal
+			- inbox
+			- messages
+			- voice
+			- reading
+			- todo
+			- video
+			- games
+			- wiki
+			- web
+			- books
+			- nodes
+			- gps
+			- music
+			- tool_directory
+
+surface_registry:
+	- id: home
+		kind: internal-page
+		status: planned
+		aliases: [launcher, launchpad, tools, start]
+		notes: Preferred long-term landing surface for voice-first installs.
+
+	- id: terminal
+		kind: panel
+		status: shipping
+		aliases: [shell, console]
+		panel_id: terminal
+		internal_page: terminal
+
+	- id: inbox
+		kind: panel
+		status: shipping
+		aliases: [inbox]
+		panel_id: inbox
+		notes: Present in App.tsx but not currently exposed by HosakaShell slash commands.
+
+	- id: messages
+		kind: internal-page
+		status: shipping_partial
+		aliases: [message, chatlog]
+		internal_page: messages
+		notes: Present in shell/browserAdapter; panel registration currently differs from older docs.
+
+	- id: voice
+		kind: panel
+		status: shipping
+		aliases: [voice, mic, transcript]
+		panel_id: voice
+		notes: Present in App.tsx but not currently exposed by HosakaShell slash commands.
+
+	- id: reading
+		kind: panel
+		status: shipping
+		aliases: [reader, read]
+		panel_id: reading
+		internal_page: reading
+
+	- id: todo
+		kind: panel
+		status: shipping
+		aliases: [todos, tasks, open-loops, loops]
+		panel_id: todo
+		internal_page: todo
+
+	- id: video
+		kind: panel
+		status: shipping
+		aliases: [videos, player]
+		panel_id: video
+		internal_page: video
+
+	- id: games
+		kind: panel
+		status: shipping
+		aliases: [game]
+		panel_id: games
+		internal_page: games
+
+	- id: wiki
+		kind: panel
+		status: shipping
+		aliases: [wikipedia]
+		panel_id: wiki
+		internal_page: wiki
+
+	- id: web
+		kind: panel
+		status: shipping
+		aliases: [browser]
+		panel_id: web
+		internal_page: web
+
+	- id: books
+		kind: panel
+		status: shipping
+		aliases: [library, kindle]
+		panel_id: books
+		internal_page: books
+
+	- id: nodes
+		kind: panel
+		status: shipping
+		aliases: [network, peers]
+		panel_id: nodes
+		notes: Present in App.tsx but not currently exposed by HosakaShell slash commands.
+
+	- id: gps
+		kind: app
+		status: planned
+		aliases: [map, maps, location, coordinates]
+		notes: New surface; no current panel id.
+
+	- id: music
+		kind: app
+		status: planned
+		aliases: [audio, player, songs]
+		notes: New surface; no current panel id.
+
+	- id: tool_directory
+		kind: app
+		status: planned
+		aliases: [directory, app-directory, tool-directory, tools]
+		notes: Canonical launcher surface for future windowed hosts.
+
+compatibility_layer:
+	custom_events:
+		- name: hosaka:open-tab
+			payload: { type: string, enum_ref: canonical_enums.panel_id.values }
+			handled_by: App.tsx
+			canonical_command: ui.open_panel
+
+		- name: hosaka:open-settings
+			payload: { type: 'null' }
+			handled_by: App.tsx
+			canonical_command: ui.open_settings
+
+		- name: hosaka:ui-changed
+			payload: { type: 'null' }
+			handled_by: [App.tsx, TerminalPanel.tsx]
+			canonical_command: ui.sync_preferences
+
+		- name: hosaka:read
+			payload: { type: string, name: slug }
+			handled_by: ReadingPanel.tsx
+			canonical_command: ui.show_document
+
+		- name: hosaka:todo-add
+			payload: { type: string, name: text }
+			handled_by: [TodoPanel.tsx, VoicePanel.tsx]
+			canonical_command: ui.todo_add
+
+		- name: hosaka:video
+			payload: { type: string, name: url }
+			handled_by: VideoPanel.tsx
+			canonical_command: ui.open_media
+
+		- name: hosaka:web-preset
+			payload: { type: string, enum_ref: canonical_enums.web_preset_id.values }
+			handled_by: WebPanel.tsx
+			canonical_command: ui.open_web_preset
+
+		- name: hosaka:web-open
+			payload: { type: string, name: target }
+			handled_by: WebPanel.tsx
+			canonical_command: ui.open_web_target
+
+		- name: hosaka:books-search
+			payload: { type: string, name: query }
+			handled_by: BooksPanel.tsx
+			canonical_command: ui.search_books
+
+canonical_commands:
+	- id: ui.open_panel
+		status: shipping_compat
+		summary: Focus an existing surface by its canonical id.
+		payload:
+			type: object
+			required: [target]
+			properties:
+				target:
+					type: string
+					enum_ref: canonical_enums.surface_id.values
+				focus:
+					type: boolean
+					default: true
+				reveal:
+					type: boolean
+					default: true
+		browser_mapping:
+			strategy: >-
+				If target has a current panel_id, dispatch hosaka:open-tab. If target is
+				an internal page without an App.tsx panel, use the router/adapter layer.
+		electron_mapping:
+			strategy: >-
+				Focus the existing window/view if already open; otherwise fall back to
+				the SPA tab until a native window policy exists.
+		aliases:
+			slash_commands:
+				- /terminal
+				- /messages
+				- /reading
+				- /video
+				- /games
+				- /wiki
+				- /todo
+				- /books
+				- /web
+			voice_examples:
+				- show me the todo list
+				- open voice
+				- take me to books
+
+	- id: ui.open_settings
+		status: shipping_compat
+		summary: Open the settings drawer.
+		payload:
+			type: object
+			required: []
+			properties: {}
+		browser_mapping:
+			strategy: dispatch hosaka:open-settings
+		electron_mapping:
+			strategy: same as browser; host stays uninvolved
+		aliases:
+			slash_commands: [/settings]
+			voice_examples:
+				- open settings
+				- show me configuration
+
+	- id: ui.show_document
+		status: shipping_compat
+		summary: Open the reading panel and reveal a specific reading slug.
+		payload:
+			type: object
+			required: [slug]
+			properties:
+				slug:
+					type: string
+				open_panel:
+					type: boolean
+					default: true
+		browser_mapping:
+			strategy: dispatch hosaka:read, then hosaka:open-tab reading
+		aliases:
+			slash_commands:
+				- /read <slug>
+			voice_examples:
+				- open the beacon protocol
+				- show me the claims document
+
+	- id: ui.todo_add
+		status: shipping_compat
+		summary: Add one item to the open loops / todo surface.
+		payload:
+			type: object
+			required: [text]
+			properties:
+				text:
+					type: string
+				reveal_panel:
+					type: boolean
+					default: false
+		browser_mapping:
+			strategy: dispatch hosaka:todo-add
+		aliases:
+			slash_commands:
+				- /todo add <text>
+			voice_examples:
+				- add a todo to buy coffee
+
+	- id: ui.todo_list
+		status: planned
+		summary: Reveal the todo surface and optionally request its current contents.
+		payload:
+			type: object
+			required: []
+			properties:
+				reveal_panel:
+					type: boolean
+					default: true
+		browser_mapping:
+			strategy: currently degrade to ui.open_panel(target=todo)
+		notes: >-
+			The shell already supports `/todo list`, but that is terminal output rather
+			than a general renderer command. Keep the semantic command separate.
+
+	- id: ui.search_books
+		status: shipping_compat
+		summary: Open books and submit a search query.
+		payload:
+			type: object
+			required: [query]
+			properties:
+				query:
+					type: string
+		browser_mapping:
+			strategy: dispatch hosaka:open-tab books, then hosaka:books-search
+		aliases:
+			slash_commands:
+				- /books <query>
+			voice_examples:
+				- find books about antennas
+
+	- id: ui.open_media
+		status: shipping_compat
+		summary: Open the video surface and optionally seed it with a URL.
+		payload:
+			type: object
+			required: []
+			properties:
+				url:
+					type: string
+				media_kind:
+					type: string
+					enum: [video, audio, unknown]
+					default: unknown
+		browser_mapping:
+			strategy: >-
+				open the video panel; if url is present also dispatch hosaka:video.
+		aliases:
+			slash_commands:
+				- /video
+			voice_examples:
+				- show me the current video
+
+	- id: ui.open_web_target
+		status: shipping_compat
+		summary: Open the web surface to a raw target string.
+		payload:
+			type: object
+			required: []
+			properties:
+				target:
+					type: string
+					description: URL, host shorthand, or internal hosaka:// target.
+		browser_mapping:
+			strategy: dispatch hosaka:open-tab web, then hosaka:web-open if target present
+		electron_mapping:
+			strategy: >-
+				same semantic command; host may later choose native webview or external
+				browser according to browserAdapter mode.
+		aliases:
+			slash_commands:
+				- /web
+				- /web <url>
+			voice_examples:
+				- open browser
+				- go to wikipedia
+
+	- id: ui.open_web_preset
+		status: shipping_compat
+		summary: Open the web panel to one of the registered preset ids.
+		payload:
+			type: object
+			required: [preset]
+			properties:
+				preset:
+					type: string
+					enum_ref: canonical_enums.web_preset_id.values
+		browser_mapping:
+			strategy: dispatch hosaka:open-tab web, then hosaka:web-preset
+		aliases:
+			slash_commands:
+				- /reddit
+				- /tiktok
+				- /discord
+			deduplicated_as:
+				- reddit => preset reddit
+				- tiktok => preset tiktok
+				- discord => preset discord
+
+	- id: ui.open_surface
+		status: planned
+		summary: >-
+			Higher-level successor to ui.open_panel that can choose tab, card, route,
+			or native window according to host policy.
+		payload:
+			type: object
+			required: [target]
+			properties:
+				target:
+					type: string
+					enum_ref: canonical_enums.surface_id.values
+				preferred_container:
+					type: string
+					enum: [auto, tab, window, drawer, modal]
+					default: auto
+				singleton:
+					type: boolean
+					default: true
+				args:
+					type: object
+					additionalProperties: true
+		notes: >-
+			This is the migration point away from hardcoded tabs. The agent should use
+			this when the renderer/host can honour richer container choices.
+
+	- id: ui.focus_surface
+		status: planned
+		summary: Bring an already-open surface/window to the foreground.
+		payload:
+			type: object
+			required: [target]
+			properties:
+				target:
+					type: string
+					enum_ref: canonical_enums.surface_id.values
+
+	- id: ui.close_surface
+		status: planned
+		summary: Close or hide a surface/window when the host supports it.
+		payload:
+			type: object
+			required: [target]
+			properties:
+				target:
+					type: string
+					enum_ref: canonical_enums.surface_id.values
+
+	- id: ui.open_tool_directory
+		status: planned
+		summary: Open the launcher / directory of available tools and apps.
+		payload:
+			type: object
+			required: []
+			properties:
+				category:
+					type: string
+					nullable: true
+				query:
+					type: string
+					nullable: true
+		aliases:
+			voice_examples:
+				- open the tool directory
+				- show me what apps are available
+
+de_duplication_rules:
+	- rule: >-
+			All "show/open/focus/go to" utterances that target an existing surface
+			resolve to ui.open_panel or ui.open_surface, not to one command per noun.
+	- rule: >-
+			Social/web shortcuts are aliases for ui.open_web_preset rather than
+			separate first-class commands.
+	- rule: >-
+			Todo mutation and todo reveal are separate commands: ui.todo_add mutates;
+			ui.open_panel(target=todo) or ui.todo_list reveals.
+	- rule: >-
+			Current CustomEvent names remain for compatibility, but the canonical
+			namespace for new work is ui.*.
+
+implementation_notes:
+	phase_1:
+		- keep existing CustomEvent handlers and slash commands
+		- add a single renderer dispatcher that accepts canonical ui.* commands
+		- map canonical commands onto the existing event bus
+	phase_2:
+		- expose ui.* commands to voice tools and agent actions
+		- extend canonical target coverage to inbox, voice, and nodes
+	phase_3:
+		- let Electron choose window/tab routing for ui.open_surface
+		- add launcher / tool directory as a first-class surface
+
+non_goals:
+	- DOM_click_automation_as_primary_control_surface
+	- one_new_command_per_synonym
+	- hardcoding_window_policy_into_voice_tools
