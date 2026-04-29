@@ -70,6 +70,23 @@ for i in $(seq 1 60); do
     sleep 1
 done
 
+# ── clear Electron cache so updates land immediately after hosaka update ──
+# Electron's default userData is ~/.config/hosaka-kiosk. Wiping the HTTP
+# cache dirs here means every kiosk restart picks up fresh JS/CSS bundles
+# (content-hashed filenames already prevent stale asset reuse, but the
+# top-level index.html is not hashed so must be evicted manually).
+ELECTRON_CACHE_DIR="${HOME}/.config/hosaka-kiosk"
+if [ -d "$ELECTRON_CACHE_DIR" ]; then
+    rm -rf \
+        "$ELECTRON_CACHE_DIR/Cache" \
+        "$ELECTRON_CACHE_DIR/Code Cache" \
+        "$ELECTRON_CACHE_DIR/GPUCache" \
+        "$ELECTRON_CACHE_DIR/Service Worker" \
+        "$ELECTRON_CACHE_DIR/CacheStorage" \
+        "$ELECTRON_CACHE_DIR/Network"
+    log "cleared electron cache at $ELECTRON_CACHE_DIR"
+fi
+
 # ── OOM bias ──────────────────────────────────────────────────────────────
 # Bias the electron process HIGH for the OOM killer, matching the old
 # Chromium launcher. SSH keeps priority over the UI.
