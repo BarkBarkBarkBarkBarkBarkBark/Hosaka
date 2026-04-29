@@ -54,6 +54,18 @@ See [`install/`](./install/) for the installer internals.
 
 ---
 
+## Boot Dev Container
+
+```bash
+cd /Users/marco/Cursor_Folder/Cursor_Codespace/hosaka_console/Hosaka
+hosaka down
+./docker/dev.sh up
+```
+
+## Boot Docker Instance
+
+```bash
+
 ## The single entrypoint
 
 The canonical way to run Hosaka — on the Pi, on your laptop, anywhere —

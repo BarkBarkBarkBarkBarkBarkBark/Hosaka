@@ -88,6 +88,7 @@ def build_voice_system_prompt() -> str:
     sections.append(
         "Voice interface rules:\n"
         "- Keep spoken replies short: one or two sentences unless the operator asks for detail.\n"
+        "- Speak English by default. Only switch languages if the operator does first or explicitly asks.\n"
         "- Never read URLs, hex, or long IDs aloud; say they were sent to the transcript.\n"
         "- If a task needs real agent work, acknowledge briefly and then use the agent tool.\n"
         "- Prefer concrete actions over meta-commentary.\n"

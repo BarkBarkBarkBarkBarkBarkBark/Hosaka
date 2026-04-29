@@ -84,13 +84,14 @@ export function VoicePanel({ active }: { active: boolean }) {
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [camOn, setCamOn] = useState(true);
+  const [cameraExpanded, setCameraExpanded] = useState(false);
   const [sessionOpen, setSessionOpen] = useState(false);
   const sessionRef = useRef<VoiceSession | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const assistantBuf = useRef<string>("");
+  const transcriptRef = useRef<HTMLDivElement>(null);
 
   const { videoRef, state: camState, error: camError, retry: retryCam } =
-    useWebcamPreview(active && camOn);
+    useWebcamPreview(active && camOn && cameraExpanded);
 
   const appendTranscript = (role: TranscriptItem["role"], text: string) => {
     setTranscript((t) => [
@@ -109,7 +110,6 @@ export function VoicePanel({ active }: { active: boolean }) {
       onError: (e) => setError(String((e as { message?: string })?.message ?? e)),
       onUserTranscript: (text) => appendTranscript("you", text),
       onAssistantTranscript: (delta) => {
-        assistantBuf.current += delta;
         setTranscript((t) => {
           const last = t[t.length - 1];
           if (last && last.role === "hosaka") {
@@ -167,6 +167,12 @@ export function VoicePanel({ active }: { active: boolean }) {
     }
   }, [active]);
 
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [transcript, state]);
+
   const stateLabel = useMemo(() => {
     switch (state) {
       case "listening": return "listening";
@@ -177,6 +183,17 @@ export function VoicePanel({ active }: { active: boolean }) {
     }
   }, [state, sessionOpen]);
 
+  const cameraStatus = useMemo(() => {
+    if (!camOn) return "camera disabled";
+    if (!cameraExpanded) return "camera parked";
+    switch (camState) {
+      case "on": return "camera live";
+      case "starting": return "camera warming";
+      case "error": return "camera error";
+      default: return "camera off";
+    }
+  }, [camOn, camState, cameraExpanded]);
+
   return (
     <div className="voice-wrap">
       <header className="panel-header">
@@ -184,71 +201,148 @@ export function VoicePanel({ active }: { active: boolean }) {
           <span className="panel-glyph">◎</span> voice
         </h2>
         <p className="panel-sub">
-          talk to hosaka. tap the orb to open a live session. the webcam is
-          only used when you ask hosaka to look.
+          talk to hosaka. this view is transcript-first: speak naturally, keep
+          the history in sight, and expand the camera only when you need eyes.
         </p>
       </header>
 
-      <div className="voice-stage">
-        <div className="voice-camera">
-          <video ref={videoRef} className="voice-video" muted playsInline />
-          {camState !== "on" && (
-            <div className="voice-camera-overlay">
-              {camState === "off" && "camera off"}
-              {camState === "starting" && "warming up camera…"}
-              {camState === "error" && (
-                <>
-                  <div>camera error</div>
-                  {camError && <small>{camError}</small>}
-                  <button className="btn btn-ghost" onClick={retryCam}>retry</button>
-                </>
-              )}
+      <div className="voice-layout">
+        <section className="voice-main">
+          {cameraExpanded && (
+            <div className="voice-camera-panel">
+              <div className="voice-camera-panel-head">
+                <div>
+                  <strong>camera</strong>
+                  <span>
+                    keep this parked until you want hosaka to look.
+                  </span>
+                </div>
+                <div className="voice-camera-toolbar">
+                  <label className="voice-camera-check">
+                    <input
+                      type="checkbox"
+                      checked={camOn}
+                      onChange={(e) => setCamOn(e.target.checked)}
+                    />
+                    camera enabled
+                  </label>
+                  <button className="btn btn-ghost" onClick={() => setCameraExpanded(false)}>
+                    hide
+                  </button>
+                </div>
+              </div>
+
+              <div className="voice-camera voice-camera--expanded">
+                <video ref={videoRef} className="voice-video" muted playsInline />
+                {camState !== "on" && (
+                  <div className="voice-camera-overlay">
+                    {camState === "off" && "camera off"}
+                    {camState === "starting" && "warming up camera…"}
+                    {camState === "error" && (
+                      <>
+                        <div>camera error</div>
+                        {camError && <small>{camError}</small>}
+                        <button className="btn btn-ghost" onClick={retryCam}>retry</button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
-          <div className="voice-camera-toggle">
-            <label>
+
+          <div className="voice-transcript-card">
+            <div className="voice-transcript-head">
+              <div className="voice-transcript-meta">
+                <strong>live transcript</strong>
+                <span>
+                  {sessionOpen
+                    ? `${stateLabel} · session open`
+                    : "tap start listening and speak naturally"}
+                </span>
+              </div>
+              <div className="voice-transcript-actions">
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => setTranscript([])}
+                  disabled={transcript.length === 0}
+                >
+                  clear
+                </button>
+              </div>
+            </div>
+
+            <div ref={transcriptRef} className="voice-transcript" aria-live="polite">
+              {transcript.length === 0 && (
+                <p className="voice-empty">
+                  transcript will appear here. say 'how are you', 'what do you see',
+                  'add a todo: buy coffee', or 'ask the agent to show disk usage'.
+                </p>
+              )}
+              {transcript.map((item) => (
+                <div key={item.id} className={`voice-line voice-line--${item.role}`}>
+                  <span className="voice-role">{item.role}</span>
+                  <span className="voice-text">{item.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <aside className="voice-side">
+          <div className="voice-status-card">
+            <button
+              className={`voice-orb voice-orb--${state}`}
+              onClick={() => (sessionOpen ? stopSession() : startSession())}
+              aria-label={sessionOpen ? "end voice session" : "start voice session"}
+            >
+              <span className="voice-orb-ring" />
+              <span className="voice-orb-dot" />
+            </button>
+            <div className="voice-state-stack">
+              <div className="voice-state-label">{stateLabel}</div>
+              <div className="voice-state-sub">
+                {sessionOpen ? "mic open · realtime link live" : "ready when you are"}
+              </div>
+            </div>
+          </div>
+
+          <div className="voice-controls-card">
+            <button
+              className="btn"
+              onClick={() => (sessionOpen ? stopSession() : startSession())}
+            >
+              {sessionOpen ? "end session" : "start listening"}
+            </button>
+
+            <button
+              className="btn btn-ghost"
+              onClick={() => setCameraExpanded((v) => !v)}
+            >
+              {cameraExpanded ? "hide camera" : "show camera"}
+            </button>
+
+            <label className="voice-inline-toggle">
               <input
                 type="checkbox"
                 checked={camOn}
                 onChange={(e) => setCamOn(e.target.checked)}
               />
-              camera
+              <span>camera enabled</span>
             </label>
-          </div>
-        </div>
 
-        <div className="voice-orb-col">
-          <button
-            className={`voice-orb voice-orb--${state}`}
-            onClick={() => (sessionOpen ? stopSession() : startSession())}
-            aria-label={sessionOpen ? "end voice session" : "start voice session"}
-          >
-            <span className="voice-orb-ring" />
-            <span className="voice-orb-dot" />
-          </button>
-          <div className="voice-state-label">{stateLabel}</div>
-          {sessionOpen && (
-            <button className="btn btn-ghost" onClick={stopSession}>
-              end session
-            </button>
-          )}
-          {error && <div className="voice-error">{error}</div>}
-        </div>
-      </div>
+            <div className="voice-camera-status">{cameraStatus}</div>
 
-      <div className="voice-transcript" aria-live="polite">
-        {transcript.length === 0 && (
-          <p className="voice-empty">
-            transcript will appear here. say 'how are you', 'what do you see',
-            'add a todo: buy coffee', or 'ask the agent to show disk usage'.
-          </p>
-        )}
-        {transcript.map((item) => (
-          <div key={item.id} className={`voice-line voice-line--${item.role}`}>
-            <span className="voice-role">{item.role}</span>
-            <span className="voice-text">{item.text}</span>
+            {error && <div className="voice-error">{error}</div>}
           </div>
-        ))}
+
+          <div className="voice-hint-card">
+            <p>
+              voice first. text stays center-stage so a new operator can talk,
+              glance down, and trust the machine heard them.
+            </p>
+          </div>
+        </aside>
       </div>
 
       <audio ref={audioRef} autoPlay />
