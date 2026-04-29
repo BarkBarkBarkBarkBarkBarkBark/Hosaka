@@ -12,6 +12,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { VoiceSession, type VoiceState } from "../voice/realtimeClient";
+import { DevicePanel, getPreferredMicConstraints, getPreferredSpeakerId } from "./DevicePanel";
 
 type TranscriptItem = {
   id: string;
@@ -278,8 +279,18 @@ function useVoiceAnalyser(
     const DB_FLOOR = -60;
     const DB_CEIL = -10;
 
+    // Browsers suspend AudioContext until the user has interacted with the page.
+    // Resume immediately; if it's still suspended the first tick will be silent
+    // but subsequent ticks (after any user gesture) will be live.
+    ctx.resume().catch(() => undefined);
+
     const tick = () => {
       if (cancelled) return;
+      // Re-check suspension each frame — context becomes running after first gesture.
+      if (ctx.state === "suspended") {
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
       analyser.getFloatTimeDomainData(buf);
       let sq = 0;
       for (let i = 0; i < buf.length; i++) sq += buf[i] * buf[i];
@@ -315,6 +326,18 @@ function useVoiceAnalyser(
 /** Keeps a mic stream open as long as the panel is active + not muted. */
 function usePersistentMic(active: boolean, muted: boolean): MediaStream | null {
   const [stream, setStream] = useState<MediaStream | null>(null);
+
+  // Re-open stream when device preference changes.
+  const [deviceKey, setDeviceKey] = useState(0);
+  useEffect(() => {
+    const onDeviceChange = (e: Event) => {
+      const detail = (e as CustomEvent<{ kind: string }>).detail;
+      if (detail?.kind === "audioinput") setDeviceKey((k) => k + 1);
+    };
+    window.addEventListener("hosaka:devicechange", onDeviceChange);
+    return () => window.removeEventListener("hosaka:devicechange", onDeviceChange);
+  }, []);
+
   useEffect(() => {
     if (!active || muted) {
       setStream((prev) => {
@@ -325,7 +348,7 @@ function usePersistentMic(active: boolean, muted: boolean): MediaStream | null {
     }
     let cancelled = false;
     navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      audio: getPreferredMicConstraints(),
     }).then((s) => {
       if (cancelled) { for (const t of s.getTracks()) t.stop(); return; }
       setStream(s);
@@ -337,7 +360,7 @@ function usePersistentMic(active: boolean, muted: boolean): MediaStream | null {
         return null;
       });
     };
-  }, [active, muted]);
+  }, [active, muted, deviceKey]);
   return stream;
 }
 
@@ -370,6 +393,7 @@ function useVAD(
     const buf    = new Float32Array(analyser.fftSize);
     const source = ctx.createMediaStreamSource(stream);
     source.connect(analyser);
+    ctx.resume().catch(() => undefined);
 
     const SPEECH_THRESHOLD = 0.08;   // RMS above → speech
     const SILENCE_THRESHOLD = 0.035; // RMS below → silence
@@ -489,6 +513,22 @@ export function VoicePanel({ active }: { active: boolean }) {
 
   // Feed the persistent stream to the orb visualiser (always-on mic reactivity).
   useVoiceAnalyser(micStream, orbEl);
+
+  // Apply speaker preference to the audio element whenever it changes.
+  useEffect(() => {
+    const apply = () => {
+      const el = audioRef.current;
+      if (!el) return;
+      const id = getPreferredSpeakerId();
+      if (id && id !== "default") {
+        const e = el as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> };
+        e.setSinkId?.(id).catch(() => undefined);
+      }
+    };
+    apply();
+    window.addEventListener("hosaka:devicechange", apply);
+    return () => window.removeEventListener("hosaka:devicechange", apply);
+  }, []);
 
   const { videoRef, state: camState, error: camError, retry: retryCam } =
     useWebcamPreview(active && camOn && cameraExpanded);
@@ -933,6 +973,8 @@ export function VoicePanel({ active }: { active: boolean }) {
               onClick={() => setDrawerOpen(false)}
               aria-label="close controls"
             >✕</button>
+
+            {/* Mode switch + action */}
             <div className="voice-controls-card">
               {!publicMode && (
                 <div className="voice-mode-switch" role="tablist" aria-label="voice mode">
@@ -964,6 +1006,9 @@ export function VoicePanel({ active }: { active: boolean }) {
               </div>
               {error && <div className="voice-error">{error}</div>}
             </div>
+
+            {/* Peripheral device picker */}
+            <DevicePanel />
           </div>
         )}
 

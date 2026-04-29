@@ -172,6 +172,13 @@ class AgentJobOut(BaseModel):
     summary="Mint a short-lived OpenAI Realtime session token for the browser",
     dependencies=[Depends(require_auth)],
 )
+@router.get(
+    "/ephemeral-token",
+    response_model=EphemeralOut,
+    summary="Mint a short-lived OpenAI Realtime session token for the browser (GET alias)",
+    dependencies=[Depends(require_auth)],
+    include_in_schema=False,
+)
 async def voice_ephemeral_token() -> EphemeralOut:
     """Delegate to OpenAI's ``POST /v1/realtime/sessions`` endpoint.
 

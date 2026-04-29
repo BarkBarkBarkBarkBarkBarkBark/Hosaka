@@ -285,6 +285,9 @@ async function fetchEphemeralToken(): Promise<EphemeralToken> {
         detail = "";
       }
     }
+    if (resp.status === 405) {
+      detail = detail.trim() || "backend may be out of date — run: hosaka update && hosaka build";
+    }
     const suffix = detail.trim() ? `: ${detail.trim()}` : "";
     throw new Error(`ephemeral-token ${resp.status}${suffix}`);
   }

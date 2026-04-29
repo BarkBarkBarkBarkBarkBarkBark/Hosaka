@@ -18,3 +18,17 @@ skills:
       - "find a skill"
       - "make this repeatable"
       - "turn this workflow into a skill"
+
+  - id: "hosaka-peripheral-probe"
+    path: "hosaka-peripheral-probe/SKILL.md"
+    purpose: "Probe mic, speaker, camera, and ALSA state to diagnose audio/video device problems."
+    triggers:
+      - "no mic"
+      - "no audio"
+      - "wrong device"
+      - "which microphone"
+      - "check peripherals"
+      - "audio not working"
+      - "camera not found"
+      - "list audio devices"
+      - "ALSA default"

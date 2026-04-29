@@ -2176,7 +2176,7 @@ html, body, #root {
   bottom: max(env(safe-area-inset-bottom, 0px) + 14px, 22px);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 2;
+  z-index: 12;
   background: none;
   border: none;
   color: var(--voice-accent);
@@ -2188,9 +2188,21 @@ html, body, #root {
   padding: 12px 32px;
 }
 
+/* When the drawer is open the chevron shows ✕ — make it clearly visible */
+.voice-fullscreen-chevron[aria-label="close controls"] {
+  opacity: 1;
+  color: var(--fg-2);
+  font-size: 20px;
+}
+
 .voice-fullscreen-chevron:hover,
 .voice-fullscreen:hover .voice-fullscreen-chevron {
   opacity: 0.72;
+}
+
+/* When drawer open, always show at full opacity */
+.voice-fullscreen-chevron[aria-label="close controls"]:hover {
+  opacity: 1;
 }
 
 /* Drawer overlay that slides up over the fullOrb when the chevron is tapped */
@@ -3329,4 +3341,130 @@ html, body, #root {
     grid-column: 2;
     justify-content: flex-start;
   }
+}
+
+/* ── DevicePanel ──────────────────────────────────────────────────────────── */
+
+.device-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.device-panel-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--fg-3);
+  padding: 0 0 6px;
+}
+
+.device-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(17, 20, 24, 0.6);
+}
+
+.device-row-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  color: var(--fg-1);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  transition: background 150ms ease;
+}
+
+.device-row-header:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.device-row-header--open {
+  border-bottom: 1px solid var(--border);
+}
+
+.device-row-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+}
+
+.device-row-label {
+  flex: 0 0 auto;
+  color: var(--fg-2);
+  min-width: 80px;
+}
+
+.device-row-current {
+  flex: 1;
+  color: var(--fg-3);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.device-row-chevron {
+  flex: 0 0 auto;
+  color: var(--fg-3);
+  font-size: 9px;
+}
+
+.device-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px 10px;
+}
+
+.device-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-2);
+  transition: background 120ms ease;
+}
+
+.device-option:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.device-option input[type="radio"] {
+  accent-color: var(--cyan);
+}
+
+.device-empty {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-3);
+  padding: 4px;
+}
+
+.device-grant-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--cyan);
+  background: none;
+  border: 1px solid var(--cyan-dim);
+  border-radius: 5px;
+  padding: 5px 10px;
+  cursor: pointer;
+  margin-bottom: 6px;
+  transition: background 120ms ease;
+}
+
+.device-grant-btn:hover {
+  background: rgba(88, 166, 255, 0.08);
 }
