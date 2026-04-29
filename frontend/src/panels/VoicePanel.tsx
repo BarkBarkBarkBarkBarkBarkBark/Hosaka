@@ -472,7 +472,8 @@ export function VoicePanel({ active }: { active: boolean }) {
   const speakingResetRef = useRef<number | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
-  const orbRef = useRef<HTMLButtonElement>(null);
+  // Callback ref: stored in state so useVoiceAnalyser re-runs when the orb mounts.
+  const [orbEl, setOrbEl] = useState<HTMLButtonElement | null>(null);
   const [muted, setMuted] = useState(false);
   // Live caption: last 2 visible transcript items for orb overlay
   const [liveCaption, setLiveCaption] = useState<TranscriptItem[]>([]);
@@ -484,7 +485,7 @@ export function VoicePanel({ active }: { active: boolean }) {
   micStreamRef.current = micStream;
 
   // Feed the persistent stream to the orb visualiser (always-on mic reactivity).
-  useVoiceAnalyser(micStream, orbRef.current);
+  useVoiceAnalyser(micStream, orbEl);
 
   const { videoRef, state: camState, error: camError, retry: retryCam } =
     useWebcamPreview(active && camOn && cameraExpanded);
@@ -862,7 +863,7 @@ export function VoicePanel({ active }: { active: boolean }) {
 
         {/* The orb — fills most of the screen */}
         <button
-          ref={orbRef}
+          ref={setOrbEl}
           className={`voice-orb voice-orb--full voice-orb--${visualState}`}
           onClick={mode === "demo"
             ? () => (sessionOpen ? stopSession() : startSession())
@@ -937,7 +938,7 @@ export function VoicePanel({ active }: { active: boolean }) {
       {/* ── Orb stage — fills the viewport on small screens ── */}
       <div className="voice-orb-stage">
         <button
-          ref={orbRef}
+          ref={setOrbEl}
           className={`voice-orb voice-orb--${visualState}`}
           onClick={mode === "demo" ? () => (sessionOpen ? stopSession() : startSession()) : mode === "agent" ? () => setMuted((v) => !v) : undefined}
           onPointerDown={mode === "agent" ? (e) => { e.currentTarget.setPointerCapture(e.pointerId); } : undefined}
