@@ -487,13 +487,25 @@ async def resolve_transcription(
     content_type: str,
 ) -> str:
     from hosaka.llm.openai_adapter import transcribe_audio_bytes
+    import httpx
 
-    return await transcribe_audio_bytes(
-        content,
-        filename=filename,
-        content_type=content_type,
-        prompt=(
-            "Transcribe operator speech for a coding and device-control assistant. "
-            "Preserve filenames, shell terms, and short commands accurately."
-        ),
-    )
+    # Retry on 429 (Whisper rate limit) with exponential backoff.
+    max_attempts = 4
+    for attempt in range(max_attempts):
+        try:
+            return await transcribe_audio_bytes(
+                content,
+                filename=filename,
+                content_type=content_type,
+                prompt=(
+                    "Transcribe operator speech for a coding and device-control assistant. "
+                    "Preserve filenames, shell terms, and short commands accurately."
+                ),
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 429 and attempt < max_attempts - 1:
+                wait = 2 ** attempt  # 1s, 2s, 4s
+                log.warning("Whisper 429 rate-limit — retrying in %ds (attempt %d/%d)", wait, attempt + 1, max_attempts)
+                await asyncio.sleep(wait)
+                continue
+            raise

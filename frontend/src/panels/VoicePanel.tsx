@@ -374,7 +374,7 @@ function useVAD(
     const SPEECH_THRESHOLD = 0.08;   // RMS above → speech
     const SILENCE_THRESHOLD = 0.035; // RMS below → silence
     const SPEECH_ONSET_MS = 160;     // must sustain before firing onSpeechStart
-    const SILENCE_END_MS  = 1400;    // must sustain before firing onSpeechEnd
+    const SILENCE_END_MS  = 2200;    // must sustain before firing onSpeechEnd
     const TICK_MS = 50;
 
     let speechMs  = 0;
@@ -470,6 +470,8 @@ export function VoicePanel({ active }: { active: boolean }) {
   const agentChunksRef = useRef<Blob[]>([]);
   const agentRunNonceRef = useRef(0);
   const speakingResetRef = useRef<number | null>(null);
+  // Cooldown: block VAD re-trigger for N ms after a turn completes.
+  const cooldownUntilRef = useRef<number>(0);
   const audioRef = useRef<HTMLAudioElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   // Callback ref: stored in state so useVoiceAnalyser re-runs when the orb mounts.
@@ -579,6 +581,7 @@ export function VoicePanel({ active }: { active: boolean }) {
   const startAgentRecording = async () => {
     if (mode !== "agent") return;
     if (agentBusy || agentRecording) return;
+    if (Date.now() < cooldownUntilRef.current) return;  // post-turn cooldown
     setError(null);
     clearSpeakingReset();
     try {
@@ -688,6 +691,8 @@ export function VoicePanel({ active }: { active: boolean }) {
       setState("error");
     } finally {
       setAgentBusy(false);
+      // 3-second cooldown so VAD can't fire again immediately after a turn.
+      cooldownUntilRef.current = Date.now() + 3000;
     }
   };
 
