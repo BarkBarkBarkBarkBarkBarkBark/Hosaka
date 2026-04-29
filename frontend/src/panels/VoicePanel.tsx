@@ -463,7 +463,8 @@ export function VoicePanel({ active }: { active: boolean }) {
   // Default to orb-first on narrow viewports.
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Full-screen orb mode: the orb is the entire panel — one chevron exits.
-  const [fullOrb, setFullOrb] = useState(true);
+  // fullOrb is always true now — controls live in the overlay drawer.
+  const [fullOrb] = useState(true);
   const sessionRef = useRef<VoiceSession | null>(null);
   const agentRecorderRef = useRef<MediaRecorder | null>(null);
   const agentStreamRef = useRef<MediaStream | null>(null);
@@ -924,13 +925,55 @@ export function VoicePanel({ active }: { active: boolean }) {
           </div>
         )}
 
-        {/* Chevron — the only exit */}
+        {/* Drawer overlay — slides up over the fullOrb */}
+        {drawerOpen && (
+          <div className="voice-fullscreen-drawer" role="dialog" aria-label="controls">
+            <button
+              className="voice-fullscreen-drawer-close"
+              onClick={() => setDrawerOpen(false)}
+              aria-label="close controls"
+            >✕</button>
+            <div className="voice-controls-card">
+              {!publicMode && (
+                <div className="voice-mode-switch" role="tablist" aria-label="voice mode">
+                  <button
+                    className={`pill ${mode === "agent" ? "is-active" : ""}`}
+                    onClick={() => setMode("agent")}
+                    aria-pressed={mode === "agent"}
+                  >local agent</button>
+                  <button
+                    className={`pill ${mode === "demo" ? "is-active" : ""}`}
+                    onClick={() => setMode("demo")}
+                    aria-pressed={mode === "demo"}
+                  >openai realtime</button>
+                </div>
+              )}
+              {publicMode && (
+                <div className="voice-build-note">public build: realtime demo only</div>
+              )}
+              <div className="voice-controls-row">
+                <button
+                  className="btn"
+                  onClick={mode === "demo" ? toggleVoiceTurn : () => setMuted((v) => !v)}
+                  disabled={mode === "agent" && agentBusy}
+                >
+                  {mode === "agent"
+                    ? muted ? "unmute" : agentRecording ? "listening…" : agentBusy ? "working…" : "mute"
+                    : sessionOpen ? "end session" : "start listening"}
+                </button>
+              </div>
+              {error && <div className="voice-error">{error}</div>}
+            </div>
+          </div>
+        )}
+
+        {/* Chevron — opens drawer overlay, does not exit fullOrb */}
         <button
           className="voice-fullscreen-chevron"
-          onClick={() => setFullOrb(false)}
-          aria-label="open controls"
+          onClick={() => setDrawerOpen((v) => !v)}
+          aria-label={drawerOpen ? "close controls" : "open controls"}
         >
-          ⌄
+          {drawerOpen ? "✕" : "⌄"}
         </button>
 
         <audio ref={audioRef} autoPlay />
@@ -982,34 +1025,13 @@ export function VoicePanel({ active }: { active: boolean }) {
           <div className="voice-state-sub">{statusSub}</div>
         </div>
 
-        {/* Mute toggle — always visible in agent mode */}
-        {mode === "agent" && (
-          <button
-            className={`voice-mute-btn${muted ? " voice-mute-btn--muted" : ""}`}
-            onClick={() => setMuted((v) => !v)}
-            aria-pressed={muted}
-            aria-label={muted ? "unmute" : "mute"}
-          >
-            {muted ? "● unmute" : "○ mute"}
-          </button>
-        )}
-
-        {/* Drawer toggle — visible on small screens */}
+        {/* Drawer toggle — the only persistent control in the orb stage */}
         <button
           className="voice-drawer-toggle"
           onClick={() => setDrawerOpen((v) => !v)}
-          aria-label={drawerOpen ? "hide transcript" : "show transcript"}
+          aria-label={drawerOpen ? "hide controls" : "show controls"}
         >
-          {drawerOpen ? "▼ hide" : "▲ transcript"}
-        </button>
-
-        {/* Expand to full orb */}
-        <button
-          className="voice-expand-btn"
-          onClick={() => setFullOrb(true)}
-          aria-label="full screen orb"
-        >
-          ⌃ all orb
+          {drawerOpen ? "▼ hide" : "▲ controls"}
         </button>
       </div>
 
