@@ -119,6 +119,16 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Grant microphone and camera access so the SPA's getUserMedia calls work
+  // inside the kiosk. Without this handler Electron silently denies all
+  // permission requests (unlike a normal browser which prompts the user).
+  session.defaultSession.setPermissionRequestHandler(
+    (_webContents, permission, callback) => {
+      const allowed = ["media", "microphone", "camera", "audioCapture", "videoCapture"];
+      callback(allowed.includes(permission));
+    },
+  );
+
   // The SPA uses the default session for fetches; <webview> uses its own
   // partition so cookies/storage for external sites don't leak into it.
   session.fromPartition("persist:hosaka-browser");

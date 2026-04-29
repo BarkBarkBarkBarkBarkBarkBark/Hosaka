@@ -225,3 +225,23 @@ the key files for this system are:
 - [hosaka/identity.py](../hosaka/identity.py)
 
 signal steady.
+
+## future ideas
+
+### orb silhouette — person-presence outline
+
+when the camera is active, run a lightweight background-subtraction or
+person-segmentation pass (e.g. mediapipe selfie segmentation, which runs
+in-browser via wasm at ~15 fps on a pi 4) and project the person's crude
+silhouette **onto the orb surface** — rendered as a soft, dimly-lit shape
+inside the orb circle. the effect: the device literally "sees" the person
+standing in front of it and reflects their outline back as part of its own
+representational state. keep it abstract (4–8 px blur, ~15% opacity amber
+fill) so it reads as presence rather than surveillance.
+
+implementation sketch:
+1. `<canvas>` overlay, same bounding box as `.voice-orb--full`.
+2. every animation frame: draw the segmentation mask, clip to the orb
+   circle, composite with `globalCompositeOperation = "lighter"`.
+3. gate behind `VITE_ORB_SILHOUETTE=1` env var — off by default.
+4. on pi 3b use a lower-res capture (160×120) and run every 3rd frame.
