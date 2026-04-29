@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch, MagicMock
 import hosaka.llm.router as router_mod
 from hosaka.llm.router import LLMBackend, detect_backend, sync_chat
@@ -73,3 +74,55 @@ class TestOpenAIAvailability:
         with patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}):
             from hosaka.llm.openai_adapter import is_available
             assert is_available() is True
+
+    def test_picoclaw_config_key_counts_as_available(self, tmp_path) -> None:
+        cfg = {
+            "agents": {"defaults": {"model_name": "gpt-4o-mini"}},
+            "model_list": [
+                {
+                    "model_name": "gpt-4o-mini",
+                    "model": "openai/gpt-4o-mini",
+                    "api_key": "sk-from-picoclaw",
+                }
+            ],
+        }
+        config_path = tmp_path / "config.json"
+        config_path.write_text(json.dumps(cfg), encoding="utf-8")
+
+        with patch.dict(
+            "os.environ",
+            {"PICOCLAW_CONFIG_PATH": str(config_path)},
+            clear=True,
+        ):
+            from hosaka.llm.openai_adapter import is_available, resolve_api_key
+
+            key, source = resolve_api_key()
+            assert key == "sk-from-picoclaw"
+            assert source == "~/.picoclaw/config.json"
+            assert is_available() is True
+
+    def test_env_key_beats_picoclaw_config(self, tmp_path) -> None:
+        cfg = {
+            "model_list": [
+                {
+                    "model_name": "gpt-4o-mini",
+                    "api_key": "sk-from-picoclaw",
+                }
+            ]
+        }
+        config_path = tmp_path / "config.json"
+        config_path.write_text(json.dumps(cfg), encoding="utf-8")
+
+        with patch.dict(
+            "os.environ",
+            {
+                "OPENAI_API_KEY": "sk-from-env",
+                "PICOCLAW_CONFIG_PATH": str(config_path),
+            },
+            clear=True,
+        ):
+            from hosaka.llm.openai_adapter import resolve_api_key
+
+            key, source = resolve_api_key()
+            assert key == "sk-from-env"
+            assert source == "env"

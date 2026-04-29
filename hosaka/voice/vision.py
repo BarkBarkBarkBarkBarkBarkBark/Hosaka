@@ -13,6 +13,8 @@ import os
 
 import httpx
 
+from hosaka.llm.openai_adapter import resolve_api_key
+
 log = logging.getLogger("hosaka.voice.vision")
 
 VISION_MODEL = os.getenv("HOSAKA_VOICE_VISION_MODEL", "gpt-4o-mini")
@@ -21,7 +23,7 @@ DEFAULT_PROMPT = "Describe what you see in one or two short sentences."
 
 
 def describe(jpeg: bytes, *, prompt: str = DEFAULT_PROMPT) -> str:
-    key = os.getenv("OPENAI_API_KEY", "").strip()
+    key, _key_source = resolve_api_key()
     if not key:
         return "vision: OPENAI_API_KEY not set"
     if not jpeg:

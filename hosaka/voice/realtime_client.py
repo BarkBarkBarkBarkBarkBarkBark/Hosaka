@@ -21,22 +21,29 @@ import base64
 import json
 import logging
 import os
-from typing import Any, AsyncIterator, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable
 
-try:
-    import websockets
+if TYPE_CHECKING:  # pragma: no cover - typing only
     from websockets.asyncio.client import ClientConnection
-except ImportError as exc:  # pragma: no cover - optional dep
-    raise ImportError(
-        "hosaka.voice.realtime_client requires `websockets`. "
-        "Install with: pip install -r requirements-voice.txt"
-    ) from exc
+else:  # pragma: no cover - runtime alias when optional dep is missing
+    ClientConnection = Any
 
 log = logging.getLogger("hosaka.voice.realtime")
 
 DEFAULT_MODEL = os.getenv("HOSAKA_VOICE_MODEL", "gpt-4o-realtime-preview")
 DEFAULT_VOICE = os.getenv("HOSAKA_VOICE_VOICE", "verse")
 REALTIME_URL = "wss://api.openai.com/v1/realtime?model={model}"
+
+
+def _require_websockets() -> Any:
+    try:
+        import websockets
+    except ImportError as exc:  # pragma: no cover - optional dep
+        raise RealtimeError(
+            "hosaka.voice.realtime_client requires `websockets`. "
+            "Install with: pip install -r requirements-voice.txt"
+        ) from exc
+    return websockets
 
 
 class RealtimeError(RuntimeError):
@@ -95,6 +102,7 @@ class RealtimeSession:
             ("Authorization", f"Bearer {self._api_key}"),
             ("OpenAI-Beta", "realtime=v1"),
         ]
+        websockets = _require_websockets()
         self._ws = await websockets.connect(
             url,
             additional_headers=headers,

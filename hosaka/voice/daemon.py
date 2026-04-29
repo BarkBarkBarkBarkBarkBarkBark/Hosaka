@@ -22,6 +22,7 @@ import signal
 import sys
 from typing import Any
 
+from hosaka.llm.openai_adapter import resolve_api_key
 from hosaka.voice import tools as voice_tools
 from hosaka.voice.realtime_client import RealtimeSession, RealtimeError
 
@@ -119,11 +120,11 @@ def main() -> int:
         level=os.getenv("HOSAKA_LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    api_key, _key_source = resolve_api_key()
     if not api_key:
         print(
             "hosaka voice: OPENAI_API_KEY is not set. Add it to "
-            "/etc/hosaka/env or ~/.picoclaw/config.json first.",
+            "/etc/hosaka/env, llm.json, or ~/.picoclaw/config.json first.",
             file=sys.stderr,
         )
         return 2

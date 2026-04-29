@@ -19,12 +19,12 @@ the rest of the v1 surface.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
+from hosaka.llm.openai_adapter import resolve_api_key
 from hosaka.web.api_v1 import require_auth, require_write
 from hosaka.voice import tools as voice_tools
 
@@ -87,9 +87,13 @@ async def voice_ephemeral_token() -> EphemeralOut:
     The real ``OPENAI_API_KEY`` stays on this process — the browser
     only ever sees ``client_secret.value`` (valid for ~1 minute).
     """
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    api_key, key_source = resolve_api_key()
     if not api_key:
-        raise HTTPException(503, "OPENAI_API_KEY is not set on this appliance")
+        raise HTTPException(
+            503,
+            "OPENAI_API_KEY is not set on this appliance "
+            "(checked env, llm.json, ~/.picoclaw/config.json)",
+        )
 
     from hosaka.voice.realtime_client import (
         DEFAULT_MODEL,
@@ -104,7 +108,7 @@ async def voice_ephemeral_token() -> EphemeralOut:
             instructions=voice_tools.SYSTEM_INSTRUCTIONS,
         )
     except Exception as exc:  # noqa: BLE001
-        log.warning("ephemeral token mint failed: %s", exc)
+        log.warning("ephemeral token mint failed via %s: %s", key_source or "unknown", exc)
         raise HTTPException(502, f"upstream error: {exc}") from exc
 
     return EphemeralOut(

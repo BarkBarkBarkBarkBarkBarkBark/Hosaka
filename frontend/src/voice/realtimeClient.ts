@@ -274,7 +274,19 @@ export class VoiceSession {
 async function fetchEphemeralToken(): Promise<EphemeralToken> {
   const resp = await fetch("/api/v1/voice/ephemeral-token", { method: "POST" });
   if (!resp.ok) {
-    throw new Error(`ephemeral-token ${resp.status}`);
+    let detail = "";
+    try {
+      const data = (await resp.json()) as { detail?: string };
+      detail = typeof data.detail === "string" ? data.detail : "";
+    } catch {
+      try {
+        detail = await resp.text();
+      } catch {
+        detail = "";
+      }
+    }
+    const suffix = detail.trim() ? `: ${detail.trim()}` : "";
+    throw new Error(`ephemeral-token ${resp.status}${suffix}`);
   }
   return (await resp.json()) as EphemeralToken;
 }
