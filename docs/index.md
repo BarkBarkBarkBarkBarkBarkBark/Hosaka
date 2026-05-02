@@ -10,7 +10,7 @@
 |---|---|
 | **Hardware** | Raspberry Pi 3B / 4 / Zero 2 W with a small touchscreen |
 | **Backend** | `hosaka/web/server.py` — FastAPI, port `8421` |
-| **Frontend** | `frontend/` — Vite + React, served from `/` |
+| **Frontend** | `frontend/` — Vite + React, Electron-preferred on-device, served from `/` |
 | **Operator CLI** | `/usr/local/bin/hosaka` (on the Pi) |
 | **Laptop client** | [`hosakactl`](client.md) (Mac / Linux, stdlib only) |
 | **API contract** | [`/api/v1/*`](api.md) — versioned, OpenAPI-described |
@@ -57,5 +57,6 @@ hosakactl mode device --persist
    with an output shape that can later map cleanly into MCP.
 8. [HTTP GET / POST surface](http_surface.md) — allowlisted outbound HTTP for
    agent/operator workflows.
-9. [Claims audit](claims.md) — what this codebase actually does vs. what older
+9. [App framework progress](app_framework_progress.md) — what shipped for local dev, Electron-first app hosting, and planned integrations.
+10. [Claims audit](claims.md) — what this codebase actually does vs. what older
    docs claimed it did.

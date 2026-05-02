@@ -77,7 +77,11 @@
     "orbDesc": "l'orb te voit",
     "loreDesc": "fragments d'avant le cascade",
     "echoDesc": "dis quelque chose à toi-même",
+    "appsDesc": "liste les wrappers d'apps Hosaka",
+    "appDesc": "affiche les métadonnées d'une app Hosaka",
+    "installDesc": "installe une app Hosaka via son backend",
     "messagesDesc": "indice : ouvre l'onglet messages",
+    "launchDesc": "ouvre une fenêtre d'app enregistrée ou un wrapper d'app Hosaka",
 
     "catReference": "Référence",
     "catChatAI": "Chat & IA",
@@ -87,6 +91,7 @@
     "catOpenLoops": "Boucles ouvertes",
     "catSystem": "Système",
     "catTools": "Outils",
+    "catApps": "Apps",
     "catPanels": "Panneaux"
   },
 

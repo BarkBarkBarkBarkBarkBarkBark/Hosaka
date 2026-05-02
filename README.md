@@ -83,13 +83,82 @@ On the edge device, `hosaka-kiosk.service` runs the same Electron host
 fullscreen at boot, pointed at the local FastAPI on `127.0.0.1:8421`.
 See [`kiosk/README.md`](./kiosk/README.md) for details.
 
+### Local repo dev without Docker
+
+If you're working from this checkout, you can now start the app locally
+without Docker and without waiting for any hosted deploy loop:
+
+```bash
+./scripts/install-local-cli.sh
+```
+
+That installs a repo-local `hosaka` command into `~/.local/bin` by default,
+which avoids old or relocated virtualenv path issues. If needed, it can still
+fall back to an active environment `bin/` directory.
+
+If you want to replace `/usr/local/bin/hosaka` system-wide instead:
+
+```bash
+./scripts/install-local-cli.sh --global
+```
+
+If an older `hosaka` is already on your machine, run `hash -r` after install,
+or open a fresh shell, so your shell stops caching the old command path.
+
+```bash
+hosaka dev
+```
+
+That starts the canonical local Hosaka host: Vite plus the Electron kiosk
+wrapper on `http://localhost:5173`.
+
+If that port is already busy, plain `hosaka dev` now just reuses the existing
+session. If you want a clean restart instead:
+
+```bash
+hosaka dev -fresh
+```
+
+- `hosaka dev` opens or focuses the existing dev session instead of failing.
+- `hosaka dev -fresh` stops the current listener on that port, then relaunches Hosaka.
+
+If you ever want to cleanly stop the local dev host and window without changing
+ports:
+
+```bash
+hosaka down
+```
+
+If you specifically want browser-only fallback mode:
+
+```bash
+hosaka dev --web
+```
+
+Use that only for quick UI debugging when the kiosk wrapper is getting in the
+way. Electron-first is now the default dev path.
+
+### App framework direction
+
+Hosaka now treats Electron as the primary local and on-device app shell,
+while browser access serves as an explicit fallback for other environments.
+
+The app registry now also documents host requirements and install policy for:
+
+- built-in surfaces
+- planned integrations like Spotify, Kindle, Discord, and Hosaka Radio
+- future catalog and simulcast work
+
+See [docs/app_framework_progress.md](./docs/app_framework_progress.md) for the
+implementation status and remaining work.
+
 ---
 
 ## Documentation
 
 Full reference site (auto-built from this commit on every push to `main`):
 
-**→ https://&lt;your-gh-user&gt;.github.io/Hosaka/**
+**→ https://barkbarkbarkbarkbarkbarkbark.github.io/Hosaka/**
 
 What lives there:
 
@@ -230,7 +299,7 @@ Any of these approaches works — mix and match.
 ```bash
 git clone https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka.git
 cd Hosaka
-python -m venv .venv && source .venv/bin/activate
+python -m venv .hosakavenv && source .hosakavenv/bin/activate
 pip install -r requirements-hosaka.txt
 python scripts/bootstrap_picoclaw_runtime.py --home "$HOME"
 picoclaw gateway &
@@ -436,12 +505,27 @@ Whisper can sniff the container format.
 | Variable | Default | Note |
 |---|---|---|
 | `OPENAI_API_KEY` | — | Reused from the LLM config; never sent to the browser |
-| `HOSAKA_VOICE_MODEL` | `gpt-4o-realtime-preview` | Realtime model SKU |
-| `HOSAKA_VOICE_VOICE` | `verse` | Realtime voice preset |
+| `HOSAKA_VOICE_MODEL` | `gpt-realtime` | Realtime model SKU |
+| `HOSAKA_VOICE_VOICE` | `marin` | Realtime voice preset |
 | `HOSAKA_VOICE_TRANSCRIBE_MODEL` | `whisper-1` | STT model for the Agent lane |
 | `HOSAKA_VOICE_CAMERA` | `/dev/video0` | V4L2 device for the `see()` tool |
 | `HOSAKA_VOICE_VISION_MODEL` | `gpt-4o-mini` | Vision model for `see()` |
 | `HOSAKA_PUBLIC_MODE` | unset | `1` locks the voice panel to Realtime demo only |
+| `HOSAKA_API_TARGET` | `http://127.0.0.1:8421` | Vite-dev proxy target for `/api` and `/ws` |
+
+Minimum local `.env` for Realtime → PicoClaw control:
+
+```dotenv
+OPENAI_API_KEY="sk-..."
+OPENAI_MODEL="gpt-4o-mini"
+HOSAKA_VOICE_MODEL="gpt-realtime"
+HOSAKA_VOICE_VOICE="marin"
+PICOCLAW_SESSION="hosaka:main"
+```
+
+`HOSAKA_VOICE_MODEL`, `HOSAKA_VOICE_VOICE`, and `PICOCLAW_SESSION` may be
+omitted if the defaults above are acceptable. `OPENAI_API_KEY` is the only
+hard requirement for Realtime token minting.
 
 ### Small-screen / kiosk layout
 

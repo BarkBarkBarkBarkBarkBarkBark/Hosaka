@@ -99,10 +99,10 @@ class AutomergeStore implements Store {
     const existing = this.slots.get(name) as Slot<T> | undefined;
     if (existing) return existing;
 
-    let doc = A.init<T>();
-    doc = A.change(doc, (d: Record<string, unknown>) => {
+    const doc = A.change(A.init<T>(), (d) => {
+      const target = d as Record<string, unknown>;
       for (const [k, v] of Object.entries(initial as Record<string, unknown>)) {
-        if (d[k] === undefined) d[k] = structuredClone(v);
+        if (target[k] === undefined) target[k] = structuredClone(v);
       }
     });
 
@@ -159,7 +159,7 @@ async function hydrate<T>(name: DocName, slot: Slot<T>, initial: T): Promise<voi
     const saved = await idb.get<Uint8Array>(idbKey(name));
     if (saved && saved.byteLength > 0) {
       slot.doc = A.loadIncremental(slot.doc, saved);
-      store.fire(slot as Slot<unknown>);
+      store?.fire(slot as Slot<unknown>);
       return;
     }
   } catch {
@@ -210,7 +210,7 @@ async function hydrate<T>(name: DocName, slot: Slot<T>, initial: T): Promise<voi
       }
     });
     void idb.set(idbKey(name), A.save(slot.doc)).catch(() => {});
-    store.fire(slot as Slot<unknown>);
+    store?.fire(slot as Slot<unknown>);
   } catch {
     // Bad JSON; leave initial as-is.
   }
@@ -225,6 +225,8 @@ const LEGACY_KEYS: Partial<Record<DocName, string>> = {
   ui: "hosaka.ui.v1",
   lang: "hosaka.lang",
   llm: "hosaka.llm.v1",
+  windows: "hosaka.windows.v1",
+  conversation: "hosaka.conversation.v1",
 };
 
 function applyLegacy<T>(
@@ -245,6 +247,13 @@ function applyLegacy<T>(
     }
     case "ui":
     case "llm": {
+      if (imported && typeof imported === "object") {
+        for (const [k, v] of Object.entries(imported)) dest[k] = v;
+      }
+      return;
+    }
+    case "windows":
+    case "conversation": {
       if (imported && typeof imported === "object") {
         for (const [k, v] of Object.entries(imported)) dest[k] = v;
       }

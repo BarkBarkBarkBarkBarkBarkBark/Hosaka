@@ -1,0 +1,34 @@
+id: spotify
+name: Spotify
+category: music
+description: >-
+  Spotify desktop client wrapped as a Hosaka App. The user signs in with their
+  own Spotify account inside the launched app.
+provider: Spotify
+backend: flatpak
+flatpak_id: com.spotify.Client
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - com.spotify.Client
+launch:
+  command:
+    - flatpak
+    - run
+    - com.spotify.Client
+aliases:
+  - spotify
+memory:
+  profile: heavy
+  warning: Spotify can feel heavy on smaller Hosaka builds.
+permissions_notes:
+  - Network access is required for playback and account login.
+  - Audio playback is handled by the Flatpak app itself.
+account_login_required: true
+hosaka_manages_credentials: false
+notes:
+  - Hosaka stores no Spotify credentials.
+  - Install and launch stay separate on purpose.

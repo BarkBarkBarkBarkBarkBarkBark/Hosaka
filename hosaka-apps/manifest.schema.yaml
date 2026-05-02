@@ -1,0 +1,67 @@
+version: 1
+kind: hosaka-app-manifest-schema
+summary: >-
+  Minimal schema reference for Hosaka App manifests. This is a maintainer-facing
+  contract, not a strict runtime validator yet.
+required:
+  - id
+  - name
+  - category
+  - description
+  - provider
+  - backend
+  - flatpak_id
+  - install
+  - launch
+  - aliases
+  - memory
+  - permissions_notes
+  - account_login_required
+  - hosaka_manages_credentials
+fields:
+  id:
+    type: string
+    notes: canonical Hosaka app id; lowercase slug.
+  name:
+    type: string
+  category:
+    type: string
+  description:
+    type: string
+  provider:
+    type: string
+    notes: user-facing provider label; Flathub stays mostly hidden for now.
+  backend:
+    type: string
+    enum: [flatpak]
+  flatpak_id:
+    type: string
+  install:
+    type: map
+    required: [command]
+    fields:
+      command:
+        type: list[string]
+  launch:
+    type: map
+    required: [command]
+    fields:
+      command:
+        type: list[string]
+  aliases:
+    type: list[string]
+  memory:
+    type: map
+    fields:
+      profile:
+        type: string
+      warning:
+        type: string
+  permissions_notes:
+    type: list[string]
+  account_login_required:
+    type: boolean
+  hosaka_manages_credentials:
+    type: boolean
+  notes:
+    type: list[string]

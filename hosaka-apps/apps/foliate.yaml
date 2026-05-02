@@ -1,0 +1,34 @@
+id: foliate
+name: Foliate
+category: reading
+description: >-
+  Foliate ebook reader wrapped as a Hosaka App for EPUB and local reading
+  workflows.
+provider: Foliate
+backend: flatpak
+flatpak_id: com.github.johnfactotum.Foliate
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - com.github.johnfactotum.Foliate
+launch:
+  command:
+    - flatpak
+    - run
+    - com.github.johnfactotum.Foliate
+aliases:
+  - foliate
+memory:
+  profile: medium
+  warning: Foliate is lighter than large Electron apps but still uses graphical memory.
+permissions_notes:
+  - Access to local books depends on the Flatpak app's own file chooser permissions.
+  - No Hosaka-managed account is involved.
+account_login_required: false
+hosaka_manages_credentials: false
+notes:
+  - Good fit for local EPUB workflows.
+  - Install and launch stay separate on purpose.

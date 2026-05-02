@@ -1,0 +1,27 @@
+# Reference: registry shape
+# The real registry lives at hosaka-apps/registry.yaml.
+# Per-app manifests are discovered from `apps_dir` (one YAML per app).
+
+version: 1
+
+registry:
+  id: hosaka-default-apps
+  name: Hosaka Apps
+  description: >-
+    Minimal Hosaka app wrapper registry. User-facing language stays on
+    "Hosaka Apps" while Flatpak/Flathub remain backend details.
+
+policy:
+  expose_backend_to_user: false        # UI says "Hosaka App", not "Flatpak"
+  require_manifest_for_install: true   # no arbitrary `flatpak install <x>` from the shell
+  require_manifest_for_launch: true    # /launch only fires manifest-defined argv
+  allow_arbitrary_commands: false      # kiosk spawns argv arrays only, never `shell:true`
+  store_third_party_credentials: false # invariant; do not flip
+
+backends:
+  flatpak:
+    remote:
+      name: flathub
+      url: https://flathub.org/repo/flathub.flatpakrepo
+
+apps_dir: apps  # relative to registry.yaml; each *.yaml becomes one Hosaka App

@@ -1,0 +1,47 @@
+# Reference: per-app manifest shape
+# Canonical schema lives in hosaka-apps/manifest.schema.yaml.
+# Real manifests live in hosaka-apps/apps/<id>.yaml.
+# This file is documentation, not loaded at runtime.
+
+id: spotify                 # lowercase slug, also the manifest filename
+name: Spotify               # display name
+category: music             # free-form bucket: music | reading | social | tools | ...
+description: >-
+  Short user-facing description. One or two sentences is plenty.
+provider: Spotify           # user-facing provider label; we keep "Flathub" hidden
+backend: flatpak            # only flatpak is wired today
+flatpak_id: com.spotify.Client
+
+install:
+  command:                  # argv array; spawned with shell:false in the kiosk
+    - flatpak
+    - install
+    - -y
+    - --noninteractive      # recommended for new manifests; suppresses tty prompts
+    - flathub
+    - com.spotify.Client
+
+launch:
+  command:
+    - flatpak
+    - run
+    - com.spotify.Client
+
+aliases:                    # optional shell aliases for /launch and /install
+  - spotify
+  - music
+
+memory:
+  profile: heavy            # light | medium | heavy (advisory only)
+  warning: Spotify can feel heavy on smaller Hosaka builds.
+
+permissions_notes:          # surfaced in the app inspector; advisory only
+  - Network access is required for playback and account login.
+  - Audio playback is handled by the Flatpak app itself.
+
+account_login_required: true
+hosaka_manages_credentials: false   # MUST stay false; Hosaka never stores third-party creds
+
+notes:                      # free-form footnotes, optional
+  - Hosaka stores no Spotify credentials.
+  - Install and launch stay separate on purpose.

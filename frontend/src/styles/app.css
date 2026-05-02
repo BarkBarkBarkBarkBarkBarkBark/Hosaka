@@ -59,7 +59,7 @@ html, body, #root {
 
 .hosaka-shell {
   display: grid;
-  grid-template-rows: var(--top-h) var(--dock-h) 1fr var(--foot-h);
+  grid-template-rows: var(--top-h) auto 1fr var(--foot-h);
   height: 100dvh;
   background:
     radial-gradient(1200px 600px at 10% -10%, rgba(199, 121, 255, 0.08), transparent 70%),
@@ -109,14 +109,66 @@ html, body, #root {
 
 .hosaka-dock {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: stretch;
+  flex-direction: column;
+  gap: 8px;
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-1);
+}
+
+.hosaka-launchbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: stretch;
   overflow-x: auto;
   scrollbar-width: thin;
+}
+
+.hosaka-window-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.hosaka-window-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-0);
+  color: var(--fg-1);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hosaka-window-tab.is-active {
+  border-color: var(--amber-dim);
+  color: var(--amber);
+  box-shadow: inset 0 -2px 0 var(--amber);
+}
+
+.hosaka-window-title {
+  pointer-events: none;
+}
+
+.hosaka-window-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid transparent;
+  color: var(--fg-2);
+}
+
+.hosaka-window-close:hover {
+  color: var(--red);
+  border-color: var(--border);
 }
 
 .hosaka-dock-picker {
@@ -1458,24 +1510,262 @@ html, body, #root {
 }
 .hosaka-chevron:hover { color: var(--cyan); border-color: var(--cyan-dim); }
 
-.hosaka-shell--immersive .hosaka-topbar,
-.hosaka-shell--immersive .hosaka-footer,
-.hosaka-shell--immersive .hosaka-dock-btn {
+.hosaka-shell--chrome-collapsed .hosaka-brand-sub,
+.hosaka-shell--chrome-collapsed .signal-badge,
+.hosaka-shell--chrome-collapsed .plant-badge,
+.hosaka-shell--chrome-collapsed .lang-picker,
+.hosaka-shell--chrome-collapsed .hosaka-footer {
   display: none !important;
 }
 
-/* Dock shrinks to just the chevron + picker, one tight row. */
-.hosaka-shell--immersive .hosaka-dock {
-  padding: 4px 8px;
-  gap: 8px;
-  border-bottom: 1px solid var(--border);
+.hosaka-shell--chrome-collapsed .hosaka-topbar {
+  padding: 0 12px;
 }
 
-/* WebPanel — in immersive we drop the hint banner entirely so the browsed
-   page owns nearly the full viewport. The toolbar itself is already compact
-   at the default breakpoint (see .web-toolbar above), so we don't need to
-   re-specify geometry here. */
-.hosaka-shell--immersive .web-hint { display: none; }
+.hosaka-shell--chrome-collapsed .hosaka-launchbar {
+  padding-right: 4px;
+}
+
+.hosaka-shell--chrome-collapsed .hosaka-dock {
+  gap: 6px;
+}
+
+.hosaka-shell--chrome-collapsed .web-hint { display: none; }
+
+.desktop-panel {
+  height: 100%;
+  padding: 0 24px 24px;
+  overflow: auto;
+}
+
+.desktop-hero,
+.desktop-card,
+.workbench-tree,
+.workbench-preview,
+.workbench-chat,
+.workbench-command-deck {
+  border: 1px solid var(--border);
+  background: linear-gradient(to bottom, rgba(17, 20, 24, 0.96), rgba(11, 13, 16, 0.96));
+}
+
+.desktop-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+}
+
+.desktop-hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--font-mono);
+}
+
+.desktop-hero-actions,
+.desktop-card-actions,
+.workbench-actions,
+.workbench-command-buttons,
+.desktop-window-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.desktop-grid,
+.desktop-bottom-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.desktop-bottom-grid {
+  margin-top: 14px;
+}
+
+.desktop-card {
+  padding: 14px;
+}
+
+.desktop-card.is-open {
+  border-color: var(--amber-dim);
+}
+
+.desktop-card--wide {
+  min-height: 220px;
+}
+
+.desktop-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.desktop-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-0);
+  color: var(--fg-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+}
+
+.desktop-card-notes {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: rgba(11, 13, 16, 0.72);
+}
+
+.desktop-card-notes p {
+  margin: 0;
+  color: var(--fg-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.desktop-card-notes p + p {
+  margin-top: 8px;
+}
+
+.desktop-card-notes strong {
+  color: var(--fg-1);
+  font-family: var(--font-mono);
+  text-transform: lowercase;
+}
+
+.desktop-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.desktop-card-head strong,
+.workbench-section-title {
+  display: block;
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+}
+
+.desktop-card-head p,
+.workbench-tree-item span,
+.workbench-preview-card p,
+.desktop-log-entry p,
+.workbench-chat-entry p {
+  margin: 6px 0 0;
+  color: var(--fg-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.desktop-state {
+  color: var(--green);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.desktop-window-pill,
+.workbench-tree-item {
+  border: 1px solid var(--border);
+  background: var(--bg-0);
+  color: var(--fg-1);
+}
+
+.desktop-window-pill {
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.desktop-window-pill.is-active,
+.workbench-tree-item.is-active {
+  border-color: var(--amber-dim);
+  color: var(--amber);
+}
+
+.desktop-conversation-preview,
+.workbench-chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.desktop-log-entry,
+.workbench-chat-entry {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: rgba(11, 13, 16, 0.8);
+}
+
+.desktop-log-entry span,
+.workbench-chat-entry span {
+  color: var(--fg-3);
+  font-size: 11px;
+  text-transform: lowercase;
+  margin-right: 8px;
+}
+
+.workbench-panel {
+  height: 100%;
+  padding: 0 24px 24px;
+  overflow: auto;
+}
+
+.workbench-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) minmax(280px, 1fr) minmax(260px, 360px);
+  gap: 14px;
+}
+
+.workbench-tree,
+.workbench-preview,
+.workbench-chat,
+.workbench-command-deck {
+  padding: 12px;
+}
+
+.workbench-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workbench-tree-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.workbench-preview-card {
+  padding: 14px;
+  border: 1px solid var(--border);
+  background: rgba(11, 13, 16, 0.72);
+}
+
+.workbench-command-deck {
+  margin-top: 14px;
+}
+
+@media (max-width: 980px) {
+  .workbench-layout {
+    grid-template-columns: 1fr;
+  }
+}
 
 .web-empty {
   position: absolute;

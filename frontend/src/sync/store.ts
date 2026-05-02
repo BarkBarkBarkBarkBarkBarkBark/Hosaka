@@ -22,7 +22,9 @@ export type DocName =
   | "messages"
   | "ui"
   | "lang"
-  | "llm";
+  | "llm"
+  | "windows"
+  | "conversation";
 
 export interface Store {
   /** Read current value, returning `initial` if the doc is empty. */
@@ -113,7 +115,7 @@ export function installStore(next: Store, previous: LocalStore | null): void {
   // On swap, fire every doc's listeners so they pull the new state.
   if (previous) {
     const ls = previous as unknown as { listeners: Map<DocName, Set<Listener>> };
-    for (const [name, set] of ls.listeners) {
+    for (const [, set] of ls.listeners) {
       for (const fn of set) {
         try {
           fn();

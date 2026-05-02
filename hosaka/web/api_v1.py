@@ -955,3 +955,188 @@ async def v1_http_post(body: HttpPostIn) -> HttpResponseOut:
         body=body.body,
         json_body=body.json_body,
     )
+
+
+# ── apps (HTTP fallback) ─────────────────────────────────────────────────────
+#
+# The Electron kiosk talks to flatpak directly via IPC. This HTTP surface is
+# the browser-only fallback so the app store / shell commands can demo
+# without Electron. It is mock-only by default — actually shelling out to
+# `flatpak install` from a web request is too footgunny to ship turned on.
+# Set HOSAKA_APPS_HTTP=real on a Linux box if you really want it.
+
+import yaml as _yaml  # noqa: E402  (kept local to apps surface)
+
+_APPS_ROOT = Path(os.getenv("HOSAKA_APPS_ROOT", str(APP_ROOT / "hosaka-apps")))
+_APPS_DIR = _APPS_ROOT / "apps"
+_APPS_HTTP_MODE = os.getenv("HOSAKA_APPS_HTTP", "mock").strip().lower()
+
+
+def _normalize_app_token(raw: str) -> str:
+    return re.sub(r"[^a-z0-9._-]+", "-", raw.strip().lower())
+
+
+def _read_app_manifests() -> list[dict[str, Any]]:
+    if not _APPS_DIR.exists():
+        return []
+    out: list[dict[str, Any]] = []
+    for entry in sorted(_APPS_DIR.iterdir()):
+        if entry.suffix.lower() not in {".yaml", ".yml"}:
+            continue
+        try:
+            data = _yaml.safe_load(entry.read_text(encoding="utf-8")) or {}
+        except (OSError, _yaml.YAMLError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        app_id = _normalize_app_token(str(data.get("id", "")))
+        flatpak_id = str(data.get("flatpak_id", "")).strip()
+        if not app_id or not flatpak_id:
+            continue
+        install = data.get("install") or {}
+        launch = data.get("launch") or {}
+        out.append({
+            "id": app_id,
+            "name": str(data.get("name", app_id)),
+            "category": str(data.get("category", "other")),
+            "backend": str(data.get("backend", "flatpak")),
+            "flatpak_id": flatpak_id,
+            "install": {"command": list(install.get("command") or [])},
+            "launch": {"command": list(launch.get("command") or [])},
+            "aliases": [_normalize_app_token(str(a)) for a in (data.get("aliases") or []) if str(a).strip()],
+        })
+    return out
+
+
+def _resolve_app(raw: str) -> Optional[dict[str, Any]]:
+    token = _normalize_app_token(raw)
+    for m in _read_app_manifests():
+        if m["id"] == token or token in m["aliases"]:
+            return m
+    return None
+
+
+def _mock_app_response(app: dict[str, Any], verb: str) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "appId": app["id"],
+        "manifestFound": True,
+        "installed": verb in {"install", "status"},
+        "flatpakAvailable": True,
+        "flathubConfigured": True,
+        "host": "mock",
+        "message": f"[mock] {verb} {app['name']}.",
+        "details": [f"{verb} command: " + " ".join(app[verb if verb != 'status' else 'install']['command'])],
+    }
+
+
+class AppStageIn(BaseModel):
+    flatpak_id: str = Field(..., min_length=1, max_length=255)
+    name: Optional[str] = None
+    id: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    provider: Optional[str] = None
+    overwrite: bool = False
+
+
+@router.get("/apps/", summary="List staged Hosaka app manifests")
+def v1_apps_list() -> dict[str, Any]:
+    return {"apps": _read_app_manifests()}
+
+
+@router.get("/apps/capabilities", summary="Apps subsystem capability probe")
+def v1_apps_capabilities() -> dict[str, Any]:
+    return {
+        "host": "web",
+        "platform": os.uname().sysname.lower() if hasattr(os, "uname") else "unknown",
+        "flatpakAvailable": False,
+        "mocked": _APPS_HTTP_MODE != "real",
+        "note": (
+            "browser fallback — install/launch are mocked. "
+            "set HOSAKA_APPS_HTTP=real on a Linux host to actually shell out."
+            if _APPS_HTTP_MODE != "real" else None
+        ),
+    }
+
+
+@router.get("/apps/{app_id}/status", summary="Get a Hosaka app's install status (mock or real)")
+def v1_apps_status(app_id: str) -> dict[str, Any]:
+    app = _resolve_app(app_id)
+    if not app:
+        return {"ok": False, "manifestFound": False, "message": f"app not found: {app_id}"}
+    if _APPS_HTTP_MODE != "real":
+        return _mock_app_response(app, "status")
+    code, _out, _err = _run(["flatpak", "info", app["flatpak_id"]], timeout=8)
+    return {
+        "ok": True, "appId": app["id"], "manifestFound": True,
+        "installed": code == 0, "flatpakAvailable": True, "host": "web",
+        "message": f"{app['name']} is {'installed' if code == 0 else 'not installed'}.",
+    }
+
+
+@router.post("/apps/{app_id}/install", summary="Install a Hosaka app (mock by default)", dependencies=[Depends(require_write)])
+def v1_apps_install(app_id: str) -> dict[str, Any]:
+    app = _resolve_app(app_id)
+    if not app:
+        return {"ok": False, "manifestFound": False, "message": f"app not found: {app_id}"}
+    if _APPS_HTTP_MODE != "real":
+        return _mock_app_response(app, "install")
+    cmd = app["install"]["command"]
+    code, _out, err = _run(cmd, timeout=300)
+    return {
+        "ok": code == 0, "appId": app["id"], "manifestFound": True,
+        "installed": code == 0, "flatpakAvailable": True, "host": "web",
+        "message": f"installed {app['name']}." if code == 0 else f"install failed: {err.strip()[:200]}",
+    }
+
+
+@router.post("/apps/{app_id}/launch", summary="Launch a Hosaka app (mock by default)", dependencies=[Depends(require_write)])
+def v1_apps_launch(app_id: str) -> dict[str, Any]:
+    app = _resolve_app(app_id)
+    if not app:
+        return {"ok": False, "manifestFound": False, "message": f"app not found: {app_id}"}
+    if _APPS_HTTP_MODE != "real":
+        return _mock_app_response(app, "launch")
+    cmd = app["launch"]["command"]
+    try:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except (OSError, FileNotFoundError) as e:
+        return {"ok": False, "appId": app["id"], "host": "web", "message": f"launch failed: {e}"}
+    return {"ok": True, "appId": app["id"], "manifestFound": True, "launched": True, "host": "web", "message": f"launched {app['name']}."}
+
+
+@router.post("/apps/stage", summary="Stage a Flathub app manifest under hosaka-apps/apps/", dependencies=[Depends(require_write)])
+def v1_apps_stage(body: AppStageIn) -> dict[str, Any]:
+    flatpak_id = body.flatpak_id.strip()
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", flatpak_id):
+        return {"ok": False, "message": "invalid flatpak id"}
+    app_id = _normalize_app_token(body.id or flatpak_id.split(".")[-1] or flatpak_id)
+    if not app_id:
+        return {"ok": False, "message": "invalid app id"}
+    target = _APPS_DIR / f"{app_id}.yaml"
+    if target.exists() and not body.overwrite:
+        return {"ok": False, "message": f"manifest already staged: {app_id}", "path": str(target)}
+    manifest = {
+        "id": app_id,
+        "name": body.name or flatpak_id,
+        "category": body.category or "other",
+        "description": body.description or f"Flathub app {flatpak_id}.",
+        "provider": body.provider or "Flathub",
+        "backend": "flatpak",
+        "flatpak_id": flatpak_id,
+        "install": {"command": ["flatpak", "install", "-y", "--noninteractive", "flathub", flatpak_id]},
+        "launch": {"command": ["flatpak", "run", flatpak_id]},
+        "aliases": sorted({app_id, flatpak_id.lower()}),
+        "memory": {"profile": "unknown"},
+        "permissions_notes": ["Staged from Flathub catalog; review the app's own permissions before installing."],
+        "account_login_required": False,
+        "hosaka_manages_credentials": False,
+        "notes": ["User-staged via the HTTP apps fallback."],
+    }
+    try:
+        _APPS_DIR.mkdir(parents=True, exist_ok=True)
+        target.write_text(_yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+    except OSError as e:
+        return {"ok": False, "message": f"write failed: {e}"}
+    return {"ok": True, "id": app_id, "path": str(target)}

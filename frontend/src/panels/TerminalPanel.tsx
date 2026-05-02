@@ -91,6 +91,7 @@ export function TerminalPanel({ active }: Props) {
     return () => {
       window.removeEventListener("resize", onResize);
       window.removeEventListener("hosaka:ui-changed", onUiChanged);
+      shell.dispose();
       term.dispose();
     };
   }, []);

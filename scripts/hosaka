@@ -16,6 +16,11 @@
 #
 #   hosaka status                  what's running, RAM/CPU snapshot
 #   hosaka doctor [flags]          end-to-end diagnostics (runtime, tailscale, drift)
+#   hosaka dev                     local repo dev: vite + electron by default
+#   hosaka dev --web              browser-only fallback dev mode
+#   hosaka dev                     if the port is busy, reuse/open the existing session
+#   hosaka dev -fresh             stop the current listener first, then relaunch
+#   hosaka down                   stop local dev listeners/windows for this checkout
 #   hosaka build [--check]         npm build (check = with tsc gate)
 #   hosaka update [--check]        git pull + build + rsync + restart webserver
 #   hosaka deploy [--check]        build + rsync into /opt + restart webserver
@@ -30,7 +35,25 @@ set -euo pipefail
 
 # ── paths ─────────────────────────────────────────────────────────────────────
 
-REPO_ROOT="${HOSAKA_REPO:-/home/operator/Hosaka}"
+SOURCE_PATH="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE_PATH" ]]; do
+  SOURCE_DIR="$(cd "$(dirname "$SOURCE_PATH")" && pwd)"
+  LINK_TARGET="$(readlink "$SOURCE_PATH")"
+  if [[ "$LINK_TARGET" == /* ]]; then
+    SOURCE_PATH="$LINK_TARGET"
+  else
+    SOURCE_PATH="$SOURCE_DIR/$LINK_TARGET"
+  fi
+done
+
+SCRIPT_DIR="$(cd "$(dirname "$SOURCE_PATH")" && pwd)"
+if [[ -f "$SCRIPT_DIR/../frontend/package.json" && -f "$SCRIPT_DIR/../README.md" ]]; then
+  DEFAULT_REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+  DEFAULT_REPO_ROOT="/home/operator/Hosaka"
+fi
+
+REPO_ROOT="${HOSAKA_REPO:-$DEFAULT_REPO_ROOT}"
 DEPLOY_ROOT="${HOSAKA_DEPLOY:-/opt/hosaka-field-terminal}"
 STATE_DIR="${HOSAKA_STATE_DIR:-/var/lib/hosaka}"
 RUNTIME_MODE_FILE="$STATE_DIR/mode"
@@ -44,6 +67,7 @@ PICO_UNIT="picoclaw-gateway.service"
 # HOSAKA_AGENT_SESSION or pass `-s <name>` after the verb.
 AGENT_SESSION="${HOSAKA_AGENT_SESSION:-manager}"
 PICOCLAW_BIN="${PICOCLAW_BIN:-/usr/local/bin/picoclaw}"
+DEV_CONFLICT_RESULT="continue"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -59,6 +83,197 @@ warn() { printf '  %s %s\n' "$(c_amber '!')" "$*"; }
 die()  { printf '  %s %s\n' "$(c_red '✗')" "$*" >&2; exit 1; }
 
 have_cmd() { command -v "$1" >/dev/null 2>&1; }
+
+port_listener_pids() {
+  local port="$1"
+  if have_cmd lsof; then
+    lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk '!seen[$0]++'
+    return 0
+  fi
+  if have_cmd ss; then
+    ss -ltnp "sport = :$port" 2>/dev/null \
+      | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' \
+      | awk '!seen[$0]++'
+    return 0
+  fi
+  return 1
+}
+
+port_is_busy() {
+  local port="$1"
+  local pids
+  pids="$(port_listener_pids "$port" || true)"
+  [[ -n "$pids" ]]
+}
+
+open_url() {
+  local url="$1"
+  if have_cmd open; then
+    open "$url" >/dev/null 2>&1 || true
+  elif have_cmd xdg-open; then
+    xdg-open "$url" >/dev/null 2>&1 || true
+  fi
+}
+
+launch_dev_electron_against() {
+  local port="$1"
+  [[ -d "$REPO_ROOT/kiosk" ]] || die "no kiosk host at $REPO_ROOT/kiosk"
+  if [[ ! -d "$REPO_ROOT/kiosk/node_modules" ]]; then
+    note "kiosk deps missing — running $(c_cyan 'npm install')"
+    ( cd "$REPO_ROOT/kiosk" && npm install )
+  fi
+  note "opening or focusing the existing hosaka electron window on $(c_cyan "http://localhost:$port")"
+  ( cd "$REPO_ROOT/kiosk" \
+    && HOSAKA_KIOSK_URL="http://localhost:$port" \
+       HOSAKA_KIOSK_FULLSCREEN=0 \
+       HOSAKA_KIOSK_DEVTOOLS="${HOSAKA_KIOSK_DEVTOOLS:-1}" \
+       npx electron . )
+}
+
+kill_port_listeners() {
+  local port="$1"
+  local pids pid attempt
+  pids="$(port_listener_pids "$port" || true)"
+  [[ -n "$pids" ]] || return 0
+  warn "port $port is busy — stopping listener(s): $(tr '\n' ' ' <<<"$pids" | xargs)"
+  while read -r pid; do
+    [[ -z "$pid" ]] && continue
+    kill "$pid" 2>/dev/null || true
+  done <<<"$pids"
+  for attempt in 1 2 3 4 5 6; do
+    if ! port_is_busy "$port"; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  pids="$(port_listener_pids "$port" || true)"
+  [[ -z "$pids" ]] && return 0
+  warn "port $port still busy — forcing listener shutdown"
+  while read -r pid; do
+    [[ -z "$pid" ]] && continue
+    kill -9 "$pid" 2>/dev/null || true
+  done <<<"$pids"
+  sleep 0.5
+}
+
+kill_local_dev_electron() {
+  local repo_pattern="$REPO_ROOT/kiosk"
+  local pids pid
+  pids="$(pgrep -f "$repo_pattern" 2>/dev/null || true)"
+  [[ -n "$pids" ]] || return 0
+  warn "stopping local electron/dev host process(es): $(tr '\n' ' ' <<<"$pids" | xargs)"
+  while read -r pid; do
+    [[ -z "$pid" ]] && continue
+    kill "$pid" 2>/dev/null || true
+  done <<<"$pids"
+}
+
+cmd_down() {
+  local port="${HOSAKA_DEV_PORT:-5173}"
+  local stop_all=0
+
+  while (( $# )); do
+    case "$1" in
+      --port)
+        [[ $# -ge 2 ]] || die "--port needs a value"
+        port="$2"
+        shift 2
+        ;;
+      --port=*)
+        port="${1#*=}"
+        shift
+        ;;
+      --all)
+        stop_all=1
+        shift
+        ;;
+      *)
+        die "unknown down arg: $1"
+        ;;
+    esac
+  done
+
+  if (( stop_all )); then
+    local candidate
+    for candidate in 5173 4173 4180 4181 4280 4281; do
+      kill_port_listeners "$candidate"
+    done
+  else
+    kill_port_listeners "$port"
+  fi
+  kill_local_dev_electron
+  ok "local hosaka dev processes stopped"
+}
+
+resolve_dev_port_conflict() {
+  local mode="$1"
+  local port="$2"
+  local strategy="$3"
+  local open_browser="$4"
+  local url="http://localhost:$port"
+
+  if ! port_is_busy "$port"; then
+    DEV_CONFLICT_RESULT="continue"
+    return 0
+  fi
+
+  case "$strategy" in
+    restart)
+      kill_port_listeners "$port"
+      DEV_CONFLICT_RESULT="continue"
+      return 0
+      ;;
+    reuse)
+      if [[ "$mode" == "electron" ]]; then
+        launch_dev_electron_against "$port"
+      elif (( open_browser )); then
+        note "reusing existing dev server at $(c_cyan "$url")"
+        open_url "$url"
+      else
+        note "reusing existing dev server at $(c_cyan "$url")"
+      fi
+      DEV_CONFLICT_RESULT="handled"
+      return 0
+      ;;
+    ask|"")
+      ;;
+    *)
+      die "unknown dev conflict strategy: $strategy"
+      ;;
+  esac
+
+  if [[ -t 0 && -t 1 ]]; then
+    warn "port $port is already in use."
+    printf '  %s %s\n' "$(c_dim '?')" "[o] open existing  [r] restart listener  [a] abort"
+    while true; do
+      read -r -p "  choose [o/r/a]: " choice
+      case "${choice,,}" in
+        o|open|reuse)
+          if [[ "$mode" == "electron" ]]; then
+            launch_dev_electron_against "$port"
+          elif (( open_browser )); then
+            note "reusing existing dev server at $(c_cyan "$url")"
+            open_url "$url"
+          else
+            note "reusing existing dev server at $(c_cyan "$url")"
+          fi
+          DEV_CONFLICT_RESULT="handled"
+          return 0
+          ;;
+        r|restart)
+          kill_port_listeners "$port"
+          DEV_CONFLICT_RESULT="continue"
+          return 0
+          ;;
+        a|abort|q|quit)
+          die "port $port is already in use"
+          ;;
+      esac
+    done
+  fi
+
+  die "port $port is already in use — rerun with $(c_cyan '--reuse') to open the existing session or $(c_cyan '--restart') to stop the listener first"
+}
 
 git_repo_clean() {
   git -C "$REPO_ROOT" diff --quiet --ignore-submodules HEAD --
@@ -332,6 +547,103 @@ cmd_build() {
   ok "build done — output at $REPO_ROOT/hosaka/web/ui"
 }
 
+cmd_dev() {
+  local mode="electron"
+  local port="${HOSAKA_DEV_PORT:-5173}"
+  local strict_port=1
+  local open_browser=1
+  local conflict_strategy="reuse"
+
+  while (( $# )); do
+    case "$1" in
+      web|--web)
+        mode="web"
+        shift
+        ;;
+      electron|--electron)
+        mode="electron"
+        shift
+        ;;
+      --port)
+        [[ $# -ge 2 ]] || die "--port needs a value"
+        port="$2"
+        shift 2
+        ;;
+      --port=*)
+        port="${1#*=}"
+        shift
+        ;;
+      --no-strict-port)
+        strict_port=0
+        shift
+        ;;
+      --reuse|--open-existing)
+        conflict_strategy="reuse"
+        shift
+        ;;
+      -)
+        if [[ "${2:-}" == "fresh" ]]; then
+          conflict_strategy="restart"
+          shift 2
+        else
+          die "unknown dev arg: $1"
+        fi
+        ;;
+      -fresh|--fresh|--restart|--restart-existing)
+        conflict_strategy="restart"
+        shift
+        ;;
+      --no-open)
+        open_browser=0
+        shift
+        ;;
+      *)
+        die "unknown dev arg: $1"
+        ;;
+    esac
+  done
+
+  [[ -d "$REPO_ROOT/frontend" ]] || die "no frontend at $REPO_ROOT/frontend"
+  ensure_frontend_deps
+
+  DEV_CONFLICT_RESULT="continue"
+  resolve_dev_port_conflict "$mode" "$port" "$conflict_strategy" "$open_browser"
+  [[ "$DEV_CONFLICT_RESULT" == "handled" ]] && return 0
+
+  if [[ "$mode" == "electron" ]]; then
+    [[ -d "$REPO_ROOT/kiosk" ]] || die "no kiosk host at $REPO_ROOT/kiosk"
+    if [[ ! -d "$REPO_ROOT/kiosk/node_modules" ]]; then
+      note "kiosk deps missing — running $(c_cyan 'npm install')"
+      ( cd "$REPO_ROOT/kiosk" && npm install )
+    fi
+    note "launching $(c_cyan 'hosaka electron dev') on $(c_cyan "http://localhost:$port")"
+    note "this is the canonical local mode — same host shape as the linux kiosk"
+    note "vite + electron run together; ctrl-c tears both down"
+    ( cd "$REPO_ROOT/kiosk" && VITE_PORT="$port" npm run dev )
+    return 0
+  fi
+
+  note "launching $(c_cyan 'hosaka web dev') on $(c_cyan "http://localhost:$port")"
+  note "browser-only fallback mode; electron remains the primary host"
+
+  if (( open_browser )); then
+    (
+      sleep 2
+      if have_cmd open; then
+        open "http://localhost:$port" >/dev/null 2>&1 || true
+      elif have_cmd xdg-open; then
+        xdg-open "http://localhost:$port" >/dev/null 2>&1 || true
+      fi
+    ) &
+  fi
+
+  if (( strict_port )); then
+    ( cd "$REPO_ROOT/frontend" && exec npm run dev -- --port "$port" --strictPort )
+  else
+    ( cd "$REPO_ROOT/frontend" && exec npm run dev -- --port "$port" )
+  fi
+}
+
 cmd_deploy() {
   cmd_build "$@"
   if [[ -d "$DEPLOY_ROOT/hosaka/web/ui" ]]; then
@@ -436,7 +748,9 @@ _ensure_picoclaw() {
 _hosaka_python() {
   local candidate
   for candidate in \
+    "$REPO_ROOT/.hosakavenv/bin/python" \
     "$REPO_ROOT/.venv/bin/python" \
+    "$(cd "$REPO_ROOT/.." && pwd)/.hosakavenv/bin/python" \
     "$(cd "$REPO_ROOT/.." && pwd)/.venv/bin/python" \
   ; do
     if [[ -x "$candidate" ]]; then
@@ -520,9 +834,14 @@ hosaka — operator CLI for the Hosaka Field Terminal Pi
   Aliases (legacy): \`hosaka mode kiosk\` → console, \`hosaka mode build\` → device
 
   hosaka status                     what's running + memory snapshot
+  hosaka down [--port N] [--all]    stop local dev listeners/windows for this checkout
   hosaka dashboard                  print the device dashboard once and exit
   hosaka doctor [--json] [--strict] [--profile PROFILE] [--host URL]
                                     run structured diagnostics; future MCP-friendly
+  hosaka dev [--port N] [--no-open] [-fresh]
+                                    local frontend dev without docker.
+                                    default = vite + electron; reuses existing session if port is busy
+                                    use -fresh to restart the listener first; use --web for browser-only fallback
   hosaka build [--check]            npm run build (--check runs tsc gate first)
   hosaka update [--check] [--branch BRANCH]
                                     git pull + deploy from this checkout
@@ -539,6 +858,13 @@ Typical SSH-then-deploy flow:
   hosaka mode device                 # frees RAM
   cd ~/Hosaka && hosaka update
   hosaka mode console                # touchscreen back
+
+Typical local dev flow:
+  hosaka dev                         # vite + electron host together
+  hosaka dev                         # if :5173 is already live, open/focus the existing session
+  hosaka dev -fresh                  # stop the existing :5173 listener, then relaunch cleanly
+  hosaka down                        # stop the local dev session cleanly
+  hosaka dev --web                   # browser-only fallback on localhost:5173
 USAGE
 }
 
@@ -557,8 +883,10 @@ main() {
       esac
       ;;
     status)    cmd_status "$@" ;;
+    down)      cmd_down "$@" ;;
     dashboard) exec /usr/local/bin/hosaka-device-dashboard --once ;;
     doctor)    cmd_doctor "$@" ;;
+    dev)       cmd_dev "$@" ;;
     build)     cmd_build "$@" ;;
     update)    cmd_update "$@" ;;
     deploy)    cmd_deploy "$@" ;;

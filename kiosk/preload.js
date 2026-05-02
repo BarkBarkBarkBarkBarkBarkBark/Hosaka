@@ -6,7 +6,7 @@
  * bridge is present, the WebPanel picks the "native-webview" render path
  * instead of the plain iframe fallback.
  */
-const { contextBridge } = require("electron");
+const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("hosakaBrowserAdapter", {
   mode: "native-webview",
@@ -15,4 +15,15 @@ contextBridge.exposeInMainWorld("hosakaBrowserAdapter", {
   // host-managed surface to launch. We still expose the function so the
   // adapter's feature detection reports the right mode.
   launchNativeWebview: async () => true,
+});
+
+contextBridge.exposeInMainWorld("hosakaAppHost", {
+  getStatus: async (appId) => ipcRenderer.invoke("hosaka-apps:status", appId),
+  installApp: async (appId) => ipcRenderer.invoke("hosaka-apps:install", appId),
+  launchApp: async (appId) => ipcRenderer.invoke("hosaka-apps:launch", appId),
+  listManifests: async () => ipcRenderer.invoke("hosaka-apps:list"),
+  capabilities: async () => ipcRenderer.invoke("hosaka-apps:capabilities"),
+  flathubSearch: async (query) => ipcRenderer.invoke("hosaka-apps:flathub-search", query),
+  flathubMeta: async (flatpakId) => ipcRenderer.invoke("hosaka-apps:flathub-meta", flatpakId),
+  stageManifest: async (payload) => ipcRenderer.invoke("hosaka-apps:stage-manifest", payload),
 });

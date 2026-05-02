@@ -38,6 +38,24 @@ import {
   trackPacket,
 } from "./netscan";
 import { executeHosakaUiCommand } from "../ui/hosakaUi";
+import { appendConversationEntry } from "../chat/conversationLog";
+import { APP_REGISTRY, resolveAppId } from "../ui/appRegistry";
+import {
+  formatHosakaAppCommand,
+  getHosakaAppById,
+  HOSAKA_APPS,
+  resolveHosakaAppId,
+} from "../apps/hosakaApps";
+import {
+  getHosakaAppStatus,
+  installHosakaApp,
+  launchHosakaApp,
+  refreshHosakaAppsFromHost,
+  searchFlathub,
+  stageHosakaAppManifest,
+  type HosakaAppHostResponse,
+} from "../apps/flatpakBackend";
+import { populateLibrary } from "../apps/library";
 
 // ANSI helpers
 const ESC = "\x1b[";
@@ -91,6 +109,16 @@ export class HosakaShell {
   private configMasked  = false;
   private configBuf     = "";
   private configResolve: ((v: string) => void) | null = null;
+  private readonly stagedCommandListener = (event: Event) => {
+    const detail = (event as CustomEvent<{ command?: string; autoSubmit?: boolean }>).detail;
+    const command = String(detail?.command ?? "").trim();
+    if (!command) return;
+    this.clearSuggestion();
+    this.replaceBuffer(command);
+    if (detail?.autoSubmit) {
+      this.submit();
+    }
+  };
 
   constructor(private readonly term: Terminal) {}
 
@@ -98,7 +126,20 @@ export class HosakaShell {
     this.writeBanner();
     this.writePrompt();
     this.term.onData((data) => this.onData(data));
+    window.addEventListener("hosaka:terminal-stage-command", this.stagedCommandListener as EventListener);
     void this.checkLlmConfig();
+  }
+
+  dispose(): void {
+    window.removeEventListener("hosaka:terminal-stage-command", this.stagedCommandListener as EventListener);
+    if (this.thinkingTimer !== null) {
+      window.clearInterval(this.thinkingTimer);
+      this.thinkingTimer = null;
+    }
+    if (this.netscanTimer !== null) {
+      window.clearInterval(this.netscanTimer);
+      this.netscanTimer = null;
+    }
   }
 
   private async checkLlmConfig(): Promise<void> {
@@ -528,12 +569,38 @@ export class HosakaShell {
         );
         break;
       case "/messages":
+      case "/home":
+      case "/desktop":
       case "/terminal":
       case "/reading":
       case "/video":
       case "/games":
       case "/wiki":
         this.switchToPanel(cmd.slice(1));
+        break;
+      case "/apps":
+        await this.handleApps();
+        break;
+      case "/app":
+        await this.handleApp(arg);
+        break;
+      case "/install":
+        await this.handleInstall(arg);
+        break;
+      case "/search":
+        await this.handleSearch(arg);
+        break;
+      case "/store":
+        this.switchToPanel("app_store");
+        break;
+      case "/listen":
+        this.switchToPanel("music");
+        break;
+      case "/library":
+        await this.handleLibrary(arg);
+        break;
+      case "/launch":
+        await this.handleLaunch(arg);
         break;
       case "/web":
         this.handleWeb(arg);
@@ -596,6 +663,14 @@ export class HosakaShell {
     const cfg = loadLlmConfig();
     this.busy = true;
     this.startThinking();
+    appendConversationEntry({
+      role: "user",
+      source: "shell",
+      channel: "text",
+      text: userPrompt,
+      visibility: "visible",
+      appId: "terminal",
+    });
     try {
       const res = await askGemini(userPrompt, this.llmHistory, cfg);
       this.stopThinking();
@@ -613,6 +688,14 @@ export class HosakaShell {
         this.writeln(`  ${line}`);
       }
       this.writeln("");
+      appendConversationEntry({
+        role: "assistant",
+        source: "shell",
+        channel: "text",
+        text: res.text,
+        visibility: "visible",
+        appId: "terminal",
+      });
     } finally {
       this.stopThinking();
       this.busy = false;
@@ -723,6 +806,14 @@ export class HosakaShell {
   private async askAgent(userPrompt: string, cfg: AgentConfig): Promise<void> {
     this.busy = true;
     this.startThinking();
+    appendConversationEntry({
+      role: "user",
+      source: "agent",
+      channel: "text",
+      text: userPrompt,
+      visibility: "visible",
+      appId: "terminal",
+    });
     try {
       const agent = getAgent(cfg);
       let res = await agent.send(userPrompt);
@@ -743,10 +834,26 @@ export class HosakaShell {
         this.writeln(`  ${line}`);
       }
       this.writeln("");
+      appendConversationEntry({
+        role: "assistant",
+        source: "agent",
+        channel: "text",
+        text: res.text,
+        visibility: "visible",
+        appId: "terminal",
+      });
 
       const cmd = this.extractSuggestion(res.text);
       if (cmd) {
         this.suggestion = cmd;
+        appendConversationEntry({
+          role: "system",
+          source: "agent",
+          channel: "system",
+          text: `suggested command: ${cmd}`,
+          visibility: "hidden",
+          appId: "terminal",
+        });
       }
     } finally {
       this.stopThinking();
@@ -916,6 +1023,212 @@ export class HosakaShell {
       return;
     }
     this.writeln(`  ${GRAY}${st("panel.opened", { panel: name })}${R}`);
+  }
+
+  private async handleApps(): Promise<void> {
+    this.writeln(`  ${CYAN}hosaka apps${R}`);
+    if (HOSAKA_APPS.length === 0) {
+      this.writeln(`  ${GRAY}no hosaka apps are registered yet.${R}`);
+      return;
+    }
+    const statuses = await Promise.all(
+      HOSAKA_APPS.map(async (app) => ({ app, status: await getHosakaAppStatus(app.id) })),
+    );
+    for (const { app, status } of statuses) {
+      const installState = status.installed === true
+        ? `${GREEN}installed${R}`
+        : status.flatpakAvailable === false
+          ? `${AMBER}flatpak missing${R}`
+          : `${DARK_GRAY}not installed${R}`;
+      this.writeln(`  ${AMBER}${app.id}${R} — ${app.name} · ${GRAY}${app.category}${R} · ${installState}`);
+    }
+  }
+
+  private async handleSearch(arg: string): Promise<void> {
+    const q = arg.trim();
+    if (!q) {
+      this.writeln(`  ${GRAY}usage: /search <query>${R}`);
+      return;
+    }
+    this.writeln(`  ${GRAY}searching flathub for "${q}"…${R}`);
+    const res = await searchFlathub(q);
+    if (!res.ok) {
+      this.writeln(`  ${RED}flathub search failed:${R} ${res.message ?? "unknown error"}`);
+      return;
+    }
+    if (res.hits.length === 0) {
+      this.writeln(`  ${GRAY}no matches.${R}`);
+      return;
+    }
+    for (const hit of res.hits.slice(0, 10)) {
+      this.writeln(`  ${AMBER}${hit.id}${R} — ${hit.name}`);
+      if (hit.summary) this.writeln(`    ${DARK_GRAY}${hit.summary}${R}`);
+    }
+    this.writeln(`  ${GRAY}stage + install via /store, or:${R} ${CYAN}/install <id-after-staging>${R}`);
+  }
+
+  private async handleLibrary(arg: string): Promise<void> {
+    const parts = arg.trim().split(/\s+/);
+    const sub = parts[0]?.toLowerCase() ?? "";
+    if (sub === "populate") {
+      const genre = (parts[1] ?? "").toLowerCase();
+      if (genre !== "classical" && genre !== "jazz") {
+        this.writeln(`  ${GRAY}usage: /library populate <classical|jazz>${R}`);
+        return;
+      }
+      this.writeln(`  ${GRAY}pulling ${genre} from internet archive…${R}`);
+      const res = await populateLibrary(genre, 6);
+      if (res.added.length === 0) {
+        this.writeln(`  ${RED}${res.message ?? "no tracks added."}${R}`);
+        return;
+      }
+      this.writeln(`  ${GREEN}added ${res.added.length} ${genre} track(s).${R} ${GRAY}library has ${res.total}.${R}`);
+      this.writeln(`  ${GRAY}open the radio:${R} ${CYAN}/listen${R}`);
+      return;
+    }
+    if (sub === "refresh") {
+      await refreshHosakaAppsFromHost();
+      this.writeln(`  ${GRAY}refreshed app manifests from host.${R}`);
+      return;
+    }
+    if (sub === "stage") {
+      const flatpakId = parts[1] ?? "";
+      if (!flatpakId) {
+        this.writeln(`  ${GRAY}usage: /library stage <flatpak.id>${R}`);
+        return;
+      }
+      const staged = await stageHosakaAppManifest({ flatpak_id: flatpakId });
+      this.writeln(staged.ok
+        ? `  ${GREEN}staged${R} ${AMBER}${staged.id}${R} ${GRAY}(${staged.path})${R}`
+        : `  ${RED}${staged.message ?? "stage failed"}${R}`);
+      return;
+    }
+    this.writeln(`  ${GRAY}usage:${R}`);
+    this.writeln(`    ${CYAN}/library populate <classical|jazz>${R}`);
+    this.writeln(`    ${CYAN}/library stage <flatpak.id>${R}`);
+    this.writeln(`    ${CYAN}/library refresh${R}`);
+  }
+
+  private async handleApp(arg: string): Promise<void> {
+    const target = arg.trim();
+    if (!target) {
+      this.writeln(`  ${GRAY}usage: /app <id>${R}`);
+      return;
+    }
+    const appId = resolveHosakaAppId(target);
+    if (!appId) {
+      this.writeln(`  ${RED}app not found:${R} ${target}`);
+      return;
+    }
+    const app = getHosakaAppById(appId);
+    if (!app) {
+      this.writeln(`  ${RED}app not found:${R} ${target}`);
+      return;
+    }
+    const status = await getHosakaAppStatus(appId);
+    this.writeln(`  ${CYAN}${app.name}${R} ${DARK_GRAY}(${app.id})${R}`);
+    this.writeln(`  ${GRAY}${app.description}${R}`);
+    this.writeln(`  provider: ${app.provider}`);
+    this.writeln(`  backend: ${app.backend}`);
+    this.writeln(`  flatpak id: ${AMBER}${app.flatpak_id}${R}`);
+    this.writeln(`  install status: ${status.installed ? `${GREEN}installed${R}` : `${DARK_GRAY}not installed${R}`}`);
+    this.writeln(`  install command: ${formatHosakaAppCommand(app.install.command)}`);
+    this.writeln(`  launch command: ${formatHosakaAppCommand(app.launch.command)}`);
+    this.writeln(`  memory: ${app.memory.profile}`);
+    if (app.memory.warning) {
+      this.writeln(`  ${AMBER}memory warning:${R} ${app.memory.warning}`);
+    }
+    this.writeln(`  login required: ${app.account_login_required ? "yes" : "no"}`);
+    this.writeln(`  hosaka manages credentials: ${app.hosaka_manages_credentials ? "yes" : "no"}`);
+    if (app.permissions_notes.length > 0) {
+      this.writeln(`  permissions notes:`);
+      for (const note of app.permissions_notes) {
+        this.writeln(`    - ${note}`);
+      }
+    }
+    if (app.notes && app.notes.length > 0) {
+      this.writeln(`  notes:`);
+      for (const note of app.notes) {
+        this.writeln(`    - ${note}`);
+      }
+    }
+    this.writeHosakaAppResponse(status);
+  }
+
+  private async handleInstall(arg: string): Promise<void> {
+    const target = arg.trim();
+    if (!target) {
+      this.writeln(`  ${GRAY}usage: /install <app>${R}`);
+      return;
+    }
+    const status = await installHosakaApp(target);
+    this.writeHosakaAppResponse(status);
+    if (status.ok) {
+      appendConversationEntry({
+        role: "system",
+        source: "ui",
+        channel: "system",
+        text: `installed hosaka app ${status.appId ?? target}`,
+        visibility: "hidden",
+        appId: "terminal",
+      });
+    }
+  }
+
+  private writeHosakaAppResponse(status: HosakaAppHostResponse): void {
+    const tone = status.ok ? GREEN : status.manifestFound === false ? RED : GRAY;
+    this.writeln(`  ${tone}${status.message}${R}`);
+    for (const detail of status.details ?? []) {
+      this.writeln(`  ${DARK_GRAY}${detail}${R}`);
+    }
+    if (status.actionableCommand) {
+      this.writeln(`  ${GRAY}next:${R} ${CYAN}${status.actionableCommand}${R}`);
+    }
+  }
+
+  private async handleLaunch(arg: string): Promise<void> {
+    const target = arg.trim();
+    if (!target) {
+      const launchable = APP_REGISTRY.filter((app) => app.status !== "planned").map((app) => app.id).join(", ");
+      this.writeln(`  ${GRAY}usage: /launch <app>${R}`);
+      this.writeln(`  ${DARK_GRAY}apps: ${launchable}${R}`);
+      return;
+    }
+    const hosakaAppId = resolveHosakaAppId(target);
+    if (hosakaAppId) {
+      const status = await launchHosakaApp(hosakaAppId);
+      this.writeHosakaAppResponse(status);
+      if (status.ok) {
+        appendConversationEntry({
+          role: "system",
+          source: "ui",
+          channel: "system",
+          text: `launched hosaka app ${hosakaAppId}`,
+          visibility: "hidden",
+          appId: "terminal",
+        });
+      }
+      return;
+    }
+    const appId = resolveAppId(target);
+    if (!appId) {
+      this.writeln(`  ${RED}app not found:${R} ${target}`);
+      return;
+    }
+    const result = executeHosakaUiCommand({ id: "ui.open_surface", target: appId, preferredContainer: "window" });
+    if (!result.ok) {
+      this.writeln(`  ${GRAY}couldn't launch ${appId}.${R}`);
+      return;
+    }
+    appendConversationEntry({
+      role: "system",
+      source: "ui",
+      channel: "system",
+      text: `launched app ${appId}`,
+      visibility: "hidden",
+      appId: "terminal",
+    });
+    this.writeln(`  ${GRAY}launched ${AMBER}${appId}${R}`);
   }
 
   private openWebPreset(presetId: string): void {

@@ -1,0 +1,36 @@
+id: discord
+name: Discord
+category: social
+description: >-
+  Discord desktop client wrapped as a Hosaka App. Voice rooms, community chat,
+  and call handoff beyond the existing /discord web preset.
+provider: Discord
+backend: flatpak
+flatpak_id: com.discordapp.Discord
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - --noninteractive
+    - flathub
+    - com.discordapp.Discord
+launch:
+  command:
+    - flatpak
+    - run
+    - com.discordapp.Discord
+aliases:
+  - discord
+  - discord-app
+memory:
+  profile: heavy
+  warning: Discord is an Electron app — expect noticeable RAM use on smaller Hosaka builds.
+permissions_notes:
+  - Network access is required for chat, voice, and login.
+  - Microphone and camera permissions are negotiated by Discord itself.
+account_login_required: true
+hosaka_manages_credentials: false
+notes:
+  - The /discord shell command still opens the web preset; use /launch discord for the desktop app.
+  - Install and launch stay separate on purpose.

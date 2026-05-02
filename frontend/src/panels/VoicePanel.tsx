@@ -12,6 +12,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { VoiceSession, type VoiceState } from "../voice/realtimeClient";
+import { appendConversationEntry } from "../chat/conversationLog";
 import { DevicePanel, getPreferredMicConstraints, getPreferredSpeakerId } from "./DevicePanel";
 
 type TranscriptItem = {
@@ -540,6 +541,14 @@ export function VoicePanel({ active }: { active: boolean }) {
       ...t.slice(-(maxTranscriptItems - 1)),
       { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, role, text: trimmed },
     ]);
+    appendConversationEntry({
+      role: role === "you" ? "user" : role === "hosaka" ? "assistant" : role === "tool" ? "tool" : "system",
+      source: mode === "agent" ? "agent" : "voice",
+      channel: role === "status" ? "system" : "voice",
+      text: trimmed,
+      visibility: role === "status" || role === "tool" ? "hidden" : "visible",
+      appId: "voice",
+    });
   };
 
   const clearSpeakingReset = () => {
@@ -588,6 +597,16 @@ export function VoicePanel({ active }: { active: boolean }) {
               text: delta,
             },
           ];
+        });
+      },
+      onAssistantTranscriptDone: (text) => {
+        appendConversationEntry({
+          role: "assistant",
+          source: "voice",
+          channel: "voice",
+          text,
+          visibility: "visible",
+          appId: "voice",
         });
       },
       onTool: (name, _args, output) => {

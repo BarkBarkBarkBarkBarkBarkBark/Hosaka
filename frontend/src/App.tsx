@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "./i18n";
 import { PlantBadge } from "./components/PlantBadge";
 import { SignalBadge } from "./components/SignalBadge";
@@ -7,6 +7,16 @@ import { LangPicker } from "./components/LangPicker";
 import { ModeSwitch } from "./components/ModeSwitch";
 import { applyFontSize, loadUiConfig } from "./uiConfig";
 import { FloatingOrb } from "./components/FloatingOrb";
+import { useSyncedDoc } from "./sync/useSyncedDoc";
+import { useConversationLog } from "./chat/conversationLog";
+import {
+  APP_REGISTRY,
+  getAppDefinition,
+  listEnabledApps,
+  resolveAppId,
+  type AppId,
+} from "./ui/appRegistry";
+import { dedupeAppIds, INITIAL_WINDOWS_DOC, type WindowsDoc } from "./ui/windowState";
 
 // Each panel becomes its own chunk so first paint of the kiosk only ships
 // the shell (header + dock + footer + the active panel). Big panels — xterm
@@ -49,24 +59,21 @@ const VoicePanel = lazy(() =>
 const NodesPanel = lazy(() =>
   import("./panels/NodesPanel").then((m) => ({ default: m.NodesPanel })),
 );
-
-export type PanelId =
-  | "terminal"
-  | "inbox"
-  | "messages"
-  | "reading"
-  | "todo"
-  | "video"
-  | "games"
-  | "wiki"
-  | "web"
-  | "books"
-  | "voice"
-  | "nodes";
+const DesktopPanel = lazy(() =>
+  import("./panels/DesktopPanel").then((m) => ({ default: m.DesktopPanel })),
+);
+const WorkbenchPanel = lazy(() =>
+  import("./panels/WorkbenchPanel").then((m) => ({ default: m.WorkbenchPanel })),
+);
+const AppStorePanel = lazy(() =>
+  import("./panels/AppStorePanel").then((m) => ({ default: m.AppStorePanel })),
+);
+const MusicPanel = lazy(() =>
+  import("./panels/MusicPanel").then((m) => ({ default: m.MusicPanel })),
+);
 
 export function App() {
   const { t } = useTranslation("ui");
-  const [active, setActive] = useState<PanelId>("terminal");
   const [bootMessage, setBootMessage] = useState(t("boot.waking"));
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Server-driven via /api/health: local Python returns true; hosted Vercel edge
@@ -76,6 +83,8 @@ export function App() {
   const [nodesEnabled, setNodesEnabled] = useState(false);
   const [syncEnabled, setSyncEnabled] = useState(false);
   const [inboxEnabled, setInboxEnabled] = useState(false);
+  const [windowDoc, updateWindows] = useSyncedDoc<WindowsDoc>("windows", INITIAL_WINDOWS_DOC);
+  const [conversationDoc] = useConversationLog();
   useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
@@ -112,16 +121,20 @@ export function App() {
     void import("./sync/repo").then((m) => m.startSync());
   }, [syncEnabled]);
 
-  // Immersive mode: hide topbar/footer/dock-buttons and collapse the web
-  // panel's hint line so the browsed page gets ~all of the viewport. Toggled
-  // by the chevron in the dock. Persists so the kiosk re-boots into whichever
-  // mode the operator left it in.
-  const [immersive, setImmersive] = useState(
-    () => typeof localStorage !== "undefined" && localStorage.getItem("hosaka.immersive") === "1",
-  );
   useEffect(() => {
-    try { localStorage.setItem("hosaka.immersive", immersive ? "1" : "0"); } catch {}
-  }, [immersive]);
+    try {
+      const legacy = typeof localStorage !== "undefined" && localStorage.getItem("hosaka.immersive") === "1";
+      if (legacy && !windowDoc.chromeCollapsed) {
+        updateWindows((doc) => {
+          doc.chromeCollapsed = true;
+        });
+      }
+    } catch {
+      // ignore storage failures
+    }
+    // one-shot migration
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Apply font-size preference from localStorage immediately on mount.
   useEffect(() => {
@@ -132,41 +145,78 @@ export function App() {
     return () => window.removeEventListener("hosaka:ui-changed", handler);
   }, []);
 
-  // Track which panels the operator has actually visited so far. We only
-  // render (and therefore only load the chunk for) panels they've tapped.
-  // The terminal is in the set from the start because it's the default tab.
-  const [visited, setVisited] = useState<Set<PanelId>>(() => new Set(["terminal"]));
-  useEffect(() => {
-    setVisited((s) => (s.has(active) ? s : new Set(s).add(active)));
-  }, [active]);
+  const appFlags = useMemo(
+    () => ({ inboxEnabled, webPanelEnabled, nodesEnabled }),
+    [inboxEnabled, webPanelEnabled, nodesEnabled],
+  );
+  const enabledApps = useMemo(() => listEnabledApps(appFlags), [appFlags]);
+  const enabledIds = useMemo(() => new Set(enabledApps.map((app) => app.id)), [enabledApps]);
+  const launcherApps = useMemo(
+    () => enabledApps.filter((app) => app.showInLauncher !== false),
+    [enabledApps],
+  );
+  const openAppIds = useMemo(() => {
+    const filtered = windowDoc.openAppIds.filter((appId) => enabledIds.has(appId));
+    return dedupeAppIds(["home", ...filtered]);
+  }, [enabledIds, windowDoc.openAppIds]);
+  const activeAppId = useMemo(() => {
+    if (enabledIds.has(windowDoc.activeAppId) && openAppIds.includes(windowDoc.activeAppId)) {
+      return windowDoc.activeAppId;
+    }
+    return openAppIds[openAppIds.length - 1] ?? "home";
+  }, [enabledIds, openAppIds, windowDoc.activeAppId]);
 
-  useEffect(() => {
-    if (!webPanelEnabled && active === "web") setActive("terminal");
-    if (!nodesEnabled && active === "nodes") setActive("terminal");
-    if (!inboxEnabled && active === "inbox") setActive("terminal");
-  }, [webPanelEnabled, nodesEnabled, inboxEnabled, active]);
-
-  const panels = useMemo<{ id: PanelId; label: string; glyph: string }[]>(() => {
-    const all: { id: PanelId; label: string; glyph: string }[] = [
-      { id: "terminal", label: t("tabs.terminal"), glyph: "›_" },
-      { id: "inbox", label: t("tabs.inbox", "inbox"), glyph: "☰" },
-      { id: "voice", label: t("tabs.voice", "voice"), glyph: "◎" },
-      { id: "reading", label: t("tabs.reading"), glyph: "❑" },
-      { id: "todo", label: t("tabs.openLoops"), glyph: "▣" },
-      { id: "video", label: t("tabs.video", "video"), glyph: "▶" },
-      { id: "games", label: t("tabs.games", "games"), glyph: "◆" },
-      { id: "wiki", label: t("tabs.wiki", "wiki"), glyph: "W" },
-      { id: "web", label: t("tabs.web", "web"), glyph: "⌁" },
-      { id: "books", label: t("tabs.books", "books"), glyph: "📖" },
-      { id: "nodes", label: t("tabs.nodes", "nodes"), glyph: "◈" },
-    ];
-    return all.filter((p) => {
-      if (p.id === "inbox" && !inboxEnabled) return false;
-      if (p.id === "web" && !webPanelEnabled) return false;
-      if (p.id === "nodes" && !nodesEnabled) return false;
-      return true;
+  const openApp = useCallback((appId: AppId) => {
+    const definition = getAppDefinition(appId);
+    if (!definition || !enabledIds.has(appId)) return;
+    const now = Date.now();
+    updateWindows((doc) => {
+      doc.openAppIds = dedupeAppIds([...doc.openAppIds, appId]);
+      doc.activeAppId = appId;
+      doc.windows[appId] = {
+        appId,
+        background: doc.windows[appId]?.background ?? Boolean(definition.defaultBackground),
+        lastOpenedAt: doc.windows[appId]?.lastOpenedAt ?? now,
+        lastFocusedAt: now,
+        openCount: (doc.windows[appId]?.openCount ?? 0) + 1,
+        snapshot: doc.windows[appId]?.snapshot,
+      };
     });
-  }, [t, inboxEnabled, webPanelEnabled, nodesEnabled]);
+  }, [enabledIds, updateWindows]);
+
+  const closeApp = useCallback((appId: AppId) => {
+    const definition = getAppDefinition(appId);
+    if (!definition || definition.closable === false) return;
+    updateWindows((doc) => {
+      doc.openAppIds = doc.openAppIds.filter((id) => id !== appId);
+      if (doc.activeAppId === appId) {
+        const remaining = dedupeAppIds(["home", ...doc.openAppIds]);
+        doc.activeAppId = remaining[remaining.length - 1] ?? "home";
+      }
+    });
+  }, [updateWindows]);
+
+  const setActiveApp = useCallback((appId: AppId) => {
+    if (!enabledIds.has(appId)) return;
+    openApp(appId);
+  }, [enabledIds, openApp]);
+
+  const toggleChromeCollapsed = useCallback(() => {
+    updateWindows((doc) => {
+      doc.chromeCollapsed = !doc.chromeCollapsed;
+    });
+  }, [updateWindows]);
+
+  const stageTerminalCommand = useCallback((command: string, autoSubmit = false) => {
+    const trimmed = command.trim();
+    if (!trimmed) return;
+    openApp("terminal");
+    window.dispatchEvent(
+      new CustomEvent("hosaka:terminal-stage-command", {
+        detail: { command: trimmed, autoSubmit },
+      }),
+    );
+  }, [openApp]);
 
   useEffect(() => {
     const timer = setTimeout(() => setBootMessage(t("boot.steady")), 900);
@@ -176,19 +226,110 @@ export function App() {
   useEffect(() => {
     const onSettings = () => setSettingsOpen(true);
     const onTab = (e: Event) => {
-      const detail = (e as CustomEvent<PanelId>).detail;
-      if (detail) setActive(detail);
+      const detail = (e as CustomEvent<string | { appId?: string; target?: string }>).detail;
+      const target = typeof detail === "string"
+        ? detail
+        : detail?.appId ?? detail?.target ?? "";
+      const appId = resolveAppId(target);
+      if (appId) openApp(appId);
+    };
+    const onClose = (e: Event) => {
+      const detail = (e as CustomEvent<string | { appId?: string }>).detail;
+      const target = typeof detail === "string" ? detail : detail?.appId ?? "";
+      const appId = resolveAppId(target);
+      if (appId) closeApp(appId);
     };
     window.addEventListener("hosaka:open-settings", onSettings);
     window.addEventListener("hosaka:open-tab", onTab as EventListener);
+    window.addEventListener("hosaka:open-app", onTab as EventListener);
+    window.addEventListener("hosaka:close-app", onClose as EventListener);
     return () => {
       window.removeEventListener("hosaka:open-settings", onSettings);
       window.removeEventListener("hosaka:open-tab", onTab as EventListener);
+      window.removeEventListener("hosaka:open-app", onTab as EventListener);
+      window.removeEventListener("hosaka:close-app", onClose as EventListener);
     };
-  }, []);
+  }, [closeApp, openApp]);
+
+  const renderApp = useCallback((appId: AppId) => {
+    switch (appId) {
+      case "home":
+        return (
+          <DesktopPanel
+            mode="desktop"
+            apps={enabledApps}
+            openAppIds={openAppIds}
+            activeAppId={activeAppId}
+            conversation={conversationDoc.entries}
+            onOpenApp={openApp}
+            onCloseApp={closeApp}
+            onStageCommand={stageTerminalCommand}
+          />
+        );
+      case "tool_directory":
+        return (
+          <DesktopPanel
+            mode="directory"
+            apps={[...APP_REGISTRY]}
+            openAppIds={openAppIds}
+            activeAppId={activeAppId}
+            conversation={conversationDoc.entries}
+            onOpenApp={openApp}
+            onCloseApp={closeApp}
+            onStageCommand={stageTerminalCommand}
+          />
+        );
+      case "workbench":
+        return (
+          <WorkbenchPanel
+            apps={enabledApps}
+            conversation={conversationDoc.entries}
+            onOpenApp={openApp}
+            onStageCommand={stageTerminalCommand}
+          />
+        );
+      case "terminal":
+        return <TerminalPanel active={activeAppId === "terminal"} />;
+      case "inbox":
+        return <InboxPanel />;
+      case "messages":
+        return <MessagesPanel />;
+      case "reading":
+        return <ReadingPanel active={activeAppId === "reading"} />;
+      case "todo":
+        return <TodoPanel />;
+      case "video":
+        return <VideoPanel active={activeAppId === "video"} />;
+      case "games":
+        return <GamesPanel active={activeAppId === "games"} />;
+      case "wiki":
+        return <WikiPanel active={activeAppId === "wiki"} />;
+      case "web":
+        return <WebPanel active={activeAppId === "web"} />;
+      case "books":
+        return <BooksPanel active={activeAppId === "books"} />;
+      case "app_store":
+        return <AppStorePanel />;
+      case "music":
+        return <MusicPanel />;
+      case "voice":
+        return <VoicePanel active={activeAppId === "voice"} />;
+      case "nodes":
+        return <NodesPanel />;
+      default:
+        return (
+          <div className="desktop-panel desktop-panel--directory">
+            <div className="panel-header">
+              <h2><span className="panel-glyph">…</span> {appId}</h2>
+              <p className="panel-sub">this surface is planned but not mounted yet.</p>
+            </div>
+          </div>
+        );
+    }
+  }, [activeAppId, closeApp, conversationDoc.entries, enabledApps, openApp, openAppIds, stageTerminalCommand]);
 
   return (
-    <div className={`hosaka-shell${immersive ? " hosaka-shell--immersive" : ""}`}>
+    <div className={`hosaka-shell${windowDoc.chromeCollapsed ? " hosaka-shell--chrome-collapsed" : ""}`}>
       <header className="hosaka-topbar">
         <div className="hosaka-brand">
           <span className="hosaka-brand-logo">{t("brand")}</span>
@@ -199,6 +340,16 @@ export function App() {
           <SignalBadge label={bootMessage} />
           <PlantBadge />
           <ModeSwitch />
+          <button
+            type="button"
+            className="icon-btn hosaka-chevron"
+            aria-label={windowDoc.chromeCollapsed ? t("chrome.expand", "expand chrome") : t("chrome.collapse", "collapse chrome")}
+            title={windowDoc.chromeCollapsed ? t("chrome.expand", "expand chrome") : t("chrome.collapse", "collapse chrome")}
+            aria-pressed={windowDoc.chromeCollapsed}
+            onClick={toggleChromeCollapsed}
+          >
+            {windowDoc.chromeCollapsed ? "⌄" : "⌃"}
+          </button>
           {settingsEnabled && (
             <button
               className="icon-btn"
@@ -212,108 +363,75 @@ export function App() {
         </div>
       </header>
 
-      <nav className="hosaka-dock" role="tablist">
-        <button
-          type="button"
-          className="hosaka-chevron"
-          aria-label={immersive ? t("chrome.expand", "expand chrome") : t("chrome.collapse", "collapse chrome")}
-          title={immersive ? t("chrome.expand", "expand chrome") : t("chrome.collapse", "collapse chrome")}
-          aria-pressed={immersive}
-          onClick={() => setImmersive((v) => !v)}
-        >
-          {immersive ? "⌄" : "⌃"}
-        </button>
-        <label className="hosaka-dock-picker">
-          <span className="hosaka-dock-picker-label dim">{t("tabs.jump", "view")}</span>
-          <select
-            className="hosaka-panel-select"
-            value={active}
-            aria-label={t("tabs.jump", "view")}
-            onChange={(e) => setActive(e.target.value as PanelId)}
-          >
-            {panels.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.glyph} {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        {panels.map((p) => (
-          <button
-            key={p.id}
-            role="tab"
-            aria-selected={active === p.id}
-            className={`hosaka-dock-btn ${active === p.id ? "is-active" : ""}`}
-            onClick={() => setActive(p.id)}
-          >
-            <span className="hosaka-dock-glyph">{p.glyph}</span>
-            <span className="hosaka-dock-label">{p.label}</span>
-          </button>
-        ))}
+      <nav className="hosaka-dock">
+        <div className="hosaka-launchbar">
+          <label className="hosaka-dock-picker">
+            <span className="hosaka-dock-picker-label dim">{t("tabs.jump", "app")}</span>
+            <select
+              className="hosaka-panel-select"
+              value={activeAppId}
+              aria-label={t("tabs.jump", "app")}
+              onChange={(e) => setActiveApp(e.target.value as AppId)}
+            >
+              {enabledApps.map((app) => (
+                <option key={app.id} value={app.id}>
+                  {app.glyph} {app.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          {launcherApps.map((app) => (
+            <button
+              key={app.id}
+              type="button"
+              className={`hosaka-dock-btn ${activeAppId === app.id ? "is-active" : ""}`}
+              onClick={() => setActiveApp(app.id)}
+            >
+              <span className="hosaka-dock-glyph">{app.glyph}</span>
+              <span className="hosaka-dock-label">{app.title}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="hosaka-window-strip" role="tablist" aria-label="open windows">
+          {openAppIds.map((appId) => {
+            const app = getAppDefinition(appId);
+            if (!app) return null;
+            return (
+              <button
+                key={appId}
+                role="tab"
+                aria-selected={activeAppId === appId}
+                className={`hosaka-window-tab ${activeAppId === appId ? "is-active" : ""}`}
+                onClick={() => setActiveApp(appId)}
+              >
+                <span className="hosaka-window-title">{app.glyph} {app.title}</span>
+                {app.closable !== false && (
+                  <span
+                    className="hosaka-window-close"
+                    role="button"
+                    aria-label={`close ${app.title}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      closeApp(appId);
+                    }}
+                  >
+                    ×
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </nav>
 
       <main className="hosaka-stage">
         <Suspense fallback={null}>
-          {visited.has("terminal") && (
-            <div className="hosaka-panel" hidden={active !== "terminal"}>
-              <TerminalPanel active={active === "terminal"} />
+          {openAppIds.map((appId) => (
+            <div key={appId} className="hosaka-panel" hidden={activeAppId !== appId}>
+              {renderApp(appId)}
             </div>
-          )}
-          {inboxEnabled && visited.has("inbox") && (
-            <div className="hosaka-panel" hidden={active !== "inbox"}>
-              <InboxPanel />
-            </div>
-          )}
-          {visited.has("messages") && (
-            <div className="hosaka-panel" hidden={active !== "messages"}>
-              <MessagesPanel />
-            </div>
-          )}
-          {visited.has("reading") && (
-            <div className="hosaka-panel" hidden={active !== "reading"}>
-              <ReadingPanel active={active === "reading"} />
-            </div>
-          )}
-          {visited.has("todo") && (
-            <div className="hosaka-panel" hidden={active !== "todo"}>
-              <TodoPanel />
-            </div>
-          )}
-          {visited.has("video") && (
-            <div className="hosaka-panel" hidden={active !== "video"}>
-              <VideoPanel active={active === "video"} />
-            </div>
-          )}
-          {visited.has("games") && (
-            <div className="hosaka-panel" hidden={active !== "games"}>
-              <GamesPanel active={active === "games"} />
-            </div>
-          )}
-          {visited.has("wiki") && (
-            <div className="hosaka-panel" hidden={active !== "wiki"}>
-              <WikiPanel active={active === "wiki"} />
-            </div>
-          )}
-          {webPanelEnabled && visited.has("web") && (
-            <div className="hosaka-panel" hidden={active !== "web"}>
-              <WebPanel active={active === "web"} />
-            </div>
-          )}
-          {visited.has("books") && (
-            <div className="hosaka-panel" hidden={active !== "books"}>
-              <BooksPanel active={active === "books"} />
-            </div>
-          )}
-          {visited.has("voice") && (
-            <div className="hosaka-panel" hidden={active !== "voice"}>
-              <VoicePanel active={active === "voice"} />
-            </div>
-          )}
-          {nodesEnabled && visited.has("nodes") && (
-            <div className="hosaka-panel" hidden={active !== "nodes"}>
-              <NodesPanel />
-            </div>
-          )}
+          ))}
         </Suspense>
       </main>
 
@@ -322,10 +440,10 @@ export function App() {
       )}
 
       <footer className="hosaka-footer">
-        <span className="hosaka-footer-dim">{t("footer")}</span>
+        <span className="hosaka-footer-dim">{t("footer")} · {openAppIds.length} windows</span>
       </footer>
 
-      <FloatingOrb voiceActive={active === "voice"} />
+      <FloatingOrb voiceActive={activeAppId === "voice"} />
     </div>
   );
 }

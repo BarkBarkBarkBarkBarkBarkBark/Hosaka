@@ -111,6 +111,8 @@ class EphemeralOut(BaseModel):
     instructions: str
     voice: str
     model: str
+    api_shape: str = "ga"
+    sdp_url: str = "https://api.openai.com/v1/realtime/calls"
 
 
 class ToolIn(BaseModel):
@@ -209,13 +211,25 @@ async def voice_ephemeral_token() -> EphemeralOut:
         log.warning("ephemeral token mint failed via %s: %s", key_source or "unknown", exc)
         raise HTTPException(502, f"upstream error: {exc}") from exc
 
+    session_data = data.get("session") if isinstance(data.get("session"), dict) else data
+    client_secret = data.get("client_secret") if isinstance(data.get("client_secret"), dict) else {}
+    if not client_secret and data.get("value"):
+        client_secret = {
+            "value": data.get("value"),
+            "expires_at": data.get("expires_at"),
+        }
+    audio = session_data.get("audio") if isinstance(session_data, dict) else {}
+    audio_output = audio.get("output") if isinstance(audio, dict) else {}
+
     return EphemeralOut(
-        client_secret=dict(data.get("client_secret") or {}),
-        session=data,
+        client_secret=dict(client_secret or {}),
+        session=session_data if isinstance(session_data, dict) else data,
         tools=voice_tools.TOOL_SCHEMAS,
         instructions=voice_tools.SYSTEM_INSTRUCTIONS,
-        voice=str(data.get("voice") or DEFAULT_VOICE),
-        model=str(data.get("model") or DEFAULT_MODEL),
+        voice=str(data.get("voice") or audio_output.get("voice") or DEFAULT_VOICE),
+        model=str(data.get("model") or session_data.get("model") or DEFAULT_MODEL),
+        api_shape=str(data.get("_hosaka_api_shape") or "ga"),
+        sdp_url=str(data.get("_hosaka_sdp_url") or "https://api.openai.com/v1/realtime/calls"),
     )
 
 

@@ -1,0 +1,35 @@
+id: kcc
+name: Kindle Comic Converter
+category: reading
+description: >-
+  Convert PNG/JPG/CBR/CBZ/CB7 into EPUB or MOBI for Kindle and other ereaders.
+  Useful pair with Foliate for sideloaded reading workflows.
+provider: Ciro Mattia Gonano
+backend: flatpak
+flatpak_id: io.github.ciromattia.kcc
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - --noninteractive
+    - flathub
+    - io.github.ciromattia.kcc
+launch:
+  command:
+    - flatpak
+    - run
+    - io.github.ciromattia.kcc
+aliases:
+  - kcc
+  - kindle-comic-converter
+  - comic-converter
+memory:
+  profile: medium
+permissions_notes:
+  - Reads source files via the Flatpak portal; writes output beside them.
+  - No network or account login required for normal use.
+account_login_required: false
+hosaka_manages_credentials: false
+notes:
+  - Flathub marks this build as "potentially unsafe" (broad filesystem access). Review before exposing on shared kiosks.

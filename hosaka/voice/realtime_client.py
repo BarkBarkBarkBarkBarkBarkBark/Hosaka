@@ -30,9 +30,13 @@ else:  # pragma: no cover - runtime alias when optional dep is missing
 
 log = logging.getLogger("hosaka.voice.realtime")
 
-DEFAULT_MODEL = os.getenv("HOSAKA_VOICE_MODEL", "gpt-4o-realtime-preview")
-DEFAULT_VOICE = os.getenv("HOSAKA_VOICE_VOICE", "verse")
+DEFAULT_MODEL = os.getenv("HOSAKA_VOICE_MODEL", "gpt-realtime")
+DEFAULT_VOICE = os.getenv("HOSAKA_VOICE_VOICE", "marin")
 REALTIME_URL = "wss://api.openai.com/v1/realtime?model={model}"
+
+
+def _openai_base_url() -> str:
+    return os.getenv("OPENAI_BASE_URL", "https://api.openai.com").rstrip("/")
 
 
 def _require_websockets() -> Any:
@@ -278,27 +282,70 @@ async def mint_ephemeral_session(
     """
     import httpx
 
-    payload: dict[str, Any] = {
+    session: dict[str, Any] = {
+        "type": "realtime",
         "model": model,
-        "voice": voice,
-        "modalities": ["audio", "text"],
+        "output_modalities": ["audio", "text"],
+        "audio": {
+            "input": {
+                "transcription": {"model": "whisper-1"},
+                "turn_detection": {
+                    "type": "server_vad",
+                    "threshold": 0.5,
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 600,
+                },
+            },
+            "output": {"voice": voice},
+        },
         "instructions": instructions,
     }
     if tools:
-        payload["tools"] = tools
-        payload["tool_choice"] = "auto"
+        session["tools"] = tools
+        session["tool_choice"] = "auto"
+
+    base = _openai_base_url()
     async with httpx.AsyncClient(timeout=20.0) as client:
         resp = await client.post(
-            "https://api.openai.com/v1/realtime/sessions",
+            f"{base}/v1/realtime/client_secrets",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={"session": session},
+        )
+        if resp.status_code != 404:
+            resp.raise_for_status()
+            data = resp.json()
+            data.setdefault("_hosaka_api_shape", "ga")
+            data.setdefault("_hosaka_sdp_url", f"{base}/v1/realtime/calls")
+            return data
+
+        # Compatibility with older Realtime beta deployments. Remove after all
+        # appliances have moved to the GA /client_secrets + /calls flow.
+        legacy_payload: dict[str, Any] = {
+            "model": model,
+            "voice": voice,
+            "modalities": ["audio", "text"],
+            "instructions": instructions,
+        }
+        if tools:
+            legacy_payload["tools"] = tools
+            legacy_payload["tool_choice"] = "auto"
+        resp = await client.post(
+            f"{base}/v1/realtime/sessions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "OpenAI-Beta": "realtime=v1",
                 "Content-Type": "application/json",
             },
-            json=payload,
+            json=legacy_payload,
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        data.setdefault("_hosaka_api_shape", "beta")
+        data.setdefault("_hosaka_sdp_url", f"{base}/v1/realtime?model={model}")
+        return data
 
 
 # ── test harness ─────────────────────────────────────────────────────────

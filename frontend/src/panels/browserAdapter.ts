@@ -6,6 +6,8 @@ export type BrowserMode =
 
 export type InternalPage =
   | "home"
+  | "tool_directory"
+  | "workbench"
   | "terminal"
   | "reading"
   | "todo"
@@ -39,6 +41,8 @@ declare global {
 
 const INTERNAL_PAGES = new Set<InternalPage>([
   "home",
+  "tool_directory",
+  "workbench",
   "terminal",
   "reading",
   "todo",
@@ -51,6 +55,9 @@ const INTERNAL_PAGES = new Set<InternalPage>([
 ]);
 
 export const INTERNAL_PANEL_PAGES: InternalPage[] = [
+  "home",
+  "tool_directory",
+  "workbench",
   "terminal",
   "messages",
   "reading",
@@ -86,13 +93,13 @@ export function parseInternalPage(input: string): InternalPage | null {
   if (trimmed === "/" || trimmed === "home") return "home";
   if (/^hosaka:\/\/home\/?$/i.test(trimmed)) return "home";
 
-  const panelMatch = trimmed.match(/^\/?(terminal|messages|reading|todo|video|games|wiki|web|books)$/i);
+  const panelMatch = trimmed.match(/^\/?(tool_directory|workbench|terminal|messages|reading|todo|video|games|wiki|web|books)$/i);
   if (panelMatch) {
     const id = panelMatch[1].toLowerCase() as InternalPage;
     return INTERNAL_PAGES.has(id) ? id : null;
   }
 
-  const hosakaPanelMatch = trimmed.match(/^hosaka:\/\/panel\/(terminal|messages|reading|todo|video|games|wiki|web|books)\/?$/i);
+  const hosakaPanelMatch = trimmed.match(/^hosaka:\/\/panel\/(tool_directory|workbench|terminal|messages|reading|todo|video|games|wiki|web|books)\/?$/i);
   if (hosakaPanelMatch) {
     const id = hosakaPanelMatch[1].toLowerCase() as InternalPage;
     return INTERNAL_PAGES.has(id) ? id : null;

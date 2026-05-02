@@ -13,6 +13,7 @@ const base = process.env.HOSAKA_BASE ?? "/";
 // they double the on-disk asset size and roughly double the build's RAM peak,
 // which is exactly the budget we don't have on a Pi 3B.
 const wantSourcemaps = process.env.HOSAKA_SOURCEMAP === "1";
+const apiTarget = process.env.HOSAKA_API_TARGET ?? "http://127.0.0.1:8421";
 
 export default defineConfig({
   base,
@@ -42,6 +43,18 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 5173,
+    proxy: {
+      "/api": {
+        target: apiTarget,
+        changeOrigin: true,
+        ws: true,
+      },
+      "/ws": {
+        target: apiTarget,
+        changeOrigin: true,
+        ws: true,
+      },
+    },
   },
   build: {
     target: "es2022",

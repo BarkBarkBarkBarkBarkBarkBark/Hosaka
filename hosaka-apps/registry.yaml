@@ -1,0 +1,19 @@
+version: 1
+registry:
+  id: hosaka-default-apps
+  name: Hosaka Apps
+  description: >-
+    Minimal Hosaka app wrapper registry. User-facing language stays on "Hosaka
+    Apps" while Flatpak/Flathub remain backend details.
+policy:
+  expose_backend_to_user: false
+  require_manifest_for_install: true
+  require_manifest_for_launch: true
+  allow_arbitrary_commands: false
+  store_third_party_credentials: false
+backends:
+  flatpak:
+    remote:
+      name: flathub
+      url: https://flathub.org/repo/flathub.flatpakrepo
+apps_dir: apps

@@ -16,6 +16,7 @@ export type VoiceEvents = {
   onState?: (state: VoiceState) => void;
   onUserTranscript?: (text: string) => void;
   onAssistantTranscript?: (delta: string) => void;
+  onAssistantTranscriptDone?: (text: string) => void;
   onTool?: (name: string, args: Record<string, unknown>, result: string) => void;
   onError?: (err: unknown) => void;
 };
@@ -27,9 +28,11 @@ type EphemeralToken = {
   instructions: string;
   voice: string;
   model: string;
+  api_shape?: "ga" | "beta" | string;
+  sdp_url?: string;
 };
 
-const REALTIME_URL = "https://api.openai.com/v1/realtime";
+const REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
 
 export class VoiceSession {
   private pc: RTCPeerConnection | null = null;
@@ -37,7 +40,7 @@ export class VoiceSession {
   private micStream: MediaStream | null = null;
   private audioEl: HTMLAudioElement | null = null;
   private assistantBuf = "";
-  private pendingUserTranscript = "";
+  private handledCallIds = new Set<string>();
 
   constructor(private readonly events: VoiceEvents = {}) {}
 
@@ -79,18 +82,19 @@ export class VoiceSession {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    const answerResp = await fetch(
-      `${REALTIME_URL}?model=${encodeURIComponent(token.model)}`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token.client_secret.value}`,
-          "Content-Type": "application/sdp",
-          "OpenAI-Beta": "realtime=v1",
-        },
-        body: offer.sdp ?? "",
-      },
-    );
+    const sdpUrl = token.sdp_url || REALTIME_CALLS_URL;
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token.client_secret.value}`,
+      "Content-Type": "application/sdp",
+    };
+    if (token.api_shape === "beta" || !sdpUrl.includes("/realtime/calls")) {
+      headers["OpenAI-Beta"] = "realtime=v1";
+    }
+    const answerResp = await fetch(sdpUrl, {
+      method: "POST",
+      headers,
+      body: offer.sdp ?? "",
+    });
     if (!answerResp.ok) {
       throw new Error(`realtime SDP exchange failed: ${answerResp.status}`);
     }
@@ -155,7 +159,7 @@ export class VoiceSession {
     // minted the ephemeral token. Doing it again via session.update
     // guarantees the settings apply once the data channel is live even
     // if the token creation path ever drops them upstream.
-    const session = {
+    const session = token.api_shape === "beta" ? {
       type: "session.update",
       session: {
         modalities: ["audio", "text"],
@@ -169,6 +173,30 @@ export class VoiceSession {
           threshold: 0.5,
           prefix_padding_ms: 300,
           silence_duration_ms: 600,
+        },
+        tools: token.tools,
+        tool_choice: "auto",
+      },
+    } : {
+      type: "session.update",
+      session: {
+        type: "realtime",
+        model: token.model,
+        output_modalities: ["audio", "text"],
+        instructions: token.instructions,
+        audio: {
+          input: {
+            transcription: { model: "whisper-1" },
+            turn_detection: {
+              type: "server_vad",
+              threshold: 0.5,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 600,
+            },
+          },
+          output: {
+            voice: token.voice,
+          },
         },
         tools: token.tools,
         tool_choice: "auto",
@@ -194,10 +222,11 @@ export class VoiceSession {
         this.setState("thinking");
         break;
       case "response.audio.delta":
+      case "response.output_audio.delta":
         this.setState("speaking");
         break;
       case "response.audio.done":
-      case "response.done":
+      case "response.output_audio.done":
         this.setState("listening");
         break;
       case "response.audio_transcript.delta": {
@@ -206,17 +235,30 @@ export class VoiceSession {
         this.events.onAssistantTranscript?.(delta);
         break;
       }
+      case "response.output_audio_transcript.delta": {
+        const delta = String(evt.delta ?? "");
+        this.assistantBuf += delta;
+        this.events.onAssistantTranscript?.(delta);
+        break;
+      }
       case "response.audio_transcript.done":
+      case "response.output_audio_transcript.done":
+        if (this.assistantBuf.trim()) {
+          this.events.onAssistantTranscriptDone?.(this.assistantBuf);
+        }
         this.assistantBuf = "";
         break;
       case "conversation.item.input_audio_transcription.completed": {
         const text = String(evt.transcript ?? "");
         if (text.trim()) this.events.onUserTranscript?.(text);
-        this.pendingUserTranscript = "";
         break;
       }
       case "response.function_call_arguments.done":
         void this.handleFunctionCall(evt);
+        break;
+      case "response.done":
+        void this.handleResponseDone(evt);
+        this.setState("listening");
         break;
       case "error":
         this.events.onError?.(evt.error ?? evt);
@@ -227,6 +269,8 @@ export class VoiceSession {
 
   private async handleFunctionCall(evt: Record<string, unknown>): Promise<void> {
     const callId = String(evt.call_id ?? "");
+    if (callId && this.handledCallIds.has(callId)) return;
+    if (callId) this.handledCallIds.add(callId);
     const name = String(evt.name ?? "");
     let args: Record<string, unknown> = {};
     const raw = evt.arguments;
@@ -268,6 +312,23 @@ export class VoiceSession {
       }),
     );
     this.dc.send(JSON.stringify({ type: "response.create" }));
+  }
+
+  private async handleResponseDone(evt: Record<string, unknown>): Promise<void> {
+    const response = evt.response;
+    if (!response || typeof response !== "object") return;
+    const output = (response as { output?: unknown }).output;
+    if (!Array.isArray(output)) return;
+    for (const item of output) {
+      if (!item || typeof item !== "object") continue;
+      const call = item as Record<string, unknown>;
+      if (call.type !== "function_call") continue;
+      await this.handleFunctionCall({
+        call_id: call.call_id,
+        name: call.name,
+        arguments: call.arguments,
+      });
+    }
   }
 }
 

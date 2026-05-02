@@ -1,11 +1,11 @@
-import type { PanelId } from "../App";
+import {
+  APP_REGISTRY,
+  resolveAppId,
+  type AppId,
+} from "./appRegistry";
 
 export type HosakaSurfaceId =
-  | PanelId
-  | "home"
-  | "gps"
-  | "music"
-  | "tool_directory";
+  | AppId;
 
 export type HosakaUiCommand =
   | { id: "ui.open_panel"; target: string }
@@ -17,7 +17,8 @@ export type HosakaUiCommand =
   | { id: "ui.open_media"; url?: string }
   | { id: "ui.open_web_target"; target?: string }
   | { id: "ui.open_web_preset"; preset: string }
-  | { id: "ui.open_surface"; target: string; preferredContainer?: "auto" | "tab" | "window" };
+  | { id: "ui.open_surface"; target: string; preferredContainer?: "auto" | "tab" | "window" }
+  | { id: "ui.stage_terminal_command"; command: string; autoSubmit?: boolean };
 
 export type HosakaUiResult =
   | {
@@ -47,21 +48,6 @@ declare global {
   }
 }
 
-const CURRENT_PANEL_TARGETS = new Set<PanelId>([
-  "terminal",
-  "inbox",
-  "messages",
-  "voice",
-  "reading",
-  "todo",
-  "video",
-  "games",
-  "wiki",
-  "web",
-  "books",
-  "nodes",
-]);
-
 const WEB_PRESETS = new Set([
   "cyberspace",
   "custom",
@@ -80,51 +66,6 @@ const WEB_PRESETS = new Set([
   "lobsters",
 ]);
 
-const SURFACE_ALIASES: Record<string, HosakaSurfaceId> = {
-  home: "home",
-  launcher: "home",
-  launchpad: "home",
-  tools: "tool_directory",
-  tool_directory: "tool_directory",
-  "tool-directory": "tool_directory",
-  directory: "tool_directory",
-  app_directory: "tool_directory",
-  "app-directory": "tool_directory",
-  terminal: "terminal",
-  shell: "terminal",
-  console: "terminal",
-  inbox: "inbox",
-  messages: "messages",
-  message: "messages",
-  voice: "voice",
-  mic: "voice",
-  reading: "reading",
-  reader: "reading",
-  read: "reading",
-  todo: "todo",
-  todos: "todo",
-  tasks: "todo",
-  "open-loops": "todo",
-  loops: "todo",
-  video: "video",
-  videos: "video",
-  games: "games",
-  game: "games",
-  wiki: "wiki",
-  wikipedia: "wiki",
-  web: "web",
-  browser: "web",
-  books: "books",
-  library: "books",
-  nodes: "nodes",
-  peers: "nodes",
-  gps: "gps",
-  map: "gps",
-  maps: "gps",
-  music: "music",
-  audio: "music",
-};
-
 function normalizeTarget(raw: string): string {
   return raw.trim().toLowerCase().replace(/[\s/]+/g, "-");
 }
@@ -139,29 +80,11 @@ function dispatch(name: string, detail?: unknown): string {
 }
 
 export function resolveSurface(target: string): HosakaSurfaceId | null {
-  const normalized = normalizeTarget(target);
-  return SURFACE_ALIASES[normalized] ?? null;
+  return resolveAppId(normalizeTarget(target));
 }
 
 export function listHosakaSurfaces(): HosakaSurfaceId[] {
-  return [
-    "home",
-    "terminal",
-    "inbox",
-    "messages",
-    "voice",
-    "reading",
-    "todo",
-    "video",
-    "games",
-    "wiki",
-    "web",
-    "books",
-    "nodes",
-    "gps",
-    "music",
-    "tool_directory",
-  ];
+  return APP_REGISTRY.map((app) => app.id);
 }
 
 function openPanelSurface(target: string, command: HosakaUiCommand["id"]): HosakaUiResult {
@@ -169,21 +92,12 @@ function openPanelSurface(target: string, command: HosakaUiCommand["id"]): Hosak
   if (!surface) {
     return { ok: false, command, reason: `unknown surface: ${target}`, status: "invalid" };
   }
-  if (!CURRENT_PANEL_TARGETS.has(surface as PanelId)) {
-    return {
-      ok: false,
-      command,
-      surface,
-      reason: `${surface} is planned but not yet backed by a panel/window host`,
-      status: "planned",
-    };
-  }
   return {
     ok: true,
     command,
     surface,
-    dispatched: [dispatch("hosaka:open-tab", surface)],
-    mode: "compat",
+    dispatched: [dispatch("hosaka:open-app", { appId: surface })],
+    mode: "shipping",
   };
 }
 
@@ -192,19 +106,23 @@ export function executeHosakaUiCommand(command: HosakaUiCommand): HosakaUiResult
     case "ui.open_panel":
       return openPanelSurface(command.target, command.id);
     case "ui.open_surface":
-      if (command.preferredContainer === "window") {
-        const surface = resolveSurface(command.target);
-        if (surface && !CURRENT_PANEL_TARGETS.has(surface as PanelId)) {
-          return {
-            ok: false,
-            command: command.id,
-            surface,
-            reason: `${surface} has no native window policy yet`,
-            status: "planned",
-          };
-        }
-      }
       return openPanelSurface(command.target, command.id);
+    case "ui.stage_terminal_command": {
+      const text = command.command.trim();
+      if (!text) {
+        return { ok: false, command: command.id, reason: "missing command text", status: "invalid" };
+      }
+      return {
+        ok: true,
+        command: command.id,
+        surface: "terminal",
+        dispatched: [
+          dispatch("hosaka:open-app", { appId: "terminal" }),
+          dispatch("hosaka:terminal-stage-command", { command: text, autoSubmit: Boolean(command.autoSubmit) }),
+        ],
+        mode: "shipping",
+      };
+    }
     case "ui.open_settings":
       return {
         ok: true,
@@ -223,9 +141,9 @@ export function executeHosakaUiCommand(command: HosakaUiCommand): HosakaUiResult
         surface: "reading",
         dispatched: [
           dispatch("hosaka:read", slug),
-          dispatch("hosaka:open-tab", "reading"),
+          dispatch("hosaka:open-app", { appId: "reading" }),
         ],
-        mode: "compat",
+        mode: "shipping",
       };
     }
     case "ui.todo_add": {
@@ -234,13 +152,13 @@ export function executeHosakaUiCommand(command: HosakaUiCommand): HosakaUiResult
         return { ok: false, command: command.id, reason: "missing todo text", status: "invalid" };
       }
       const dispatched = [dispatch("hosaka:todo-add", text)];
-      if (command.revealPanel) dispatched.push(dispatch("hosaka:open-tab", "todo"));
+      if (command.revealPanel) dispatched.push(dispatch("hosaka:open-app", { appId: "todo" }));
       return {
         ok: true,
         command: command.id,
         surface: "todo",
         dispatched,
-        mode: "compat",
+        mode: "shipping",
       };
     }
     case "ui.todo_list":
@@ -248,8 +166,8 @@ export function executeHosakaUiCommand(command: HosakaUiCommand): HosakaUiResult
         ok: true,
         command: command.id,
         surface: "todo",
-        dispatched: [dispatch("hosaka:open-tab", "todo")],
-        mode: "compat",
+        dispatched: [dispatch("hosaka:open-app", { appId: "todo" })],
+        mode: "shipping",
       };
     case "ui.search_books": {
       const query = command.query.trim();
@@ -261,14 +179,14 @@ export function executeHosakaUiCommand(command: HosakaUiCommand): HosakaUiResult
         command: command.id,
         surface: "books",
         dispatched: [
-          dispatch("hosaka:open-tab", "books"),
+          dispatch("hosaka:open-app", { appId: "books" }),
           dispatch("hosaka:books-search", query),
         ],
-        mode: "compat",
+        mode: "shipping",
       };
     }
     case "ui.open_media": {
-      const dispatched = [dispatch("hosaka:open-tab", "video")];
+      const dispatched = [dispatch("hosaka:open-app", { appId: "video" })];
       const url = command.url?.trim();
       if (url) dispatched.push(dispatch("hosaka:video", url));
       return {
@@ -276,11 +194,11 @@ export function executeHosakaUiCommand(command: HosakaUiCommand): HosakaUiResult
         command: command.id,
         surface: "video",
         dispatched,
-        mode: "compat",
+        mode: "shipping",
       };
     }
     case "ui.open_web_target": {
-      const dispatched = [dispatch("hosaka:open-tab", "web")];
+      const dispatched = [dispatch("hosaka:open-app", { appId: "web" })];
       const target = command.target?.trim();
       if (target) dispatched.push(dispatch("hosaka:web-open", target));
       return {
@@ -288,7 +206,7 @@ export function executeHosakaUiCommand(command: HosakaUiCommand): HosakaUiResult
         command: command.id,
         surface: "web",
         dispatched,
-        mode: "compat",
+        mode: "shipping",
       };
     }
     case "ui.open_web_preset": {
@@ -306,10 +224,10 @@ export function executeHosakaUiCommand(command: HosakaUiCommand): HosakaUiResult
         command: command.id,
         surface: "web",
         dispatched: [
-          dispatch("hosaka:open-tab", "web"),
+          dispatch("hosaka:open-app", { appId: "web" }),
           dispatch("hosaka:web-preset", preset),
         ],
-        mode: "compat",
+        mode: "shipping",
       };
     }
   }

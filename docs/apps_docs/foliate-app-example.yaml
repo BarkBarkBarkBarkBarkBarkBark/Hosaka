@@ -1,0 +1,59 @@
+id: foliate
+name: Foliate
+version: 1
+category: reading
+
+summary: "Ebook reader wrapped as a Hosaka app."
+description: "Launches the Foliate Flatpak for reading EPUB and other local ebook formats."
+
+aliases:
+  - foliate
+  - reader
+  - books
+  - epub
+
+backend:
+  type: flatpak
+  remote: flathub
+  app_id: com.github.johnfactotum.Foliate
+
+install:
+  strategy: flatpak
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - com.github.johnfactotum.Foliate
+
+launch:
+  strategy: flatpak
+  command:
+    - flatpak
+    - run
+    - com.github.johnfactotum.Foliate
+
+account:
+  required: false
+  managed_by_hosaka: false
+
+permissions:
+  network: false
+  audio: false
+  filesystem: user_documents
+
+policy:
+  store_credentials: false
+
+resources:
+  memory_class: medium
+  cpu_class: low
+  startup_class: normal
+  notes:
+    - "Good candidate for offline-first Hosaka reading workflows."
+
+ui:
+  visible: true
+  featured: true
+  icon: foliate
+  launch_label: "Open Foliate"

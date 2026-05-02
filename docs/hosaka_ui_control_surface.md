@@ -14,6 +14,20 @@ machines, and breaks the migration into small implementation steps.
   duplicating `CustomEvent` dispatch logic
 - A global bridge at `window.hosakaUI` for renderer-local automation and future
   agent / voice use
+- An app registry that now also records Electron-first host preference and
+  install policy for planned integrations
+
+## Host policy now
+
+Hosaka is Electron-first on-device.
+
+That means:
+
+- prefer Electron whenever native desktop capability matters
+- keep browser/web fallback where it is safe and useful
+- model external desktop apps explicitly in the registry instead of assuming
+  iframe/embed behavior
+- keep unsupported flows disable-able for hosted/public web builds
 
 ## Core idea
 
@@ -135,6 +149,8 @@ That requires a stable control surface behind the UI.
 
 - The same command can open a tab in browser mode and a native window in
   Electron where appropriate.
+- External desktop integrations should be capability-checked handoffs, not
+  assumed in-panel apps.
 
 **Atomized steps**
 
@@ -200,6 +216,7 @@ The finished model should look like this:
 - launcher / tool directory surface
 - native Electron window routing for selected surfaces
 - new surfaces such as GPS and music
+- external integrations such as Spotify, Kindle, Discord, and Hosaka Radio
 
 ## Recommended next implementation steps
 

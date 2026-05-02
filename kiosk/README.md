@@ -28,6 +28,20 @@ and on Vercel.
 
 ## Local dev — one command
 
+Repo-local shortcut:
+
+```bash
+./scripts/hosaka dev
+```
+
+This runs the same Electron host plus the Vite dev server from the repo root.
+
+If you only want the localhost browser app, use:
+
+```bash
+./scripts/hosaka dev --web
+```
+
 ```bash
 cd Hosaka/kiosk
 npm install            # first time only
