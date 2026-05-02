@@ -20,6 +20,11 @@ COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci --prefer-offline
 
 COPY frontend/ ./
+# Hosaka App manifests live outside the frontend tree but are imported
+# by src/apps/hosakaApps.ts via `../../../hosaka-apps/*` (registry + per-app
+# YAML). They MUST be present at /build/hosaka-apps for vite/rollup to
+# resolve those imports during the SPA build.
+COPY hosaka-apps/ /build/hosaka-apps/
 RUN npm run build
 # output lands in /build/hosaka/web/ui (vite.config.ts outDir)
 
@@ -91,6 +96,7 @@ RUN python -m venv .venv \
 
 # ── copy application code ────────────────────────────────────────────────────
 COPY hosaka/            hosaka/
+COPY hosaka-apps/       hosaka-apps/
 COPY docs/              docs/
 COPY identity/          identity/
 COPY manager/           manager/
