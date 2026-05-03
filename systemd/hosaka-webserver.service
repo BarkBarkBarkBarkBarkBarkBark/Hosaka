@@ -16,6 +16,9 @@ EnvironmentFile=-/etc/hosaka/env
 Environment=HOSAKA_STATE_PATH=/var/lib/hosaka/state.json
 Environment=HOSAKA_BOOT_MODE=kiosk
 Environment=PYTHONUNBUFFERED=1
+# Surface missing required env vars (e.g. OPENAI_API_KEY) in the journal
+# at boot rather than as a vague 502 from the first /api/v1/voice request.
+ExecStartPre=/opt/hosaka-field-terminal/.venv/bin/python -m hosaka.secrets check --required-only --no-probe
 ExecStart=/opt/hosaka-field-terminal/.venv/bin/uvicorn \
     hosaka.web.server:app \
     --host ${HOSAKA_WEB_HOST} \

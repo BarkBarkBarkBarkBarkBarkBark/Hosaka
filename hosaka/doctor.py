@@ -158,9 +158,11 @@ def _detect_profile(explicit: str, host: str) -> str:
 
 def _load_env_file(path: Path) -> dict[str, str]:
     out: dict[str, str] = {}
-    if not path.exists():
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (FileNotFoundError, PermissionError, OSError):
         return out
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in raw.splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -183,6 +185,81 @@ def _redact(value: Any, enabled: bool) -> Any:
     if isinstance(value, list):
         return [_redact(item, enabled) for item in value]
     return value
+
+
+_SECRETS_STATUS_TO_DOCTOR = {
+    "ok": "pass",
+    "missing": "fail",
+    "invalid": "fail",
+    "unreachable": "warn",
+    "skipped": "skip",
+}
+
+
+def _secrets_checks() -> list[dict[str, Any]]:
+    """Translate hosaka.secrets.check results into doctor's check shape."""
+    try:
+        from hosaka.secrets import check as secrets_check
+    except Exception as exc:  # noqa: BLE001 - never let optional module crash doctor
+        return [
+            _check(
+                slug="secrets.module",
+                category="secrets",
+                priority="p1",
+                status="warn",
+                summary=f"hosaka.secrets unavailable: {exc}",
+                remediation="Reinstall the Hosaka Python package or check for an import error.",
+                source_kind="derived",
+            )
+        ]
+
+    out: list[dict[str, Any]] = []
+    try:
+        results = secrets_check.run_checks(probe=True, timeout=4.0)
+    except Exception as exc:  # noqa: BLE001
+        return [
+            _check(
+                slug="secrets.run",
+                category="secrets",
+                priority="p1",
+                status="warn",
+                summary=f"secrets check raised: {exc}",
+                source_kind="derived",
+            )
+        ]
+
+    for result in results:
+        priority = "p0" if result.required else "p2"
+        status = _SECRETS_STATUS_TO_DOCTOR.get(result.status, "warn")
+        if result.status == "missing" and not result.required:
+            status = "skip"
+        summary = f"{result.name}: {result.status}"
+        if result.source:
+            summary += f" (source: {result.source})"
+        remediation: str | None = None
+        if result.status == "missing" and result.required:
+            remediation = f"Run `hosaka secrets set {result.name}` to populate the JSON store."
+        elif result.status == "invalid":
+            remediation = (
+                f"Key {result.name} was rejected. Run `hosaka secrets check` for the upstream error, "
+                f"then `hosaka secrets set {result.name}` with a fresh value."
+            )
+        elif result.status == "unreachable":
+            remediation = "Could not reach the upstream API to validate the key — check network/Tailscale."
+        out.append(
+            _check(
+                slug=f"secrets.{result.name.lower()}",
+                category="secrets",
+                priority=priority,
+                status=status,
+                summary=summary,
+                observed={"source": result.source, "required": result.required},
+                evidence={"detail": result.detail},
+                remediation=remediation,
+                source_kind="host",
+            )
+        )
+    return out
 
 
 def _check(
@@ -505,6 +582,9 @@ def build_report(host: str, token: str | None, profile: str, redact: bool) -> di
             summary="nodes UI disabled by capability flags",
             source_kind="http",
         ))
+
+    for secret_check in _secrets_checks():
+        checks.append(secret_check)
 
     if local_profile:
         persistence_path = _persistence_path_for_profile(profile)

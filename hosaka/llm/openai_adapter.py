@@ -33,6 +33,13 @@ def _picoclaw_config_path() -> Path:
     return Path.home() / ".picoclaw" / "config.json"
 
 
+def _picoclaw_security_path() -> Path:
+    raw = os.getenv("PICOCLAW_SECURITY_PATH", "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    return _picoclaw_config_path().parent / ".security.yml"
+
+
 def _load_picoclaw_config() -> dict:
     try:
         return json.loads(_picoclaw_config_path().read_text(encoding="utf-8"))
@@ -40,19 +47,23 @@ def _load_picoclaw_config() -> dict:
         return {}
 
 
+def _preferred_picoclaw_model(cfg: dict) -> str:
+    default_model = ""
+    if isinstance(cfg, dict):
+        agents = cfg.get("agents")
+        if isinstance(agents, dict):
+            defaults = agents.get("defaults")
+            if isinstance(defaults, dict):
+                default_model = str(defaults.get("model_name") or "").strip()
+    return os.getenv("PICOCLAW_MODEL", "").strip() or default_model
+
+
 def _picoclaw_api_key(cfg: dict) -> str | None:
     model_list = cfg.get("model_list")
     if not isinstance(model_list, list):
         return None
 
-    default_model = ""
-    agents = cfg.get("agents")
-    if isinstance(agents, dict):
-        defaults = agents.get("defaults")
-        if isinstance(defaults, dict):
-            default_model = str(defaults.get("model_name") or "").strip()
-    env_model = os.getenv("PICOCLAW_MODEL", "").strip()
-    preferred = env_model or default_model
+    preferred = _preferred_picoclaw_model(cfg)
 
     def _entry_key(entry: object) -> str | None:
         if not isinstance(entry, dict):
@@ -76,6 +87,104 @@ def _picoclaw_api_key(cfg: dict) -> str | None:
     return None
 
 
+def _load_picoclaw_security() -> dict:
+    """Read ~/.picoclaw/.security.yml — picoclaw stores per-model API keys here."""
+    path = _picoclaw_security_path()
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    try:
+        import yaml  # type: ignore[import-not-found]
+    except ImportError:
+        return _parse_security_yaml_fallback(raw)
+    try:
+        data = yaml.safe_load(raw)
+    except Exception:
+        return _parse_security_yaml_fallback(raw)
+    return data if isinstance(data, dict) else {}
+
+
+def _parse_security_yaml_fallback(raw: str) -> dict:
+    """Minimal YAML parser for the .security.yml shape we care about.
+
+    Only handles ``model_list: <name>:N:\\n  api_keys:\\n    - <key>`` so we
+    can still resolve the key even when PyYAML isn't installed (the voice
+    daemon and webserver venvs may be lean).
+    """
+    out: dict[str, dict] = {"model_list": {}}
+    model_list = out["model_list"]
+    current_entry: dict | None = None
+    in_api_keys = False
+    in_model_list = False
+    for line in raw.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        stripped = line.rstrip()
+        if not stripped.startswith(" ") and not stripped.startswith("\t"):
+            in_model_list = stripped.startswith("model_list:")
+            current_entry = None
+            in_api_keys = False
+            continue
+        if not in_model_list:
+            continue
+        indent = len(stripped) - len(stripped.lstrip(" "))
+        body = stripped.strip()
+        if indent == 2 and body.endswith(":"):
+            name = body[:-1].strip()
+            current_entry = {"api_keys": []}
+            model_list[name] = current_entry
+            in_api_keys = False
+            continue
+        if current_entry is None:
+            continue
+        if indent == 4 and body == "api_keys:":
+            in_api_keys = True
+            continue
+        if in_api_keys and body.startswith("- "):
+            value = body[2:].strip().strip("'\"")
+            if value:
+                current_entry.setdefault("api_keys", []).append(value)
+            continue
+        if indent == 4:
+            in_api_keys = False
+    return out
+
+
+def _picoclaw_security_api_key(cfg: dict, security: dict) -> str | None:
+    model_list = security.get("model_list")
+    if not isinstance(model_list, dict):
+        return None
+
+    preferred = _preferred_picoclaw_model(cfg)
+
+    def _entry_key(entry: object) -> str | None:
+        if not isinstance(entry, dict):
+            return None
+        keys = entry.get("api_keys")
+        if isinstance(keys, list):
+            for candidate in keys:
+                value = str(candidate or "").strip()
+                if value:
+                    return value
+        single = str(entry.get("api_key") or "").strip()
+        return single or None
+
+    if preferred:
+        for name, entry in model_list.items():
+            base = str(name).split(":", 1)[0].strip()
+            if base == preferred:
+                key = _entry_key(entry)
+                if key:
+                    return key
+
+    for entry in model_list.values():
+        key = _entry_key(entry)
+        if key:
+            return key
+    return None
+
+
 def resolve_api_key() -> tuple[str | None, str | None]:
     key = os.getenv("OPENAI_API_KEY", "").strip()
     if key:
@@ -91,9 +200,14 @@ def resolve_api_key() -> tuple[str | None, str | None]:
     if key:
         return key, "llm.json"
 
-    key = _picoclaw_api_key(_load_picoclaw_config()) or ""
+    pico_cfg = _load_picoclaw_config()
+    key = _picoclaw_api_key(pico_cfg) or ""
     if key:
         return key, "~/.picoclaw/config.json"
+
+    key = _picoclaw_security_api_key(pico_cfg, _load_picoclaw_security()) or ""
+    if key:
+        return key, "~/.picoclaw/.security.yml"
 
     return None, None
 

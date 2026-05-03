@@ -19,6 +19,11 @@ WorkingDirectory=/opt/hosaka-field-terminal
 EnvironmentFile=-/etc/hosaka/env
 Environment=HOSAKA_VOICE_WAKEWORD=hey_jarvis
 Environment=PYTHONUNBUFFERED=1
+# Fail fast (and loudly in `journalctl`) when a required env var like
+# OPENAI_API_KEY isn't reachable, instead of crashing 30s into the
+# Realtime handshake. --no-probe keeps boot offline-friendly; doctor
+# does the live probe.
+ExecStartPre=/opt/hosaka-field-terminal/.venv/bin/python -m hosaka.secrets check --required-only --no-probe
 ExecStart=/opt/hosaka-field-terminal/.venv/bin/python -m hosaka voice
 Restart=on-failure
 RestartSec=5

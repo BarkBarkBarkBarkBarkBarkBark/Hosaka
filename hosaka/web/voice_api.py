@@ -191,13 +191,21 @@ async def voice_ephemeral_token() -> EphemeralOut:
     if not api_key:
         raise HTTPException(
             503,
-            "OPENAI_API_KEY is not set on this appliance "
-            "(checked env, llm.json, ~/.picoclaw/config.json)",
+            detail={
+                "error_code": "openai_key_missing",
+                "message": (
+                    "OPENAI_API_KEY is not set on this appliance "
+                    "(checked env, ~/.hosaka/secrets.json, llm.json, "
+                    "~/.picoclaw/config.json, ~/.picoclaw/.security.yml)"
+                ),
+                "remediation": "ssh in and run: hosaka secrets set OPENAI_API_KEY",
+            },
         )
 
     from hosaka.voice.realtime_client import (
         DEFAULT_MODEL,
         DEFAULT_VOICE,
+        RealtimeError,
         mint_ephemeral_session,
     )
 
@@ -207,9 +215,48 @@ async def voice_ephemeral_token() -> EphemeralOut:
             tools=voice_tools.TOOL_SCHEMAS,
             instructions=voice_tools.SYSTEM_INSTRUCTIONS,
         )
+    except RealtimeError as exc:
+        status = getattr(exc, "status_code", 502) or 502
+        openai_code = getattr(exc, "openai_code", "") or ""
+        log.warning(
+            "ephemeral token mint failed via %s: status=%s code=%s err=%s",
+            key_source or "unknown",
+            status,
+            openai_code or "-",
+            exc,
+        )
+        if status in (401, 403):
+            error_code = "openai_unauthorized"
+            remediation = (
+                f"Key from {key_source or 'unknown'} was rejected by OpenAI "
+                f"({openai_code or status}). Run: hosaka secrets check"
+            )
+            http_status = 502
+        else:
+            error_code = openai_code or "openai_upstream_error"
+            remediation = "Run `hosaka secrets check` to validate the OpenAI key."
+            http_status = status if 500 <= status < 600 else 502
+        raise HTTPException(
+            http_status,
+            detail={
+                "error_code": error_code,
+                "message": str(exc),
+                "key_source": key_source or "",
+                "openai_code": openai_code,
+                "remediation": remediation,
+            },
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         log.warning("ephemeral token mint failed via %s: %s", key_source or "unknown", exc)
-        raise HTTPException(502, f"upstream error: {exc}") from exc
+        raise HTTPException(
+            502,
+            detail={
+                "error_code": "ephemeral_token_failed",
+                "message": str(exc),
+                "key_source": key_source or "",
+                "remediation": "Check the webserver journal and run `hosaka secrets check`.",
+            },
+        ) from exc
 
     session_data = data.get("session") if isinstance(data.get("session"), dict) else data
     client_secret = data.get("client_secret") if isinstance(data.get("client_secret"), dict) else {}

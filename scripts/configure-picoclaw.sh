@@ -212,6 +212,50 @@ configure_model_from_key() {
     return "$rc"
   fi
   ok "Picoclaw model '$MODEL' configured"
+  save_key_into_hosaka_secrets "$key" || true
+}
+
+# Mirror the same key into the Hosaka-native secrets store so the voice
+# daemon and webserver can resolve it without poking at picoclaw internals.
+# Failure here is non-fatal — picoclaw still has the key as a fallback.
+save_key_into_hosaka_secrets() {
+  local key="$1"
+  [[ -n "$key" ]] || return 0
+
+  local py=""
+  for candidate in "$REPO_ROOT/.venv/bin/python" "$REPO_ROOT/.hosakavenv/bin/python" python python3; do
+    if command -v "$candidate" >/dev/null 2>&1 || [[ -x "$candidate" ]]; then
+      py="$candidate"
+      break
+    fi
+  done
+  if [[ -z "$py" ]]; then
+    warn "no python found to mirror key into Hosaka secrets store"
+    return 0
+  fi
+
+  note "mirroring key into Hosaka secrets store (~/.hosaka/secrets.json)"
+  local extra_path=""
+  [[ -d "$REPO_ROOT/hosaka" ]] && extra_path="$REPO_ROOT"
+  if ! PYTHONPATH="$extra_path${PYTHONPATH:+:$PYTHONPATH}" \
+       "$py" -m hosaka.secrets set OPENAI_API_KEY "$key" --no-mirror \
+       >/tmp/hosaka-secrets-import.log 2>&1; then
+    warn "could not write Hosaka secrets store; see /tmp/hosaka-secrets-import.log"
+    return 0
+  fi
+
+  if command -v sudo >/dev/null 2>&1; then
+    note "mirroring secrets to /etc/hosaka/env (requires sudo)"
+    if ! sudo -E env "PYTHONPATH=$extra_path${PYTHONPATH:+:$PYTHONPATH}" \
+         "$py" -m hosaka.secrets mirror >/tmp/hosaka-secrets-mirror.log 2>&1; then
+      warn "could not mirror to /etc/hosaka/env; see /tmp/hosaka-secrets-mirror.log"
+      warn "rerun: sudo -E $py -m hosaka.secrets mirror"
+    else
+      ok "/etc/hosaka/env updated"
+    fi
+  else
+    warn "sudo not present; run later: $py -m hosaka.secrets mirror"
+  fi
 }
 
 harden_picoclaw_config() {

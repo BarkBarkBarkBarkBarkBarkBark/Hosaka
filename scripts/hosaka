@@ -1093,6 +1093,143 @@ cmd_configure() {
   esac
 }
 
+# ── secrets ──────────────────────────────────────────────────────────────────
+
+# Pick the python that has hosaka importable. Prefer the deployed venv (used
+# by systemd), then the repo venv, then the bare interpreter.
+secrets_python() {
+  local candidates=(
+    "$DEPLOY_ROOT/.venv/bin/python"
+    "$REPO_ROOT/.venv/bin/python"
+    "$REPO_ROOT/.hosakavenv/bin/python"
+  )
+  local p
+  for p in "${candidates[@]}"; do
+    if [[ -x "$p" ]]; then
+      printf '%s\n' "$p"
+      return 0
+    fi
+  done
+  if have_cmd python; then
+    command -v python
+    return 0
+  fi
+  command -v python3
+}
+
+# Where the repo's hosaka package actually lives, so the chosen python can
+# import it even when running from /opt/hosaka-field-terminal.
+secrets_pythonpath() {
+  if [[ -d "$REPO_ROOT/hosaka" ]]; then
+    printf '%s\n' "$REPO_ROOT"
+  elif [[ -d "$DEPLOY_ROOT/hosaka" ]]; then
+    printf '%s\n' "$DEPLOY_ROOT"
+  fi
+}
+
+run_secrets_module() {
+  local py
+  py="$(secrets_python)" || die "no python interpreter found"
+  local extra_path
+  extra_path="$(secrets_pythonpath)"
+  if [[ -n "$extra_path" ]]; then
+    PYTHONPATH="$extra_path${PYTHONPATH:+:$PYTHONPATH}" "$py" -m hosaka.secrets "$@"
+  else
+    "$py" -m hosaka.secrets "$@"
+  fi
+}
+
+run_secrets_module_root() {
+  # Re-invoke ourselves under sudo so writes to /etc/hosaka/env succeed and
+  # hidden-prompt UX (getpass) still flows through the user's tty.
+  local py
+  py="$(secrets_python)" || die "no python interpreter found"
+  local extra_path
+  extra_path="$(secrets_pythonpath)"
+  if (( EUID == 0 )); then
+    if [[ -n "$extra_path" ]]; then
+      PYTHONPATH="$extra_path${PYTHONPATH:+:$PYTHONPATH}" "$py" -m hosaka.secrets "$@"
+    else
+      "$py" -m hosaka.secrets "$@"
+    fi
+    return $?
+  fi
+  if ! have_cmd sudo; then
+    warn "sudo not available; running unprivileged. /etc/hosaka/env mirror may fail."
+    if [[ -n "$extra_path" ]]; then
+      PYTHONPATH="$extra_path${PYTHONPATH:+:$PYTHONPATH}" "$py" -m hosaka.secrets "$@"
+    else
+      "$py" -m hosaka.secrets "$@"
+    fi
+    return $?
+  fi
+  if [[ -n "$extra_path" ]]; then
+    sudo -E env "PYTHONPATH=$extra_path${PYTHONPATH:+:$PYTHONPATH}" \
+      "HOSAKA_SECRETS_PATH=${HOSAKA_SECRETS_PATH:-$HOME/.hosaka/secrets.json}" \
+      "$py" -m hosaka.secrets "$@"
+  else
+    sudo -E env \
+      "HOSAKA_SECRETS_PATH=${HOSAKA_SECRETS_PATH:-$HOME/.hosaka/secrets.json}" \
+      "$py" -m hosaka.secrets "$@"
+  fi
+}
+
+cmd_secrets() {
+  local verb="${1:-list}"
+  shift || true
+  case "$verb" in
+    list|ls)
+      run_secrets_module list "$@"
+      ;;
+    get)
+      run_secrets_module get "$@"
+      ;;
+    check|doctor)
+      run_secrets_module check "$@"
+      ;;
+    path)
+      run_secrets_module path "$@"
+      ;;
+    set)
+      run_secrets_module_root set "$@"
+      ;;
+    unset|rm|remove)
+      run_secrets_module_root unset "$@"
+      ;;
+    mirror)
+      run_secrets_module_root mirror "$@"
+      ;;
+    import-picoclaw|import|adopt)
+      run_secrets_module_root import-picoclaw "$@"
+      ;;
+    edit)
+      run_secrets_module edit "$@"
+      ;;
+    -h|--help|help|"")
+      cat <<'USAGE'
+hosaka secrets — manage Hosaka's environment secrets
+
+  hosaka secrets list                   show every known key (redacted)
+  hosaka secrets check [--no-probe]     presence + format + live OpenAI probe
+  hosaka secrets get NAME [--reveal]    print one secret (redacted by default)
+  hosaka secrets set NAME [VALUE]       store a secret (prompts hidden if VALUE omitted; sudo)
+  hosaka secrets unset NAME             remove a secret (sudo)
+  hosaka secrets mirror                 rewrite /etc/hosaka/env from the JSON store (sudo)
+  hosaka secrets import-picoclaw        copy OPENAI_API_KEY from ~/.picoclaw/.security.yml (sudo)
+  hosaka secrets edit                   open /etc/hosaka/env in $EDITOR via sudoedit
+  hosaka secrets path                   print the JSON + env file paths
+
+Storage:
+  ~/.hosaka/secrets.json  source of truth (chmod 600)
+  /etc/hosaka/env         mirror used by systemd EnvironmentFile (chmod 640)
+USAGE
+      ;;
+    *)
+      die "unknown secrets verb: $verb (try: list|check|get|set|unset|mirror|import-picoclaw|edit|path)"
+      ;;
+  esac
+}
+
 # ── dispatch ──────────────────────────────────────────────────────────────────
 
 usage() {
@@ -1131,6 +1268,7 @@ hosaka — operator CLI for the Hosaka Field Terminal Pi
                                     install Picoclaw into ~/.local/bin and bootstrap Hosaka runtime
   hosaka configure picoclaw [--onboard|--no-onboard]
                                     install/check Picoclaw and import OPENAI_API_KEY if available
+  hosaka secrets <verb>             manage env secrets (list|check|set|unset|mirror|import-picoclaw|edit)
 
   hosaka chat [-s session]          open interactive agent REPL
                                     (default session: \$HOSAKA_AGENT_SESSION = $AGENT_SESSION)
@@ -1176,6 +1314,7 @@ main() {
     deploy)    cmd_deploy "$@" ;;
     install)   cmd_install "$@" ;;
     configure) cmd_configure "$@" ;;
+    secrets)   cmd_secrets "$@" ;;
     logs)      cmd_logs "$@" ;;
     reboot)    cmd_reboot "$@" ;;
     chat|agent|repl) cmd_chat "$@" ;;

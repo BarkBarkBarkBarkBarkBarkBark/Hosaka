@@ -13,6 +13,16 @@ try:
 except ImportError:
     pass
 
+# Hydrate os.environ from the Hosaka-native JSON secrets store. Runs after
+# dotenv so explicit shell exports + repo-local .env still win, but anything
+# the operator stored via `hosaka secrets set` becomes visible to every
+# entrypoint (TUI, voice daemon, webserver) without a systemd reload.
+try:
+    from hosaka.secrets import store as _secrets_store
+    _secrets_store.apply_to_env()
+except Exception:  # noqa: BLE001 - never let secrets loading kill boot
+    pass
+
 # ── logging ───────────────────────────────────────────────────────────────────
 _LOG_FILE = os.getenv("HOSAKA_LOG_FILE", "/var/log/hosaka/boot.log")
 _LOG_LEVEL = os.getenv("HOSAKA_LOG_LEVEL", "INFO").upper()

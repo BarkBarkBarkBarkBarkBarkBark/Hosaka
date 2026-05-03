@@ -321,8 +321,11 @@ async def mint_ephemeral_session(
         if resp.status_code != 404:
             if resp.status_code >= 400:
                 # Surface the OpenAI error body so callers can see *why*
-                # instead of just "400 Bad Request".
+                # instead of just "400 Bad Request". The status code and
+                # error code are stashed on the exception so the API layer
+                # can map them to clean error_code strings for the SPA.
                 detail = resp.text.strip()
+                code = ""
                 try:
                     body = resp.json()
                     err = (body.get("error") or {}) if isinstance(body, dict) else {}
@@ -331,9 +334,12 @@ async def mint_ephemeral_session(
                     detail = f"{msg}" + (f" [{code}]" if code else "")
                 except Exception:  # noqa: BLE001
                     pass
-                raise RealtimeError(
+                error = RealtimeError(
                     f"openai /v1/realtime/client_secrets {resp.status_code}: {detail[:500]}"
                 )
+                error.status_code = resp.status_code  # type: ignore[attr-defined]
+                error.openai_code = str(code) if code else ""  # type: ignore[attr-defined]
+                raise error
             data = resp.json()
             data.setdefault("_hosaka_api_shape", "ga")
             data.setdefault("_hosaka_sdp_url", f"{base}/v1/realtime/calls")
