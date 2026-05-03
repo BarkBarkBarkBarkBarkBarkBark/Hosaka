@@ -964,6 +964,93 @@ cmd_doctor() {
   ( cd "$REPO_ROOT" && exec "$py" -m hosaka.doctor "$@" )
 }
 
+cmd_diag() {
+  local json=0
+  local host="${HOSAKA_DIAG_HOST:-http://127.0.0.1:${BACKEND_PORT_DEFAULT}}"
+  while (( $# )); do
+    case "$1" in
+      --json) json=1; shift ;;
+      --host)
+        [[ $# -ge 2 ]] || die "--host needs a URL"
+        host="$2"; shift 2 ;;
+      --host=*) host="${1#*=}"; shift ;;
+      *) die "unknown diag arg: $1" ;;
+    esac
+  done
+  local py
+  py="$(_hosaka_python)"
+  ( cd "$REPO_ROOT" && HOSAKA_DIAG_HOST="$host" HOSAKA_DIAG_JSON="$json" "$py" - <<'PY'
+import json
+import os
+import sys
+import urllib.request
+
+host = os.environ.get("HOSAKA_DIAG_HOST", "http://127.0.0.1:8421").rstrip("/")
+want_json = os.environ.get("HOSAKA_DIAG_JSON") == "1"
+
+def fetch_snapshot():
+    url = host + "/api/v1/diag/snapshot"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            return json.loads(resp.read().decode("utf-8")), f"api {url}"
+    except Exception as exc:
+        from hosaka.web.diag_api import build_snapshot
+        return build_snapshot(), f"local fallback ({exc})"
+
+def pct_bar(value, width=18):
+    try:
+        pct = max(0, min(100, float(value)))
+    except Exception:
+        pct = 0
+    full = round((pct / 100) * width)
+    return "█" * full + "░" * (width - full)
+
+snap, source = fetch_snapshot()
+if want_json:
+    print(json.dumps(snap, indent=2, sort_keys=True))
+    raise SystemExit(0)
+
+system = snap.get("system", {})
+network = snap.get("network", {})
+primary = network.get("primary", {})
+per = snap.get("peripherals", {})
+mem = system.get("mem", {})
+disk = system.get("disk_root", {})
+
+print("\nhosaka diagnostics")
+print(f"  source     : {source}")
+print(f"  host       : {snap.get('hostname', 'unknown')}")
+print(f"  mode       : {snap.get('mode', 'unknown')}")
+print(f"  generated  : {snap.get('generated_at', '')}")
+print("\nsystem")
+print(f"  platform   : {system.get('platform', 'unknown')}")
+print(f"  uptime     : {round(system.get('uptime_seconds', 0) / 60)} min")
+print(f"  cpu temp   : {system.get('cpu_temp_c', '—')} °C")
+if mem:
+    total = mem.get('total_mb') or 0
+    used = mem.get('used_mb') or 0
+    pct = (used / total * 100) if total else 0
+    print(f"  memory     : {used} / {total} MB  {pct_bar(pct)} {pct:.0f}%")
+if disk:
+    print(f"  disk /     : {disk.get('used_gb', '—')} / {disk.get('total_gb', '—')} GB  {pct_bar(disk.get('used_percent', 0))} {disk.get('used_percent', '—')}%")
+print("\nnetwork")
+print(f"  ip         : {primary.get('ip') or primary.get('tailscale_ip') or '—'}")
+print(f"  iface      : {primary.get('iface') or '—'}")
+print(f"  ssid       : {primary.get('ssid') or '—'}")
+print(f"  ports      : {', '.join(map(str, network.get('listening_ports', []))) or '—'}")
+print("\nperipherals")
+for name in ("audio", "video", "usb", "bluetooth", "battery"):
+    item = per.get(name, {}) or {}
+    state = "detected" if item.get("available") else "not detected"
+    print(f"  {name:<10} : {state}")
+print("\nservices")
+for svc in system.get("services", []):
+    dot = "●" if svc.get("active") else "○"
+    print(f"  {dot} {svc.get('name')} — {svc.get('sub')}")
+PY
+  )
+}
+
 cmd_install() {
   local target="${1:-}"
   if [[ -z "$target" ]]; then
@@ -1027,6 +1114,7 @@ hosaka — operator CLI for the Hosaka Field Terminal Pi
   hosaka status                     what's running + memory snapshot
   hosaka down [--port N] [--all]    stop local dev listeners/windows for this checkout
   hosaka dashboard                  print the device dashboard once and exit
+  hosaka diag [--json] [--host URL] shared device/network/peripheral snapshot
   hosaka doctor [--json] [--strict] [--profile PROFILE] [--host URL]
                                     run structured diagnostics; future MCP-friendly
   hosaka dev [--port N] [--no-open] [-fresh]
@@ -1080,6 +1168,7 @@ main() {
     status)    cmd_status "$@" ;;
     down)      cmd_down "$@" ;;
     dashboard) exec /usr/local/bin/hosaka-device-dashboard --once ;;
+    diag)      cmd_diag "$@" ;;
     doctor)    cmd_doctor "$@" ;;
     dev)       cmd_dev "$@" ;;
     build)     cmd_build "$@" ;;

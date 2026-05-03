@@ -19,12 +19,13 @@ import hmac
 import json
 import logging
 import os
+import pty
 import re
 import shutil
 import subprocess
 import time
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
@@ -395,12 +396,14 @@ app = FastAPI(
 from hosaka.web.api_v1 import router as v1_router  # noqa: E402
 from hosaka.web.voice_api import router as voice_router  # noqa: E402
 from hosaka.web.docs_api import router as docs_router  # noqa: E402
+from hosaka.web.diag_api import router as diag_router  # noqa: E402
 from hosaka.web.nodes import router as nodes_router  # noqa: E402
 from hosaka.web.sync_ws import router as sync_router  # noqa: E402
 
 app.include_router(v1_router)
 app.include_router(voice_router)
 app.include_router(docs_router)
+app.include_router(diag_router)
 if TAILSCALE_API_ENABLED:
     app.include_router(nodes_router)
 if SYNC_ENABLED:
@@ -427,7 +430,7 @@ _DEVICE_HTML = """<!doctype html>
   :root { color-scheme: dark; }
   body { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
          background: #0b0b14; color: #e6e6e6; margin: 0; padding: 16px;
-         max-width: 720px; }
+      max-width: 920px; }
   h1 { color: #f5b042; font-size: 18px; margin: 0 0 4px; letter-spacing: 1px; }
   .sub { color: #888; margin-bottom: 16px; }
   .card { border: 1px solid #222; border-radius: 6px; padding: 12px 14px;
@@ -449,14 +452,37 @@ _DEVICE_HTML = """<!doctype html>
   ul { padding-left: 16px; margin: 0; }
   a { color: #6cf; }
   .hint { color: #888; font-size: 12px; margin-top: 6px; }
+    details { border-top: 1px solid #222; margin-top: 8px; padding-top: 8px; }
+    summary { color: #f5b042; cursor: pointer; }
+    pre { overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 8px 0 0;
+                color: #ccc; background: #08080f; border: 1px solid #1b1b28; padding: 8px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+    .meter { height: 8px; background: #07070d; border: 1px solid #222; margin-top: 4px; }
+    .meter > span { display:block; height:100%; background: linear-gradient(90deg,#6cf,#f5b042); }
+    #terminal-wrap { display: none; margin-top: 10px; }
+    #terminal { height: 260px; overflow: auto; padding: 10px; background: #050508; color: #d6ffd6;
+                            border: 1px solid #273827; white-space: pre-wrap; word-break: break-word; }
+    #terminal-input { margin-top: 8px; }
 </style></head><body>
 <h1>HOSAKA · device mode</h1>
-<div class="sub" id="ts">loading…</div>
+<div class="sub" id="ts">loading diagnostics…</div>
 
-<div class="card"><h2>network</h2><div class="row" id="net"></div></div>
-<div class="card"><h2>system</h2><div class="row" id="sys"></div></div>
-<div class="card"><h2>services</h2><ul id="svcs"></ul></div>
-<div class="card"><h2>urls</h2><ul id="urls"></ul></div>
+<div class="grid">
+    <div class="card"><h2>network</h2><div class="row" id="net"></div><details><summary>interfaces + wifi</summary><pre id="net-extra"></pre></details></div>
+    <div class="card"><h2>system</h2><div class="row" id="sys"></div><details><summary>mounts</summary><pre id="mounts"></pre></details></div>
+    <div class="card"><h2>peripherals</h2><div class="row" id="peripherals"></div><details open><summary>audio / video / usb / bluetooth</summary><pre id="peripheral-extra"></pre></details></div>
+    <div class="card"><h2>services</h2><ul id="svcs"></ul></div>
+    <div class="card"><h2>urls</h2><ul id="urls"></ul></div>
+</div>
+
+<div class="card"><h2>plain terminal</h2>
+    <button id="shell-toggle">open shell</button>
+    <div class="hint">available only when the server allows the guarded device shell. loopback by default.</div>
+    <div id="terminal-wrap">
+        <div id="terminal" role="log" aria-live="polite"></div>
+        <input id="terminal-input" placeholder="type command, press enter" autocomplete="off">
+    </div>
+</div>
 
 <div class="card"><h2>wifi — add network</h2>
   <form id="wifi-form">
@@ -482,31 +508,70 @@ function row(el, k, v, cls) {
   el.insertAdjacentHTML('beforeend',
     '<span>'+k+'</span><span class="v '+(cls||'')+'">'+(v??'—')+'</span>');
 }
+function textLines(lines) { return Array.isArray(lines) ? lines.join('\n') : String(lines || ''); }
+function svcClass(active) { return active ? 'ok' : 'bad'; }
 async function refresh() {
   try {
-    const s = await j('/api/v1/system/info');
+        const d = await j('/api/v1/diag/snapshot');
+        const s = d.system;
+        const n = d.network;
+        const p = d.peripherals || {};
+        const primary = n.primary || {};
     document.getElementById('ts').textContent =
-      s.hostname + ' · uptime ' + Math.round(s.uptime_seconds/60) + ' min · ' + new Date().toLocaleTimeString();
+            d.hostname + ' · ' + d.mode + ' · uptime ' + Math.round(s.uptime_seconds/60) + ' min · ' + new Date().toLocaleTimeString();
     const net = document.getElementById('net'); net.innerHTML='';
-    row(net,'ip',       s.net.ip);
-    row(net,'iface',    s.net.iface);
-    row(net,'ssid',     s.net.ssid);
-    row(net,'mac',      s.net.mac);
-    row(net,'tailscale',s.net.tailscale_ip);
+        row(net,'ip',       primary.ip);
+        row(net,'iface',    primary.iface);
+        row(net,'ssid',     primary.ssid);
+        row(net,'mac',      primary.mac);
+        row(net,'tailscale',primary.tailscale_ip);
+        document.getElementById('net-extra').textContent =
+            'interfaces\n' + textLines((n.interfaces||[]).map(x => JSON.stringify(x))) + '\n\nwifi\n' + textLines(n.wifi_visible||[]) + '\n\nnmcli\n' + textLines(n.nmcli_devices||[]);
     const sys = document.getElementById('sys'); sys.innerHTML='';
-    row(sys,'mode', s.mode, s.mode==='device'?'warn':'ok');
+        row(sys,'mode', s.mode, s.mode==='device'?'warn':'ok');
+        row(sys,'platform', s.platform);
     row(sys,'cpu temp', s.cpu_temp_c==null?null:(s.cpu_temp_c+' °C'));
     row(sys,'memory', s.mem.used_mb+' / '+s.mem.total_mb+' MB  (free '+s.mem.available_mb+')');
     row(sys,'swap',   s.mem.swap_used_mb+' MB');
-    row(sys,'ports',  s.listening_ports.join(', '));
+        row(sys,'disk /', s.disk_root.used_gb+' / '+s.disk_root.total_gb+' GB ('+s.disk_root.used_percent+'%)');
+        row(sys,'ports',  n.listening_ports.join(', '));
+        document.getElementById('mounts').textContent = textLines((s.mounts||[]).map(x => `${x.mount}  ${x.used}/${x.size}  ${x.use_percent}  ${x.filesystem}`));
+        const per = document.getElementById('peripherals'); per.innerHTML='';
+        row(per,'audio', p.audio?.available ? 'detected' : 'browser / unavailable', p.audio?.available ? 'ok' : 'warn');
+        row(per,'video', p.video?.available ? 'detected' : 'browser / unavailable', p.video?.available ? 'ok' : 'warn');
+        row(per,'usb', p.usb?.available ? 'detected' : 'unavailable', p.usb?.available ? 'ok' : 'warn');
+        row(per,'bluetooth', p.bluetooth?.available ? 'detected' : 'unavailable', p.bluetooth?.available ? 'ok' : 'warn');
+        row(per,'battery', p.battery?.available ? 'detected' : 'not present', p.battery?.available ? 'ok' : 'warn');
+        document.getElementById('peripheral-extra').textContent = JSON.stringify(p, null, 2);
     const sv = document.getElementById('svcs'); sv.innerHTML='';
     s.services.forEach(x => sv.insertAdjacentHTML('beforeend',
-      '<li><span class="'+(x.active?'ok':'bad')+'">'+(x.active?'●':'○')+'</span> '+x.name+' — '+x.sub+'</li>'));
+            '<li><span class="'+svcClass(x.active)+'">'+(x.active?'●':'○')+'</span> '+x.name+' — '+x.sub+'</li>'));
     const u = document.getElementById('urls'); u.innerHTML='';
-    Object.entries(s.urls).forEach(([k,v]) => u.insertAdjacentHTML('beforeend',
+        Object.entries(n.urls).forEach(([k,v]) => u.insertAdjacentHTML('beforeend',
       '<li>'+k+' · <a href="'+v+'">'+v+'</a></li>'));
   } catch(e) { document.getElementById('ts').textContent = 'error: '+e.message; }
 }
+
+let shellSocket = null;
+const term = document.getElementById('terminal');
+const shellWrap = document.getElementById('terminal-wrap');
+const shellInput = document.getElementById('terminal-input');
+function shellWrite(text) { term.textContent += text; term.scrollTop = term.scrollHeight; }
+document.getElementById('shell-toggle').addEventListener('click', () => {
+    if (shellSocket) { shellSocket.close(); shellSocket = null; shellWrap.style.display='none'; return; }
+    shellWrap.style.display='block'; term.textContent='connecting…\n';
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    shellSocket = new WebSocket(proto + '//' + location.host + '/ws/device-shell');
+    shellSocket.onopen = () => { term.textContent=''; shellInput.focus(); };
+    shellSocket.onmessage = (ev) => shellWrite(ev.data);
+    shellSocket.onclose = (ev) => { shellWrite('\n[shell closed '+(ev.reason||ev.code)+']\n'); shellSocket = null; };
+    shellSocket.onerror = () => shellWrite('\n[shell error]\n');
+});
+shellInput.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter' || !shellSocket) return;
+    shellSocket.send(shellInput.value + '\n');
+    shellInput.value='';
+});
 document.getElementById('wifi-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const f = new FormData(ev.target);
@@ -537,6 +602,96 @@ refresh();
 setInterval(refresh, 4000);
 </script>
 </body></html>"""
+
+
+def _device_shell_allowed(websocket: WebSocket) -> tuple[bool, str]:
+    """Gate the interactive PTY: never in public mode; default to loopback + device mode."""
+    if PUBLIC_MODE or not SHELL_ENABLED:
+        return False, "local shell disabled"
+    try:
+        from hosaka.web.api_v1 import _read_mode as _api_read_mode
+        if _api_read_mode() != "device" and not _env_flag("HOSAKA_DEVICE_SHELL_ALWAYS", False):
+            return False, "shell only available in device mode"
+    except Exception as exc:  # noqa: BLE001
+        return False, f"mode check failed: {exc}"
+
+    allow_lan = _env_flag("HOSAKA_DEVICE_SHELL_LAN", False)
+    host = websocket.client.host if websocket.client else ""
+    if not allow_lan and host not in {"127.0.0.1", "::1", "localhost"}:
+        return False, "shell limited to loopback; set HOSAKA_DEVICE_SHELL_LAN=1 to allow LAN"
+    return True, ""
+
+
+@app.websocket("/ws/device-shell")
+async def device_shell_ws(websocket: WebSocket) -> None:
+    ok, reason = _device_shell_allowed(websocket)
+    if not ok:
+        await websocket.close(code=1008, reason=reason[:120])
+        return
+
+    await websocket.accept()
+    master_fd, slave_fd = pty.openpty()
+    env = _picoclaw_env()
+    env.setdefault("TERM", "xterm-256color")
+    cwd = SHELL_CWD if SHELL_CWD.exists() else Path.cwd()
+    proc: subprocess.Popen[bytes] | None = None
+    loop = asyncio.get_running_loop()
+
+    try:
+        proc = subprocess.Popen(
+            [_shell_bin(), "-l"],
+            cwd=str(cwd),
+            env=env,
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            start_new_session=True,
+        )
+        os.close(slave_fd)
+
+        async def read_pty() -> None:
+            while proc and proc.poll() is None:
+                try:
+                    data = await loop.run_in_executor(None, os.read, master_fd, 2048)
+                except OSError:
+                    break
+                if not data:
+                    break
+                await websocket.send_text(data.decode("utf-8", errors="replace"))
+
+        async def write_pty() -> None:
+            while proc and proc.poll() is None:
+                try:
+                    message = await websocket.receive_text()
+                except WebSocketDisconnect:
+                    break
+                except Exception:
+                    break
+                try:
+                    os.write(master_fd, message.encode("utf-8", errors="replace"))
+                except OSError:
+                    break
+
+        done, pending = await asyncio.wait(
+            {asyncio.create_task(read_pty()), asyncio.create_task(write_pty())},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+        for task in done:
+            with suppress(Exception):
+                task.result()
+    finally:
+        try:
+            os.close(master_fd)
+        except OSError:
+            pass
+        if proc and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
 
 
 # ── /api/health ───────────────────────────────────────────────────────────────

@@ -57,6 +57,9 @@ const BooksPanel = lazy(() =>
 const DocsPanel = lazy(() =>
   import("./panels/DocsPanel").then((m) => ({ default: m.DocsPanel })),
 );
+const DiagnosticsPanel = lazy(() =>
+  import("./panels/DiagnosticsPanel").then((m) => ({ default: m.DiagnosticsPanel })),
+);
 const VoicePanel = lazy(() =>
   import("./panels/VoicePanel").then((m) => ({ default: m.VoicePanel })),
 );
@@ -355,6 +358,8 @@ export function App() {
         return <BooksPanel active={activeAppId === "books"} />;
       case "docs":
         return <DocsPanel active={activeAppId === "docs"} />;
+      case "diagnostics":
+        return <DiagnosticsPanel active={activeAppId === "diagnostics"} />;
       case "app_store":
         return <AppStorePanel />;
       case "music":
@@ -378,7 +383,7 @@ export function App() {
   // Stage-mode hint: panels that benefit from full-bleed (orb / terminal /
   // video / games / web) get an immersive class so CSS can collapse padding
   // and let the central surface dominate. Aesthetic only — no app logic.
-  const immersiveApps = new Set<AppId>(["voice", "terminal", "video", "games", "web", "books", "reading", "docs"]);
+  const immersiveApps = new Set<AppId>(["voice", "terminal", "video", "games", "web", "books", "reading", "docs", "diagnostics"]);
   const stageMode = immersiveApps.has(activeAppId) ? "immersive" : "chrome";
 
   return (

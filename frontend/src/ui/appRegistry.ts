@@ -10,6 +10,7 @@ export type PanelId =
   | "web"
   | "books"
   | "docs"
+  | "diagnostics"
   | "voice"
   | "nodes";
 
@@ -124,6 +125,22 @@ export const APP_REGISTRY: AppDefinition[] = [
     embedPolicy: "prefer_embed",
     maintainerNote: "Picoclaw agent writes here via /api/v1/docs/*; voice tools write_doc/append_doc target this surface.",
     agentNote: "Save markdown summaries, todos, and notes here so the operator can find them later.",
+  },
+  {
+    id: "diagnostics",
+    title: "devices",
+    description: "peripherals, network, system health, and live media tests.",
+    glyph: "⚇",
+    aliases: ["devices", "diagnostics", "diag", "peripherals", "hardware", "audio", "camera", "network"],
+    family: "core",
+    showInLauncher: true,
+    preferredHost: "electron",
+    fallbackHosts: ["web"],
+    installStrategy: "builtin",
+    hostScope: "any",
+    embedPolicy: "prefer_embed",
+    maintainerNote: "Uses /api/v1/diag/snapshot, the same contract consumed by /device and hosaka diag.",
+    agentNote: "Open this app when the operator asks to test microphone, camera, network, USB, Bluetooth, battery, or disk.",
   },
   {
     id: "tool_directory",
