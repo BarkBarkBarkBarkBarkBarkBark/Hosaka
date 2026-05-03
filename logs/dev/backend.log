@@ -4,3 +4,6 @@ INFO hosaka.web: Hosaka web server starting. UI dir: /Users/marco/Cursor_Folder/
 INFO hosaka.web: agent ws message sid=1b699278-b9c6-44fa-90ae-7875a03298e3 chars=2
 INFO hosaka.web: agent ws reply sid=1b699278-b9c6-44fa-90ae-7875a03298e3 chars=37
 INFO httpx: HTTP Request: POST https://api.openai.com/v1/realtime/client_secrets "HTTP/1.1 200 OK"
+INFO httpx: HTTP Request: POST https://api.openai.com/v1/realtime/client_secrets "HTTP/1.1 200 OK"
+INFO hosaka.voice.tools: voice todo added: Note: Current purpose is to test early-stage app, rapid development, and gather insights into the system’s internal state.
+INFO httpx: HTTP Request: POST https://api.openai.com/v1/realtime/client_secrets "HTTP/1.1 200 OK"

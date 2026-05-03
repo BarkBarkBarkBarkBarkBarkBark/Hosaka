@@ -3828,3 +3828,418 @@ html, body, #root {
 .device-grant-btn:hover {
   background: rgba(88, 166, 255, 0.08);
 }
+
+/* ─────────────────────────────────────────────────────────────
+   HOSAKA — minimalist shell additions
+   chevron-driven collapsible nav · stage modes · disclosure
+   ───────────────────────────────────────────────────────────── */
+
+/* ── disclosure primitive ─────────────────────────────────── */
+.disclosure { display: flex; flex-direction: column; }
+.disclosure-summary {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 12px;
+  background: transparent; color: var(--fg-1);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 12px;
+  letter-spacing: 0.06em; text-transform: lowercase;
+  cursor: pointer; text-align: left;
+}
+.disclosure-summary:hover { color: var(--amber); border-color: var(--amber-dim); }
+.disclosure-chev { color: var(--amber); width: 14px; display: inline-block; }
+.disclosure-glyph { color: var(--amber); }
+.disclosure-label { flex: 1; }
+.disclosure-body { padding: 4px 0 6px 22px; }
+.disclosure-body[hidden] { display: none; }
+.disclosure--l2 .disclosure-summary { font-size: 11px; padding: 6px 10px; border-color: transparent; border-bottom: 1px dashed var(--border); }
+
+/* ── menu trigger (in topbar brand) ───────────────────────── */
+.hosaka-menu-trigger {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  background: transparent; color: var(--amber);
+  border: 1px solid var(--border-strong);
+  font-size: 14px; cursor: pointer;
+  margin-right: 6px;
+}
+.hosaka-menu-trigger:hover { border-color: var(--amber-dim); background: var(--bg-2); }
+
+/* ── HosakaMenu overlay ───────────────────────────────────── */
+.hosaka-menu-scrim {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  display: flex; align-items: stretch; justify-content: flex-start;
+}
+.hosaka-menu {
+  width: min(340px, 92vw);
+  height: 100dvh;
+  background: var(--bg-1);
+  border-right: 1px solid var(--border-strong);
+  box-shadow: 8px 0 20px rgba(0, 0, 0, 0.5);
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+  animation: hosaka-menu-in 0.18s ease-out;
+}
+@keyframes hosaka-menu-in {
+  from { transform: translateX(-12px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+.hosaka-menu-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border-bottom: 1px solid var(--border);
+}
+.hosaka-menu-title {
+  font-family: var(--font-mono); font-size: 12px;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber);
+}
+.hosaka-menu-close {
+  width: 30px; height: 30px;
+  background: transparent; color: var(--fg-2);
+  border: 1px solid var(--border); cursor: pointer;
+}
+.hosaka-menu-close:hover { color: var(--red); border-color: var(--red); }
+
+.hosaka-menu .disclosure { border-bottom: 1px solid var(--border); }
+.hosaka-menu .disclosure-summary { border: none; padding: 12px 14px; font-size: 13px; }
+
+.hosaka-menu-list {
+  list-style: none; margin: 0; padding: 0 0 6px;
+  display: flex; flex-direction: column;
+}
+.hosaka-menu-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px;
+}
+.hosaka-menu-item button {
+  flex: 1; display: inline-flex; align-items: center; gap: 10px;
+  padding: 10px 8px;
+  background: transparent; color: var(--fg-1);
+  border: none; cursor: pointer;
+  font-family: var(--font-mono); font-size: 13px;
+  text-align: left;
+}
+.hosaka-menu-item.is-active > button {
+  color: var(--amber);
+  text-shadow: 0 0 6px rgba(255, 191, 70, 0.25);
+}
+.hosaka-menu-item:hover { background: var(--bg-2); }
+.hosaka-menu-glyph { color: var(--amber); width: 18px; text-align: center; }
+.hosaka-menu-x {
+  width: 26px; height: 26px;
+  background: transparent; color: var(--fg-3);
+  border: 1px solid transparent; cursor: pointer;
+}
+.hosaka-menu-x:hover { color: var(--red); border-color: var(--border); }
+.hosaka-menu-footer {
+  margin-top: auto; padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+.hosaka-menu-settings {
+  width: 100%;
+  padding: 10px;
+  background: var(--bg-2); color: var(--amber);
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-mono); font-size: 12px;
+  letter-spacing: 0.08em; cursor: pointer;
+}
+.hosaka-menu-settings:hover { border-color: var(--amber-dim); }
+
+/* ── stage mode: immersive ────────────────────────────────────
+   When the active panel is one that benefits from full-bleed (orb,
+   terminal, video, games, web, books, reading) AND the viewport is
+   small, hide the launchbar + window strip so the panel dominates.
+   The HosakaMenu trigger in the topbar remains the single entry point.
+   Aesthetic only — no app logic changes. */
+@media (max-width: 900px) {
+  .hosaka-shell--stage-immersive .hosaka-launchbar,
+  .hosaka-shell--stage-immersive .hosaka-window-strip {
+    display: none;
+  }
+  .hosaka-shell--stage-immersive .hosaka-dock {
+    padding: 0;
+    border-bottom: none;
+    min-height: 0;
+  }
+  .hosaka-shell--stage-immersive {
+    grid-template-rows: var(--top-h) 0 1fr 0;
+  }
+  .hosaka-shell--stage-immersive .hosaka-footer { display: none; }
+}
+
+/* On the smallest screens the brand-sub vanishes; collapse topbar even more */
+@media (max-width: 600px) {
+  .hosaka-menu-trigger { width: 28px; height: 28px; font-size: 13px; margin-right: 4px; }
+  .hosaka-shell--stage-immersive .hosaka-topbar-right .lang-picker,
+  .hosaka-shell--stage-immersive .hosaka-topbar-right .signal-badge,
+  .hosaka-shell--stage-immersive .hosaka-topbar-right .plant-badge { display: none; }
+}
+
+/* On larger screens the menu is still available (single chevron) but the
+   classic dock + launchbar remains visible as before. */
+@media (min-width: 901px) {
+  .hosaka-menu-trigger { display: none; }
+}
+
+/* ── tighten panel padding globally ───────────────────────── */
+@media (max-width: 600px) {
+  .panel-header { padding: 8px 10px 4px; }
+  .panel-sub { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+}
+
+/* ── voice: extend collapsed-drawer behaviour beyond 720px ───────────────
+   Kiosk landscape (~800×480) and small tablets/phones in landscape sit
+   above the original 720px breakpoint, so the drawer was always visible
+   and the orb got squeezed by the controls. Collapse the drawer there too.
+   The orb stage gets the entire viewport; chevron toggles controls. */
+@media (max-width: 900px), (max-height: 540px) {
+  .voice-wrap { display: flex; flex-direction: column; overflow: hidden; height: 100%; }
+  .voice-orb-stage { flex: 1; min-height: 0; justify-content: center; padding: 12px 12px 6px; }
+  .voice-orb { width: min(60vh, 60vw, 280px); height: min(60vh, 60vw, 280px); }
+  .voice-drawer-toggle { display: inline-flex; align-items: center; gap: 6px; }
+  .voice-drawer {
+    flex: 0 0 0; min-height: 0; max-height: 0;
+    overflow: hidden; padding: 0 12px; gap: 8px;
+    transition: max-height 240ms cubic-bezier(0.4, 0, 0.2, 1),
+                padding 240ms ease, flex 240ms ease;
+  }
+  .voice-drawer--open {
+    flex: 0 0 auto; max-height: 70vh; overflow-y: auto;
+    padding: 10px 12px 16px;
+  }
+  /* Tighter controls so they don't dominate when the drawer does open */
+  .voice-controls-card { padding: 10px; gap: 8px; border-radius: 6px; }
+  .voice-mode-switch .pill { padding: 8px 10px; font-size: 12px; }
+  .voice-controls-row .btn { min-height: 38px; font-size: 12px; padding: 8px 10px; }
+  .voice-transcript-card { border-radius: 6px; }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   HOSAKA — documents panel
+   markdown surface; agent + operator both write here
+   ───────────────────────────────────────────────────────────── */
+
+.docs-wrap {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  height: 100%;
+  background: var(--bg-0);
+}
+
+.docs-tree {
+  display: flex; flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-1);
+  min-height: 0;
+}
+.docs-tree-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.docs-tree-toggle {
+  width: 26px; height: 26px;
+  background: transparent; color: var(--fg-2);
+  border: 1px solid var(--border); cursor: pointer;
+}
+.docs-tree-toggle:hover { color: var(--amber); border-color: var(--amber-dim); }
+.docs-tree-title {
+  flex: 1;
+  font-family: var(--font-mono); font-size: 12px;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber);
+}
+.docs-new-btn {
+  background: transparent; color: var(--amber);
+  border: 1px solid var(--amber-dim);
+  padding: 4px 10px; cursor: pointer;
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em;
+}
+.docs-new-btn:hover { background: var(--bg-2); }
+.docs-tree-root {
+  padding: 6px 12px;
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  border-bottom: 1px dashed var(--border);
+}
+.docs-tree-list {
+  list-style: none; margin: 0; padding: 4px 0;
+  overflow-y: auto; min-height: 0; flex: 1;
+}
+.docs-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.docs-tree-empty {
+  padding: 16px 12px; color: var(--fg-3);
+  font-family: var(--font-mono); font-size: 11px;
+}
+.docs-tree-group-head {
+  padding: 6px 12px 2px;
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--fg-3); letter-spacing: 0.08em;
+}
+.docs-tree-item button {
+  width: 100%;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 8px 12px;
+  background: transparent; color: var(--fg-1);
+  border: none; cursor: pointer;
+  text-align: left;
+  font-family: var(--font-mono); font-size: 12px;
+  border-left: 2px solid transparent;
+}
+.docs-tree-item:hover button { background: var(--bg-2); }
+.docs-tree-item.is-active button {
+  color: var(--amber);
+  border-left-color: var(--amber);
+  background: var(--bg-2);
+}
+.docs-tree-item-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.docs-tree-item-meta { color: var(--fg-3); font-size: 10px; }
+
+.docs-stage {
+  display: flex; flex-direction: column;
+  min-height: 0; min-width: 0;
+}
+.docs-stage-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+}
+.docs-stage-title {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 13px; color: var(--fg-1);
+  min-width: 0;
+}
+.docs-stage-title > span:nth-child(2) {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 60ch;
+}
+.docs-stage-glyph { color: var(--amber); }
+.docs-dirty-dot { color: var(--amber); animation: docs-pulse 1.4s ease-in-out infinite; }
+@keyframes docs-pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+.docs-stage-actions { display: flex; gap: 8px; }
+.docs-error {
+  padding: 8px 16px;
+  background: rgba(255, 107, 107, 0.08);
+  color: var(--red);
+  font-family: var(--font-mono); font-size: 12px;
+  border-bottom: 1px solid var(--red);
+}
+
+.docs-reader {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 28px 36px 56px;
+  max-width: 78ch; margin: 0 auto; width: 100%;
+  font-family: var(--font-ui); font-size: 15px; line-height: 1.65;
+  color: var(--fg-0);
+}
+.docs-reader h1, .docs-reader h2, .docs-reader h3, .docs-reader h4 {
+  font-family: var(--font-mono); color: var(--amber);
+  letter-spacing: 0.04em; margin: 1.6em 0 0.5em;
+}
+.docs-reader h1 { font-size: 1.7em; border-bottom: 1px solid var(--amber-dim); padding-bottom: 0.2em; }
+.docs-reader h2 { font-size: 1.3em; }
+.docs-reader h3 { font-size: 1.1em; color: var(--cyan); }
+.docs-reader p, .docs-reader li { color: var(--fg-1); }
+.docs-reader code {
+  font-family: var(--font-mono); font-size: 0.92em;
+  background: var(--bg-2); padding: 1px 6px;
+  border: 1px solid var(--border);
+}
+.docs-reader pre {
+  background: var(--bg-2); padding: 12px 14px;
+  border: 1px solid var(--border);
+  overflow-x: auto;
+}
+.docs-reader pre code { background: transparent; border: none; padding: 0; }
+.docs-reader a { color: var(--cyan); }
+.docs-reader blockquote {
+  border-left: 2px solid var(--amber-dim);
+  padding: 4px 12px; margin: 1em 0;
+  color: var(--fg-2); background: var(--bg-1);
+}
+.docs-reader ul, .docs-reader ol { padding-left: 1.4em; }
+.docs-reader li input[type="checkbox"] { margin-right: 6px; }
+.docs-reader hr { border: none; border-top: 1px dashed var(--border); margin: 2em 0; }
+.docs-reader strong { color: var(--fg-0); }
+.docs-reader u { text-decoration: underline; text-decoration-color: var(--amber-dim); }
+
+.docs-editor {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+}
+.docs-toolbar {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+}
+.docs-toolbar button {
+  min-width: 32px; height: 28px;
+  padding: 0 8px;
+  background: var(--bg-0); color: var(--fg-1);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 12px;
+  cursor: pointer;
+}
+.docs-toolbar button:hover { color: var(--amber); border-color: var(--amber-dim); }
+.docs-toolbar-sep { width: 1px; background: var(--border); margin: 2px 4px; }
+.docs-textarea {
+  flex: 1; min-height: 0;
+  width: 100%;
+  padding: 20px 28px;
+  background: var(--bg-0); color: var(--fg-0);
+  border: none; outline: none; resize: none;
+  font-family: var(--font-mono); font-size: 14px; line-height: 1.6;
+}
+.docs-textarea:focus { background: var(--bg-1); }
+
+/* responsive: collapse tree on small screens */
+@media (max-width: 760px) {
+  .docs-wrap { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .docs-tree {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    max-height: 38vh;
+  }
+  .docs-tree:not(.is-open) { max-height: none; }
+  .docs-tree:not(.is-open) .docs-tree-list,
+  .docs-tree:not(.is-open) .docs-tree-root { display: none; }
+  .docs-reader { padding: 18px 16px 32px; font-size: 14px; }
+  .docs-textarea { padding: 14px 16px; font-size: 13px; }
+  .docs-stage-title > span:nth-child(2) { max-width: 30ch; }
+}
+
+/* ── doc-written toast ─────────────────────────────────────── */
+.doc-toast {
+  position: fixed; right: 16px; bottom: 16px;
+  z-index: 70;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-1); color: var(--fg-0);
+  border: 1px solid var(--amber-dim);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  font-family: var(--font-mono); font-size: 12px;
+  animation: doc-toast-in 200ms ease-out;
+  max-width: 90vw;
+}
+@keyframes doc-toast-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+.doc-toast-glyph { color: var(--amber); font-size: 14px; }
+.doc-toast-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40ch; }
+.doc-toast-text strong { color: var(--amber); }
+.doc-toast-open {
+  background: transparent; color: var(--cyan);
+  border: 1px solid var(--cyan-dim);
+  padding: 4px 10px; cursor: pointer;
+  font-family: var(--font-mono); font-size: 11px;
+}
+.doc-toast-open:hover { background: var(--bg-2); }
+.doc-toast-x {
+  background: transparent; color: var(--fg-3);
+  border: none; cursor: pointer; font-size: 13px;
+  padding: 0 4px;
+}
+.doc-toast-x:hover { color: var(--red); }

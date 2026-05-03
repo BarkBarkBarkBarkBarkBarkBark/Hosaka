@@ -5,6 +5,7 @@ import { SignalBadge } from "./components/SignalBadge";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { LangPicker } from "./components/LangPicker";
 import { ModeSwitch } from "./components/ModeSwitch";
+import { HosakaMenu } from "./components/HosakaMenu";
 import { applyFontSize, loadUiConfig } from "./uiConfig";
 import { FloatingOrb } from "./components/FloatingOrb";
 import { useSyncedDoc } from "./sync/useSyncedDoc";
@@ -53,6 +54,9 @@ const WebPanel = lazy(() =>
 const BooksPanel = lazy(() =>
   import("./panels/BooksPanel").then((m) => ({ default: m.BooksPanel })),
 );
+const DocsPanel = lazy(() =>
+  import("./panels/DocsPanel").then((m) => ({ default: m.DocsPanel })),
+);
 const VoicePanel = lazy(() =>
   import("./panels/VoicePanel").then((m) => ({ default: m.VoicePanel })),
 );
@@ -87,6 +91,8 @@ export function App() {
   const [conversationDoc] = useConversationLog();
   const [activeOverride, setActiveOverride] = useState<AppId | null>(null);
   const [openOverride, setOpenOverride] = useState<AppId[] | null>(null);
+  const [navOpen, setNavOpen] = useState(false);
+  const [docToast, setDocToast] = useState<{ path: string; at: number } | null>(null);
   useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
@@ -271,6 +277,25 @@ export function App() {
     };
   }, [closeApp, openApp]);
 
+  // Doc-write toast: agent saved a markdown doc — surface a non-hijacking
+  // hint with tap-to-open. Fires from realtimeClient and DocsPanel saves.
+  useEffect(() => {
+    const onDoc = (e: Event) => {
+      const detail = (e as CustomEvent<{ path?: string }>).detail;
+      const path = detail?.path?.toString() ?? "";
+      if (!path) return;
+      setDocToast({ path, at: Date.now() });
+    };
+    window.addEventListener("hosaka:doc-written", onDoc as EventListener);
+    return () => window.removeEventListener("hosaka:doc-written", onDoc as EventListener);
+  }, []);
+
+  useEffect(() => {
+    if (!docToast) return;
+    const t = window.setTimeout(() => setDocToast(null), 6000);
+    return () => window.clearTimeout(t);
+  }, [docToast]);
+
   const renderApp = useCallback((appId: AppId) => {
     switch (appId) {
       case "home":
@@ -328,6 +353,8 @@ export function App() {
         return <WebPanel active={activeAppId === "web"} />;
       case "books":
         return <BooksPanel active={activeAppId === "books"} />;
+      case "docs":
+        return <DocsPanel active={activeAppId === "docs"} />;
       case "app_store":
         return <AppStorePanel />;
       case "music":
@@ -348,10 +375,25 @@ export function App() {
     }
   }, [activeAppId, closeApp, conversationDoc.entries, enabledApps, openApp, openAppIds, stageTerminalCommand]);
 
+  // Stage-mode hint: panels that benefit from full-bleed (orb / terminal /
+  // video / games / web) get an immersive class so CSS can collapse padding
+  // and let the central surface dominate. Aesthetic only — no app logic.
+  const immersiveApps = new Set<AppId>(["voice", "terminal", "video", "games", "web", "books", "reading", "docs"]);
+  const stageMode = immersiveApps.has(activeAppId) ? "immersive" : "chrome";
+
   return (
-    <div className={`hosaka-shell${windowDoc.chromeCollapsed ? " hosaka-shell--chrome-collapsed" : ""}`}>
+    <div
+      className={`hosaka-shell hosaka-shell--stage-${stageMode}${windowDoc.chromeCollapsed ? " hosaka-shell--chrome-collapsed" : ""}`}
+    >
       <header className="hosaka-topbar">
         <div className="hosaka-brand">
+          <button
+            type="button"
+            className="hosaka-menu-trigger"
+            aria-label="open menu"
+            aria-expanded={navOpen}
+            onClick={() => setNavOpen((v) => !v)}
+          >☰</button>
           <span className="hosaka-brand-logo">{t("brand")}</span>
           <span className="hosaka-brand-sub">{t("brandSub")}</span>
         </div>
@@ -382,6 +424,19 @@ export function App() {
           )}
         </div>
       </header>
+
+      <HosakaMenu
+        open={navOpen}
+        onClose={() => setNavOpen(false)}
+        apps={enabledApps}
+        launcherApps={launcherApps}
+        openAppIds={openAppIds}
+        activeAppId={activeAppId}
+        settingsEnabled={settingsEnabled}
+        onSetActive={setActiveApp}
+        onCloseApp={closeApp}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
 
       <nav className="hosaka-dock">
         <div className="hosaka-launchbar">
@@ -464,6 +519,24 @@ export function App() {
       </footer>
 
       <FloatingOrb voiceActive={activeAppId === "voice"} />
+
+      {docToast && (
+        <div className="doc-toast" role="status" aria-live="polite">
+          <span className="doc-toast-glyph">✎</span>
+          <span className="doc-toast-text">saved <strong>{docToast.path}</strong></span>
+          <button
+            type="button"
+            className="doc-toast-open"
+            onClick={() => { openApp("docs"); setDocToast(null); }}
+          >open</button>
+          <button
+            type="button"
+            className="doc-toast-x"
+            aria-label="dismiss"
+            onClick={() => setDocToast(null)}
+          >✕</button>
+        </div>
+      )}
     </div>
   );
 }

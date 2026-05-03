@@ -9,6 +9,7 @@ export type PanelId =
   | "wiki"
   | "web"
   | "books"
+  | "docs"
   | "voice"
   | "nodes";
 
@@ -107,6 +108,22 @@ export const APP_REGISTRY: AppDefinition[] = [
     installStrategy: "builtin",
     hostScope: "any",
     embedPolicy: "prefer_embed",
+  },
+  {
+    id: "docs",
+    title: "documents",
+    description: "markdown notes, agent-authored summaries, and todo lists.",
+    glyph: "✎",
+    aliases: ["docs", "documents", "notes", "markdown", "memory", "journal"],
+    family: "core",
+    showInLauncher: true,
+    preferredHost: "electron",
+    fallbackHosts: ["web"],
+    installStrategy: "builtin",
+    hostScope: "any",
+    embedPolicy: "prefer_embed",
+    maintainerNote: "Picoclaw agent writes here via /api/v1/docs/*; voice tools write_doc/append_doc target this surface.",
+    agentNote: "Save markdown summaries, todos, and notes here so the operator can find them later.",
   },
   {
     id: "tool_directory",

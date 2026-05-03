@@ -143,6 +143,98 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
+    {
+        "type": "function",
+        "name": "write_doc",
+        "description": (
+            "Save a markdown document to the operator's docs folder. Use when "
+            "the operator asks you to 'write up', 'save a note', 'make a summary', "
+            "'commit a doc', etc. Always include a top-level '# heading'. Path "
+            "is relative; '.md' is added automatically. Speak the saved filename "
+            "back so the operator knows where it landed."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Relative filename, e.g. '2026-05-02-summary' or 'projects/cyberdeck'.",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "Full markdown body. Start with '# title'.",
+                },
+            },
+            "required": ["path", "body"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "append_doc",
+        "description": (
+            "Append markdown to an existing doc (or create it if missing). Use "
+            "for ongoing journals, running todo lists, or follow-up notes."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "body": {"type": "string"},
+            },
+            "required": ["path", "body"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "write_doc_template",
+        "description": (
+            "Save a doc using a built-in template. Pick 'summary' for a recap "
+            "with key points + next steps, 'todo' for a checkbox list, or "
+            "'note' for a freeform entry. Pass `body` with the raw content; the "
+            "template adds the heading, timestamp, and structure."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "template": {"type": "string", "enum": ["summary", "todo", "note"]},
+                "title": {"type": "string", "description": "Human title for the heading."},
+                "slug": {"type": "string", "description": "Optional filename slug; auto-derived from title."},
+                "body": {"type": "string", "description": "Raw content the template wraps."},
+            },
+            "required": ["template", "title"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "list_docs",
+        "description": (
+            "List the operator's saved markdown docs (path, title, mtime). "
+            "Use when the operator asks 'what notes do i have' or 'find the "
+            "summary from last week'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "default": 20}},
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "read_doc",
+        "description": (
+            "Read a saved doc by relative path. Use when the operator asks you "
+            "to recall, summarise, or quote one of their notes."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+            "additionalProperties": False,
+        },
+    },
 ]
 
 
@@ -300,6 +392,81 @@ def _tool_ask_agent(args: dict[str, Any]) -> str:
         return f"ask_agent: picoclaw failed ({exc})"
 
 
+# ── docs tools ──────────────────────────────────────────────────────────
+
+
+def _tool_write_doc(args: dict[str, Any]) -> str:
+    path = str(args.get("path", "")).strip()
+    body = str(args.get("body", ""))
+    if not path or not body.strip():
+        return "write_doc: need both path and body"
+    from hosaka.web.docs_api import write_doc_simple
+    try:
+        out = write_doc_simple(path, body, append=False)
+    except Exception as exc:  # noqa: BLE001
+        return f"write_doc: failed ({exc})"
+    return f"saved {out['path']} ({out['bytes']} bytes)"
+
+
+def _tool_append_doc(args: dict[str, Any]) -> str:
+    path = str(args.get("path", "")).strip()
+    body = str(args.get("body", ""))
+    if not path or not body.strip():
+        return "append_doc: need both path and body"
+    from hosaka.web.docs_api import write_doc_simple
+    try:
+        out = write_doc_simple(path, body, append=True)
+    except Exception as exc:  # noqa: BLE001
+        return f"append_doc: failed ({exc})"
+    return f"appended to {out['path']} ({out['bytes']} bytes total)"
+
+
+def _tool_write_doc_template(args: dict[str, Any]) -> str:
+    tpl = str(args.get("template", "")).strip()
+    if tpl not in {"summary", "todo", "note"}:
+        return f"write_doc_template: unknown template {tpl!r}"
+    title = str(args.get("title", "")).strip() or tpl
+    slug = str(args.get("slug", "")).strip() or None
+    body = str(args.get("body", "")) or None
+    from hosaka.web.docs_api import write_template_simple
+    try:
+        out = write_template_simple(tpl, slug=slug, title=title, body=body)
+    except Exception as exc:  # noqa: BLE001
+        return f"write_doc_template: failed ({exc})"
+    return f"saved {out['path']} from {tpl} template"
+
+
+def _tool_list_docs(args: dict[str, Any]) -> str:
+    try:
+        limit = int(args.get("limit", 20))
+    except (TypeError, ValueError):
+        limit = 20
+    from hosaka.web.docs_api import list_docs_summary
+    try:
+        rows = list_docs_summary(limit=limit)
+    except Exception as exc:  # noqa: BLE001
+        return f"list_docs: failed ({exc})"
+    if not rows:
+        return "no docs yet"
+    lines = [f"{r['path']} — {r['title']}" for r in rows]
+    return "\n".join(lines)
+
+
+def _tool_read_doc(args: dict[str, Any]) -> str:
+    path = str(args.get("path", "")).strip()
+    if not path:
+        return "read_doc: need path"
+    from hosaka.web.docs_api import read_doc_simple
+    try:
+        out = read_doc_simple(path)
+    except Exception as exc:  # noqa: BLE001
+        return f"read_doc: failed ({exc})"
+    body = out.get("body", "")
+    if len(body) > 4000:
+        body = body[:4000] + "\n\n… (truncated)"
+    return body
+
+
 def _strip_code_fence(text: str) -> str:
     cleaned = text.strip()
     if cleaned.startswith("```"):
@@ -367,6 +534,7 @@ def run_agent_voice_turn(operator_text: str) -> dict[str, Any]:
         "you are hosaka handling a voice command from the operator.\n"
         "perform real work if needed using your normal tools and workspace access.\n"
         "for filesystem edits, shell commands, repo inspection, environment checks, or long tasks, actually do the work instead of describing how.\n"
+        "if the operator asks you to 'write up', 'save a note', 'make a summary', 'commit a doc', or similar, save a markdown file under the docs folder (~/.picoclaw/workspace/memory by default) and mention the filename in `spoken` so they know where it landed. include a top-level '# heading' and use sections, bold, and checkbox lists where helpful.\n"
         "then return strict json only, with no markdown fences, matching this schema:\n"
         f"{json.dumps(VOICE_AGENT_SCHEMA, ensure_ascii=False)}\n"
         "rules:\n"
@@ -406,6 +574,11 @@ _DISPATCH: dict[str, Callable[[dict[str, Any]], str]] = {
     "get_status": _tool_get_status,
     "see": _tool_see,
     "ask_agent": _tool_ask_agent,
+    "write_doc": _tool_write_doc,
+    "append_doc": _tool_append_doc,
+    "write_doc_template": _tool_write_doc_template,
+    "list_docs": _tool_list_docs,
+    "read_doc": _tool_read_doc,
 }
 
 

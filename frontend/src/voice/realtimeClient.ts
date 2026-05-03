@@ -299,6 +299,21 @@ export class VoiceSession {
     } catch (exc) {
       output = `tool ${name}: ${String(exc)}`;
     }
+    // Notify the docs panel + toast surface when the agent commits a doc.
+    // Aesthetic / UX hook only — does not change tool semantics.
+    if (
+      (name === "write_doc" || name === "append_doc" || name === "write_doc_template") &&
+      typeof output === "string" &&
+      /^(saved|appended)\b/i.test(output)
+    ) {
+      try {
+        const path = (args as { path?: string }).path
+          ?? output.replace(/^.*?\b(?:saved|appended(?: to)?)\s+/i, "").split(/\s/)[0];
+        window.dispatchEvent(new CustomEvent("hosaka:doc-written", { detail: { path, output, source: name } }));
+      } catch {
+        /* ignore */
+      }
+    }
     this.events.onTool?.(name, args, output);
     if (!this.dc || this.dc.readyState !== "open") return;
     this.dc.send(

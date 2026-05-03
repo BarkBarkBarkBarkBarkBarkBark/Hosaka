@@ -577,6 +577,19 @@ export function VoicePanel({ active }: { active: boolean }) {
   useEffect(() => {
     try { window.localStorage.removeItem("hosaka.voice.fullOrb"); } catch { /* noop */ }
   }, []);
+  // Auto-engage fullOrb on small / kiosk viewports the first time the panel
+  // becomes active. Aesthetic only — does not change session/agent state.
+  useEffect(() => {
+    if (!active || fullOrb) return;
+    try {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const small = w <= 900 || (w <= 820 && h <= 500);
+      if (small) setFullOrb(true);
+    } catch { /* noop */ }
+    // run once per activation only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
   // Esc exits fullscreen orb (or closes the drawer first if it's open).
   useEffect(() => {
     if (!active) return;
