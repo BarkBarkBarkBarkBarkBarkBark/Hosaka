@@ -965,11 +965,22 @@ async def v1_http_post(body: HttpPostIn) -> HttpResponseOut:
 # `flatpak install` from a web request is too footgunny to ship turned on.
 # Set HOSAKA_APPS_HTTP=real on a Linux box if you really want it.
 
-import yaml as _yaml  # noqa: E402  (kept local to apps surface)
+# pyyaml is optional at import time so the rest of api_v1 still loads on
+# slim envs. The apps endpoints raise 503 if it is genuinely missing.
+try:  # noqa: SIM105
+    import yaml as _yaml  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover
+    _yaml = None  # type: ignore[assignment]
 
 _APPS_ROOT = Path(os.getenv("HOSAKA_APPS_ROOT", str(APP_ROOT / "hosaka-apps")))
 _APPS_DIR = _APPS_ROOT / "apps"
 _APPS_HTTP_MODE = os.getenv("HOSAKA_APPS_HTTP", "mock").strip().lower()
+
+
+def _require_yaml() -> Any:
+    if _yaml is None:
+        raise HTTPException(503, "pyyaml is not installed in this environment")
+    return _yaml
 
 
 def _normalize_app_token(raw: str) -> str:
@@ -977,7 +988,7 @@ def _normalize_app_token(raw: str) -> str:
 
 
 def _read_app_manifests() -> list[dict[str, Any]]:
-    if not _APPS_DIR.exists():
+    if _yaml is None or not _APPS_DIR.exists():
         return []
     out: list[dict[str, Any]] = []
     for entry in sorted(_APPS_DIR.iterdir()):
@@ -1136,7 +1147,7 @@ def v1_apps_stage(body: AppStageIn) -> dict[str, Any]:
     }
     try:
         _APPS_DIR.mkdir(parents=True, exist_ok=True)
-        target.write_text(_yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+        target.write_text(_require_yaml().safe_dump(manifest, sort_keys=False), encoding="utf-8")
     except OSError as e:
         return {"ok": False, "message": f"write failed: {e}"}
     return {"ok": True, "id": app_id, "path": str(target)}

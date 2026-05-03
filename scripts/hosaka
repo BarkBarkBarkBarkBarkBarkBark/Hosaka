@@ -16,17 +16,19 @@
 #
 #   hosaka status                  what's running, RAM/CPU snapshot
 #   hosaka doctor [flags]          end-to-end diagnostics (runtime, tailscale, drift)
-#   hosaka dev                     local repo dev: vite + electron by default
+#   hosaka dev                     local repo dev: backend (:8421) + vite + electron
 #   hosaka dev --web              browser-only fallback dev mode
-#   hosaka dev                     if the port is busy, reuse/open the existing session
-#   hosaka dev -fresh             stop the current listener first, then relaunch
-#   hosaka down                   stop local dev listeners/windows for this checkout
+#   hosaka dev                     if both ports are live, reuse them; if half is up, fill in the gap
+#   hosaka dev -fresh             stop both backend and frontend, then relaunch cleanly
+#   hosaka down                   stop both backend and frontend dev listeners
 #   hosaka build [--check]         npm build (check = with tsc gate)
 #   hosaka update [--check]        git pull + build + rsync + restart webserver
 #   hosaka deploy [--check]        build + rsync into /opt + restart webserver
 #   hosaka logs [unit]             tail journalctl for one of our units
 #   hosaka reboot                  safe sync + reboot
 #   hosaka mode                    show current mode + persistence
+#   hosaka install picoclaw        install Picoclaw into ~/.local/bin
+#   hosaka configure picoclaw      install/configure Picoclaw + import API key
 #
 # This script is intentionally pure bash + standard Pi tooling. It does not
 # require Python, Node, or anything we install at runtime.
@@ -66,8 +68,20 @@ PICO_UNIT="picoclaw-gateway.service"
 # Default session key used by `hosaka chat` / `hosaka message`. Override with
 # HOSAKA_AGENT_SESSION or pass `-s <name>` after the verb.
 AGENT_SESSION="${HOSAKA_AGENT_SESSION:-manager}"
-PICOCLAW_BIN="${PICOCLAW_BIN:-/usr/local/bin/picoclaw}"
+if [[ -z "${PICOCLAW_BIN:-}" ]]; then
+  if command -v picoclaw >/dev/null 2>&1; then
+    PICOCLAW_BIN="$(command -v picoclaw)"
+  else
+    PICOCLAW_BIN="/usr/local/bin/picoclaw"
+  fi
+fi
 DEV_CONFLICT_RESULT="continue"
+
+# Backend (FastAPI) for `hosaka dev`. Coupled to the frontend lifecycle —
+# `hosaka dev` brings both up; `hosaka dev -fresh` restarts both; `hosaka down`
+# stops both. Override with HOSAKA_BACKEND_PORT if you really need to.
+BACKEND_PORT_DEFAULT="${HOSAKA_BACKEND_PORT:-8421}"
+DEV_LOG_DIR_DEFAULT="${HOSAKA_DEV_LOGDIR:-$REPO_ROOT/logs/dev}"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -168,6 +182,77 @@ kill_local_dev_electron() {
   done <<<"$pids"
 }
 
+# ── dev backend (FastAPI) ─────────────────────────────────────────────────────
+
+wait_for_port() {
+  local port="$1"
+  local timeout_ds="${2:-40}"   # tenths of seconds (default 4s)
+  local i
+  for (( i=0; i<timeout_ds; i++ )); do
+    port_is_busy "$port" && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+backend_pid_file() {
+  echo "$DEV_LOG_DIR_DEFAULT/backend.pid"
+}
+
+backend_log_file() {
+  echo "$DEV_LOG_DIR_DEFAULT/backend.log"
+}
+
+launch_dev_backend() {
+  local port="$1"
+  local py
+  if ! py="$(_hosaka_python)"; then
+    warn "no python interpreter found — backend will not start (frontend proxy will 502)"
+    return 1
+  fi
+  mkdir -p "$DEV_LOG_DIR_DEFAULT"
+  local logfile pidfile
+  logfile="$(backend_log_file)"
+  pidfile="$(backend_pid_file)"
+  : > "$logfile"
+  note "starting hosaka backend on $(c_cyan "127.0.0.1:$port") via $(c_dim "$py -m hosaka")"
+  note "log → $(c_dim "$logfile")"
+  (
+    cd "$REPO_ROOT"
+    HOSAKA_BOOT_MODE=headless \
+    HOSAKA_WEB_HOST=127.0.0.1 \
+    HOSAKA_WEB_PORT="$port" \
+    HOSAKA_LOG_FILE="$logfile" \
+    PICOCLAW_BIN="$PICOCLAW_BIN" \
+    PICOCLAW_HOME="${PICOCLAW_HOME:-$HOME/.picoclaw}" \
+    HOSAKA_SHELL_CWD="$REPO_ROOT" \
+    nohup "$py" -m hosaka >>"$logfile" 2>&1 &
+    echo $! > "$pidfile"
+    disown || true
+  )
+  if wait_for_port "$port" 80; then
+    ok "backend listening on $(c_cyan "127.0.0.1:$port")"
+    return 0
+  fi
+  warn "backend did not bind :$port within 8s — tail $(c_dim "$logfile")"
+  return 1
+}
+
+kill_dev_backend() {
+  local port="${1:-$BACKEND_PORT_DEFAULT}"
+  local pidfile
+  pidfile="$(backend_pid_file)"
+  if [[ -f "$pidfile" ]]; then
+    local pid
+    pid="$(cat "$pidfile" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+    fi
+    rm -f "$pidfile"
+  fi
+  kill_port_listeners "$port"
+}
+
 cmd_down() {
   local port="${HOSAKA_DEV_PORT:-5173}"
   local stop_all=0
@@ -202,7 +287,8 @@ cmd_down() {
     kill_port_listeners "$port"
   fi
   kill_local_dev_electron
-  ok "local hosaka dev processes stopped"
+  kill_dev_backend "$BACKEND_PORT_DEFAULT"
+  ok "local hosaka dev processes stopped (frontend + backend)"
 }
 
 resolve_dev_port_conflict() {
@@ -606,9 +692,62 @@ cmd_dev() {
   [[ -d "$REPO_ROOT/frontend" ]] || die "no frontend at $REPO_ROOT/frontend"
   ensure_frontend_deps
 
-  DEV_CONFLICT_RESULT="continue"
-  resolve_dev_port_conflict "$mode" "$port" "$conflict_strategy" "$open_browser"
-  [[ "$DEV_CONFLICT_RESULT" == "handled" ]] && return 0
+  # ── coupled lifecycle: backend (FastAPI :8421) + frontend (vite :$port) ──
+  # The vite proxy routes /api/* and /ws/* to the backend, so a missing
+  # backend means every panel sees 500/ECONNREFUSED. We keep the two glued
+  # together: `hosaka dev` reuses whatever's already running, `-fresh`
+  # restarts both, never a half-started pair.
+  local backend_port="$BACKEND_PORT_DEFAULT"
+  local fe_busy=0 be_busy=0
+  port_is_busy "$port" && fe_busy=1
+  port_is_busy "$backend_port" && be_busy=1
+
+  case "$conflict_strategy" in
+    restart)
+      (( fe_busy )) && { note "fresh: stopping frontend on :$port"; kill_port_listeners "$port"; }
+      (( be_busy )) && { note "fresh: stopping backend on :$backend_port"; kill_dev_backend "$backend_port"; }
+      kill_local_dev_electron
+      fe_busy=0; be_busy=0
+      ;;
+    reuse)
+      if (( fe_busy && be_busy )); then
+        note "frontend (:$port) and backend (:$backend_port) already up — reusing both"
+        note "rerun with $(c_cyan 'hosaka dev -fresh') to restart the pair"
+        if [[ "$mode" == "electron" ]]; then
+          launch_dev_electron_against "$port"
+        elif (( open_browser )); then
+          note "opening $(c_cyan "http://localhost:$port")"
+          open_url "http://localhost:$port"
+        fi
+        return 0
+      fi
+      if (( fe_busy != be_busy )); then
+        # half-up state: warn, then bring up the missing half
+        if (( fe_busy )); then
+          warn "frontend on :$port is up but backend on :$backend_port is down"
+        else
+          warn "backend on :$backend_port is up but frontend on :$port is down"
+        fi
+        note "starting the missing half — use $(c_cyan 'hosaka dev -fresh') to restart both cleanly"
+      fi
+      ;;
+  esac
+
+  # bring up backend first so the vite proxy has something to talk to
+  if (( ! be_busy )); then
+    launch_dev_backend "$backend_port" || warn "continuing without backend (frontend will see 502 on /api)"
+  fi
+
+  # if frontend is already up under reuse, just attach electron/browser
+  if (( fe_busy )); then
+    if [[ "$mode" == "electron" ]]; then
+      launch_dev_electron_against "$port"
+    elif (( open_browser )); then
+      note "reusing existing dev server at $(c_cyan "http://localhost:$port")"
+      open_url "http://localhost:$port"
+    fi
+    return 0
+  fi
 
   if [[ "$mode" == "electron" ]]; then
     [[ -d "$REPO_ROOT/kiosk" ]] || die "no kiosk host at $REPO_ROOT/kiosk"
@@ -746,18 +885,28 @@ _ensure_picoclaw() {
 }
 
 _hosaka_python() {
-  local candidate
-  for candidate in \
-    "$REPO_ROOT/.hosakavenv/bin/python" \
-    "$REPO_ROOT/.venv/bin/python" \
-    "$(cd "$REPO_ROOT/.." && pwd)/.hosakavenv/bin/python" \
-    "$(cd "$REPO_ROOT/.." && pwd)/.venv/bin/python" \
-  ; do
+  local candidates=(
+    "$REPO_ROOT/.hosakavenv/bin/python"
+    "$REPO_ROOT/.venv/bin/python"
+    "$(cd "$REPO_ROOT/.." && pwd)/.hosakavenv/bin/python"
+    "$(cd "$REPO_ROOT/.." && pwd)/.venv/bin/python"
+  )
+  local candidate first=""
+  # First pass: pick a venv that has uvicorn (the dev backend needs it).
+  for candidate in "${candidates[@]}"; do
     if [[ -x "$candidate" ]]; then
-      printf '%s\n' "$candidate"
-      return 0
+      [[ -z "$first" ]] && first="$candidate"
+      if "$candidate" -c 'import uvicorn' >/dev/null 2>&1; then
+        printf '%s\n' "$candidate"
+        return 0
+      fi
     fi
   done
+  # Fallback: first existing venv (chat/message paths don't need uvicorn).
+  if [[ -n "$first" ]]; then
+    printf '%s\n' "$first"
+    return 0
+  fi
   if command -v python >/dev/null 2>&1; then
     command -v python
     return 0
@@ -815,6 +964,48 @@ cmd_doctor() {
   ( cd "$REPO_ROOT" && exec "$py" -m hosaka.doctor "$@" )
 }
 
+cmd_install() {
+  local target="${1:-}"
+  if [[ -z "$target" ]]; then
+    die "usage: hosaka install picoclaw [--onboard]"
+  fi
+  shift || true
+  case "$target" in
+    picoclaw|pico)
+      ( cd "$REPO_ROOT" && exec bash scripts/install-picoclaw.sh "$@" )
+      ;;
+    openclaw)
+      warn "OpenClaw is not wired to a canonical Hosaka adapter yet."
+      warn "Use Picoclaw for the stable local agent path today."
+      warn "Set HOSAKA_AGENT_BACKEND=openclaw later once an OpenClaw CLI/adapter is selected."
+      ;;
+    *)
+      die "unknown install target: $target (try: picoclaw)"
+      ;;
+  esac
+}
+
+cmd_configure() {
+  local target="${1:-}"
+  if [[ -z "$target" ]]; then
+    die "usage: hosaka configure picoclaw [--onboard|--no-onboard]"
+  fi
+  shift || true
+  case "$target" in
+    picoclaw|pico)
+      ( cd "$REPO_ROOT" && exec bash scripts/configure-picoclaw.sh "$@" )
+      ;;
+    openclaw)
+      warn "OpenClaw is the planned heavier desktop-agent backend."
+      warn "No canonical OpenClaw adapter is wired in this checkout yet."
+      warn "Use: hosaka configure picoclaw"
+      ;;
+    *)
+      die "unknown configure target: $target (try: picoclaw)"
+      ;;
+  esac
+}
+
 # ── dispatch ──────────────────────────────────────────────────────────────────
 
 usage() {
@@ -848,6 +1039,10 @@ hosaka — operator CLI for the Hosaka Field Terminal Pi
   hosaka deploy [--check]           build + rsync into $DEPLOY_ROOT + restart web
   hosaka logs [unit]                follow journalctl for web/pico/<custom>
   hosaka reboot                     sync + reboot
+  hosaka install picoclaw [--onboard]
+                                    install Picoclaw into ~/.local/bin and bootstrap Hosaka runtime
+  hosaka configure picoclaw [--onboard|--no-onboard]
+                                    install/check Picoclaw and import OPENAI_API_KEY if available
 
   hosaka chat [-s session]          open interactive agent REPL
                                     (default session: \$HOSAKA_AGENT_SESSION = $AGENT_SESSION)
@@ -860,9 +1055,9 @@ Typical SSH-then-deploy flow:
   hosaka mode console                # touchscreen back
 
 Typical local dev flow:
-  hosaka dev                         # vite + electron host together
-  hosaka dev                         # if :5173 is already live, open/focus the existing session
-  hosaka dev -fresh                  # stop the existing :5173 listener, then relaunch cleanly
+  hosaka dev                         # backend (:8421) + vite + electron, all together
+  hosaka dev                         # if both ports are live, reuse them; otherwise fill in what's missing
+  hosaka dev -fresh                  # stop backend + frontend, then relaunch the pair cleanly
   hosaka down                        # stop the local dev session cleanly
   hosaka dev --web                   # browser-only fallback on localhost:5173
 USAGE
@@ -890,6 +1085,8 @@ main() {
     build)     cmd_build "$@" ;;
     update)    cmd_update "$@" ;;
     deploy)    cmd_deploy "$@" ;;
+    install)   cmd_install "$@" ;;
+    configure) cmd_configure "$@" ;;
     logs)      cmd_logs "$@" ;;
     reboot)    cmd_reboot "$@" ;;
     chat|agent|repl) cmd_chat "$@" ;;

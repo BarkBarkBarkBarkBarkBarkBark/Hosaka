@@ -85,6 +85,8 @@ export function App() {
   const [inboxEnabled, setInboxEnabled] = useState(false);
   const [windowDoc, updateWindows] = useSyncedDoc<WindowsDoc>("windows", INITIAL_WINDOWS_DOC);
   const [conversationDoc] = useConversationLog();
+  const [activeOverride, setActiveOverride] = useState<AppId | null>(null);
+  const [openOverride, setOpenOverride] = useState<AppId[] | null>(null);
   useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
@@ -155,24 +157,35 @@ export function App() {
     () => enabledApps.filter((app) => app.showInLauncher !== false),
     [enabledApps],
   );
-  const openAppIds = useMemo(() => {
+  const syncedOpenAppIds = useMemo(() => {
     const filtered = windowDoc.openAppIds.filter((appId) => enabledIds.has(appId));
     return dedupeAppIds(["home", ...filtered]);
   }, [enabledIds, windowDoc.openAppIds]);
+  const openAppIds = useMemo(() => {
+    const source = openOverride ?? syncedOpenAppIds;
+    return dedupeAppIds(["home", ...source.filter((appId) => enabledIds.has(appId))]);
+  }, [enabledIds, openOverride, syncedOpenAppIds]);
   const activeAppId = useMemo(() => {
+    if (activeOverride && enabledIds.has(activeOverride) && openAppIds.includes(activeOverride)) {
+      return activeOverride;
+    }
     if (enabledIds.has(windowDoc.activeAppId) && openAppIds.includes(windowDoc.activeAppId)) {
       return windowDoc.activeAppId;
     }
     return openAppIds[openAppIds.length - 1] ?? "home";
-  }, [enabledIds, openAppIds, windowDoc.activeAppId]);
+  }, [activeOverride, enabledIds, openAppIds, windowDoc.activeAppId]);
 
   const openApp = useCallback((appId: AppId) => {
     const definition = getAppDefinition(appId);
     if (!definition || !enabledIds.has(appId)) return;
+    setOpenOverride((prev) => dedupeAppIds([...(prev ?? openAppIds), appId]));
+    setActiveOverride(appId);
     const now = Date.now();
     updateWindows((doc) => {
-      doc.openAppIds = dedupeAppIds([...doc.openAppIds, appId]);
+      const openIds: AppId[] = Array.isArray(doc.openAppIds) ? doc.openAppIds : ["home"];
+      doc.openAppIds = dedupeAppIds([...openIds, appId]);
       doc.activeAppId = appId;
+      if (!doc.windows || typeof doc.windows !== "object") doc.windows = {};
       doc.windows[appId] = {
         appId,
         background: doc.windows[appId]?.background ?? Boolean(definition.defaultBackground),
@@ -182,19 +195,26 @@ export function App() {
         snapshot: doc.windows[appId]?.snapshot,
       };
     });
-  }, [enabledIds, updateWindows]);
+  }, [enabledIds, openAppIds, updateWindows]);
 
   const closeApp = useCallback((appId: AppId) => {
     const definition = getAppDefinition(appId);
     if (!definition || definition.closable === false) return;
+    const nextOpen = openAppIds.filter((id) => id !== appId);
+    setOpenOverride(nextOpen);
+    if (activeOverride === appId) {
+      setActiveOverride(nextOpen[nextOpen.length - 1] ?? "home");
+    }
     updateWindows((doc) => {
-      doc.openAppIds = doc.openAppIds.filter((id) => id !== appId);
+      const openIds: AppId[] = Array.isArray(doc.openAppIds) ? doc.openAppIds : ["home"];
+      doc.openAppIds = openIds.filter((id) => id !== appId);
       if (doc.activeAppId === appId) {
         const remaining = dedupeAppIds(["home", ...doc.openAppIds]);
         doc.activeAppId = remaining[remaining.length - 1] ?? "home";
+        setActiveOverride(doc.activeAppId);
       }
     });
-  }, [updateWindows]);
+  }, [activeOverride, openAppIds, updateWindows]);
 
   const setActiveApp = useCallback((appId: AppId) => {
     if (!enabledIds.has(appId)) return;

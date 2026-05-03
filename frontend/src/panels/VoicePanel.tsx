@@ -23,6 +23,18 @@ type TranscriptItem = {
 
 type VoiceMode = "agent" | "demo";
 
+let voiceAnalyserHardDisabled = false;
+
+function shouldSkipLiveAnalyser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  const isSafari = /Safari/i.test(ua) && !/(Chrome|Chromium|CriOS|Edg|Electron)/i.test(ua);
+  // Safari/WebKit has been throwing during AudioContext + MediaStream analyser
+  // setup under React dev StrictMode. The analyser is decorative/local-only;
+  // never let it take down the renderer. Electron/Chromium keeps the live glow.
+  return isSafari;
+}
+
 type AgentJobCreateOut = {
   ok: boolean;
   job_id: string;
@@ -219,11 +231,16 @@ function useWebcamPreview(active: boolean): {
 
 /**
  * Reads RMS from a MediaStream via Web Audio at 60 fps, EMA-smoothed.
- * Returns a normalised 0–1 value (0 = silence / –60 dB, 1 = peak / 0 dB).
+ * Returns a normalised 0–1 value (0 = silence / –60 dB, 1 = peak / –10 dB).
  * Attaches a CSS custom-property writer to an optional orb element:
- *   --v-scale   ring radius multiplier  (1.0 – 1.55)
- *   --v-glow    extra glow strength     (0.0 – 1.0)
- *   --v-speed   animation speed factor  (1.0 – 2.0)
+ *   --v-scale   ring radius multiplier   (1.0 – 1.55)
+ *   --v-glow    raw level                (0.0 – 1.0)
+ *   --v-speed   animation speed factor   (1.0 – 2.0)
+ *   --v-bright  sigmoid-shaped brightness (0.0 – 1.0)
+ *                  -> ramps fast around the "present" threshold so the orb
+ *                     visibly lights up as soon as the operator speaks.
+ *   --v-hue     0 quiet → 1 present → 2 loud (smoothstep'd)
+ *                  -> CSS reads it to shift filter / colour by threshold.
  */
 function useVoiceAnalyser(
   stream: MediaStream | null,
@@ -236,17 +253,49 @@ function useVoiceAnalyser(
   const bufRef = useRef<Float32Array>(new Float32Array(256));
   const [level, setLevel] = useState(0);
 
+  // Sigmoid: steep ramp around `mid`. k controls steepness.
+  const sigmoid = (x: number, mid: number, k: number) =>
+    1 / (1 + Math.exp(-k * (x - mid)));
+  // Smoothstep between two thresholds, returns 0..1.
+  const smoothstep = (x: number, a: number, b: number) => {
+    const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  };
+  // Two thresholds:
+  //   QUIET→PRESENT around 0.18 (a normal speaking voice clears this fast)
+  //   PRESENT→LOUD around 0.55 (shouting / sustained energy)
+  // hue value: 0 in silence, 1 once present, 2 once loud.
+  const computeHue = (v: number) =>
+    smoothstep(v, 0.10, 0.26) + smoothstep(v, 0.45, 0.65);
+
+  const writeOrbVars = (v: number) => {
+    if (!orbEl) return;
+    const bright = sigmoid(v, 0.22, 14);
+    const hue = computeHue(v);
+    orbEl.style.setProperty("--v-scale", String(1 + v * 0.55));
+    orbEl.style.setProperty("--v-glow", String(v));
+    orbEl.style.setProperty("--v-speed", String(1 + v));
+    orbEl.style.setProperty("--v-bright", String(bright));
+    orbEl.style.setProperty("--v-hue", String(hue));
+  };
+
   useEffect(() => {
+    if (shouldSkipLiveAnalyser()) {
+      voiceAnalyserHardDisabled = true;
+      writeOrbVars(0);
+      setLevel(0);
+      return;
+    }
+    if (voiceAnalyserHardDisabled) return;
+    try {
     if (!stream) {
       // fade out smoothly when stream disappears
+      let cancelled = false;
       const fade = () => {
+        if (cancelled) return;
         smoothRef.current *= 0.85;
         const v = smoothRef.current;
-        if (orbEl) {
-          orbEl.style.setProperty("--v-scale", String(1 + v * 0.55));
-          orbEl.style.setProperty("--v-glow", String(v));
-          orbEl.style.setProperty("--v-speed", String(1 + v));
-        }
+        writeOrbVars(v);
         setLevel(v);
         if (v > 0.001 && rafRef.current !== null) {
           rafRef.current = requestAnimationFrame(fade);
@@ -255,7 +304,13 @@ function useVoiceAnalyser(
         }
       };
       if (rafRef.current === null) rafRef.current = requestAnimationFrame(fade);
-      return;
+      return () => {
+        cancelled = true;
+        if (rafRef.current !== null) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
+      };
     }
 
     let cancelled = false;
@@ -263,8 +318,17 @@ function useVoiceAnalyser(
       (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
 
-    const ctx = new AudioCtx();
-    const analyser = ctx.createAnalyser();
+    let ctx: AudioContext;
+    let analyser: AnalyserNode;
+    let source: MediaStreamAudioSourceNode;
+    try {
+      ctx = new AudioCtx();
+      analyser = ctx.createAnalyser();
+      source = ctx.createMediaStreamSource(stream);
+    } catch (error) {
+      console.warn("voice analyser unavailable", error);
+      return;
+    }
     analyser.fftSize = 512;
     analyser.smoothingTimeConstant = 0; // we do our own EMA
     const buf = new Float32Array(analyser.fftSize);
@@ -272,8 +336,13 @@ function useVoiceAnalyser(
     ctxRef.current = ctx;
     nodeRef.current = analyser;
 
-    const source = ctx.createMediaStreamSource(stream);
-    source.connect(analyser);
+    try { source.connect(analyser); } catch (error) {
+      console.warn("voice analyser connect failed", error);
+      void ctx.close().catch(() => undefined);
+      ctxRef.current = null;
+      nodeRef.current = null;
+      return;
+    }
 
     // EMA alpha ≈ 1 – e^(–1/(fps*tau)) with tau≈0.08s → alpha≈0.13 at 60fps
     const ALPHA = 0.13;
@@ -281,9 +350,12 @@ function useVoiceAnalyser(
     const DB_CEIL = -10;
 
     // Browsers suspend AudioContext until the user has interacted with the page.
-    // Resume immediately; if it's still suspended the first tick will be silent
-    // but subsequent ticks (after any user gesture) will be live.
-    ctx.resume().catch(() => undefined);
+    // Resume defensively: some WebKit builds can throw or return undefined.
+    try {
+      void ctx.resume()?.catch?.(() => undefined);
+    } catch {
+      // leave suspended; the visualizer will retry naturally on the next frame
+    }
 
     const tick = () => {
       if (cancelled) return;
@@ -292,7 +364,13 @@ function useVoiceAnalyser(
         rafRef.current = requestAnimationFrame(tick);
         return;
       }
-      analyser.getFloatTimeDomainData(buf);
+      try {
+        analyser.getFloatTimeDomainData(buf);
+      } catch (error) {
+        console.warn("voice analyser tick failed", error);
+        rafRef.current = null;
+        return;
+      }
       let sq = 0;
       for (let i = 0; i < buf.length; i++) sq += buf[i] * buf[i];
       const rms = Math.sqrt(sq / buf.length);
@@ -300,11 +378,7 @@ function useVoiceAnalyser(
       const raw = Math.max(0, Math.min(1, (db - DB_FLOOR) / (DB_CEIL - DB_FLOOR)));
       smoothRef.current = ALPHA * raw + (1 - ALPHA) * smoothRef.current;
       const v = smoothRef.current;
-      if (orbEl) {
-        orbEl.style.setProperty("--v-scale", String(1 + v * 0.55));
-        orbEl.style.setProperty("--v-glow", String(v));
-        orbEl.style.setProperty("--v-speed", String(1 + v));
-      }
+      writeOrbVars(v);
       setLevel(v);
       rafRef.current = requestAnimationFrame(tick);
     };
@@ -314,10 +388,19 @@ function useVoiceAnalyser(
       cancelled = true;
       if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
       try { source.disconnect(); } catch {/* noop */}
-      ctx.close().catch(() => undefined);
+      try { void ctx.close()?.catch?.(() => undefined); } catch { /* noop */ }
       ctxRef.current = null;
       nodeRef.current = null;
     };
+    } catch (error) {
+      voiceAnalyserHardDisabled = true;
+      console.warn("voice analyser disabled after setup failure", error);
+      if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+      try { ctxRef.current?.close().catch(() => undefined); } catch { /* noop */ }
+      ctxRef.current = null;
+      nodeRef.current = null;
+      return;
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream, orbEl]);
 
@@ -487,9 +570,24 @@ export function VoicePanel({ active }: { active: boolean }) {
   // Orb-first mode: orb fills the screen, drawer slides up for transcript + controls.
   // Default to orb-first on narrow viewports.
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // Full-screen orb mode: the orb is the entire panel — one chevron exits.
-  // fullOrb is always true now — controls live in the overlay drawer.
-  const [fullOrb] = useState(true);
+  // Full-screen orb mode: opt-in for the current session only. Do not persist
+  // it; a stale localStorage flag previously made reloads look like a black
+  // screen because the full-viewport orb overlay came back before context.
+  const [fullOrb, setFullOrb] = useState(false);
+  useEffect(() => {
+    try { window.localStorage.removeItem("hosaka.voice.fullOrb"); } catch { /* noop */ }
+  }, []);
+  // Esc exits fullscreen orb (or closes the drawer first if it's open).
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (drawerOpen) { setDrawerOpen(false); return; }
+      if (fullOrb) { setFullOrb(false); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active, drawerOpen, fullOrb]);
   const sessionRef = useRef<VoiceSession | null>(null);
   const agentRecorderRef = useRef<MediaRecorder | null>(null);
   const agentStreamRef = useRef<MediaStream | null>(null);
@@ -502,12 +600,14 @@ export function VoicePanel({ active }: { active: boolean }) {
   const transcriptRef = useRef<HTMLDivElement>(null);
   // Callback ref: stored in state so useVoiceAnalyser re-runs when the orb mounts.
   const [orbEl, setOrbEl] = useState<HTMLButtonElement | null>(null);
-  const [muted, setMuted] = useState(false);
+  const [muted] = useState(false);
   // Live caption: last 2 visible transcript items for orb overlay
   const [liveCaption, setLiveCaption] = useState<TranscriptItem[]>([]);
 
-  // Always-on mic stream — open whenever panel is active in agent mode and not muted.
-  const micStream = usePersistentMic(active && mode === "agent", muted);
+  // Local analyser mic — open while the panel is active so the orb can breathe
+  // with the room/operator without starting an OpenAI realtime session or an
+  // agent turn. API calls only happen after an explicit press-to-talk action.
+  const micStream = usePersistentMic(active, false);
   // Ref so closures (VAD callbacks, startAgentRecording) always see the latest stream.
   const micStreamRef = useRef<MediaStream | null>(null);
   micStreamRef.current = micStream;
@@ -825,6 +925,13 @@ export function VoicePanel({ active }: { active: boolean }) {
   }, [agentRecording, mode]);
 
   useEffect(() => {
+    if (mode !== "demo" && sessionRef.current) {
+      void stopSession();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  useEffect(() => {
     if (mode !== "agent") {
       agentRunNonceRef.current += 1;
       setAgentBusy(false);
@@ -832,13 +939,14 @@ export function VoicePanel({ active }: { active: boolean }) {
     }
   }, [mode]);
 
-  // VAD: auto-start recording on speech, auto-stop on silence.
-  // Disabled while agent is busy (processing previous turn) or in demo mode.
+  // Press-to-talk only. VAD used to auto-start turns when speech was detected,
+  // which burned API calls on room noise. Keep the analyser live for visuals,
+  // but never submit audio unless the operator presses start/stop.
   useVAD(
     micStream,
     () => { void startAgentRecording(); },
     () => { void stopAgentRecording(); },
-    mode === "agent" && !muted && !agentBusy,
+    false,
   );
 
   // Keep last 3 non-status lines for the full-orb caption overlay
@@ -898,11 +1006,11 @@ export function VoicePanel({ active }: { active: boolean }) {
 
   const agentPhaseLabel = useMemo(() => {
     switch (agentPhase) {
-      case "recording": return "hold to speak · release to send";
+      case "recording": return "recording · press stop to send";
       case "uploading": return "packaging the turn";
       case "transcribing": return "whisper is transcribing";
       case "thinking": return "picoclaw is working";
-      default: return "backend-first local agent";
+      default: return "press start to send one turn";
     }
   }, [agentPhase]);
 
@@ -910,15 +1018,17 @@ export function VoicePanel({ active }: { active: boolean }) {
     ? muted
       ? "tap to unmute"
       : agentRecording
-        ? "listening · will send on silence"
+        ? "recording · press stop to send"
         : agentBusy
           ? agentPhaseLabel
           : micStream
-            ? "always listening · speak naturally"
+            ? "orb is local-only · no API until start"
             : "opening mic…"
     : sessionOpen
-      ? "mic open · realtime link live"
-      : "ready when you are";
+      ? "realtime session live · press stop to close"
+      : micStream
+        ? "orb is local-only · press start for realtime"
+        : "opening mic…";
 
   if (fullOrb) {
     return (
@@ -930,12 +1040,9 @@ export function VoicePanel({ active }: { active: boolean }) {
         <button
           ref={setOrbEl}
           className={`voice-orb voice-orb--full voice-orb--${visualState}`}
-          onClick={mode === "demo"
-            ? () => (sessionOpen ? stopSession() : startSession())
-            : () => setMuted((v) => !v)}
-          onPointerDown={mode === "agent" ? (e) => e.currentTarget.setPointerCapture(e.pointerId) : undefined}
+          onClick={toggleVoiceTurn}
           onContextMenu={(e) => e.preventDefault()}
-          aria-label={mode === "agent" ? (muted ? "unmute" : "mute") : (sessionOpen ? "end" : "start")}
+          aria-label={sessionOpen || agentRecording ? "stop voice session" : "start voice session"}
         >
           <span className="voice-orb-ring" />
           <span className="voice-jupiter-ring voice-jupiter-ring--a" aria-hidden="true" />
@@ -965,7 +1072,7 @@ export function VoicePanel({ active }: { active: boolean }) {
         {/* State whisper — minimal, below the orb */}
         <div className="voice-fullscreen-label">
           <span className="voice-state-label">{stateLabel}</span>
-          {muted && <span className="voice-state-sub">tap orb to unmute</span>}
+          <span className="voice-state-sub">{statusSub}</span>
         </div>
 
         {/* Live caption overlay — last 3 transcript lines, fading upward */}
@@ -987,11 +1094,19 @@ export function VoicePanel({ active }: { active: boolean }) {
         {/* Drawer overlay — slides up over the fullOrb */}
         {drawerOpen && (
           <div className="voice-fullscreen-drawer" role="dialog" aria-label="controls">
-            <button
-              className="voice-fullscreen-drawer-close"
-              onClick={() => setDrawerOpen(false)}
-              aria-label="close controls"
-            >✕</button>
+            <div className="voice-fullscreen-drawer-actions">
+              <button
+                className="voice-fullscreen-drawer-shrink"
+                onClick={() => { setDrawerOpen(false); setFullOrb(false); }}
+                aria-label="shrink orb (exit fullscreen)"
+                title="shrink orb"
+              >⤢</button>
+              <button
+                className="voice-fullscreen-drawer-close"
+                onClick={() => setDrawerOpen(false)}
+                aria-label="close controls"
+              >✕</button>
+            </div>
 
             {/* Mode switch + action */}
             <div className="voice-controls-card">
@@ -1015,12 +1130,12 @@ export function VoicePanel({ active }: { active: boolean }) {
               <div className="voice-controls-row">
                 <button
                   className="btn"
-                  onClick={mode === "demo" ? toggleVoiceTurn : () => setMuted((v) => !v)}
+                  onClick={toggleVoiceTurn}
                   disabled={mode === "agent" && agentBusy}
                 >
                   {mode === "agent"
-                    ? muted ? "unmute" : agentRecording ? "listening…" : agentBusy ? "working…" : "mute"
-                    : sessionOpen ? "end session" : "start listening"}
+                    ? agentRecording ? "stop + send" : agentBusy ? "working…" : "start turn"
+                    : sessionOpen ? "stop realtime" : "start realtime"}
                 </button>
               </div>
               {error && <div className="voice-error">{error}</div>}
@@ -1031,14 +1146,22 @@ export function VoicePanel({ active }: { active: boolean }) {
           </div>
         )}
 
-        {/* Chevron — opens drawer overlay, does not exit fullOrb */}
-        <button
-          className="voice-fullscreen-chevron"
-          onClick={() => setDrawerOpen((v) => !v)}
-          aria-label={drawerOpen ? "close controls" : "open controls"}
-        >
-          {drawerOpen ? "✕" : "⌄"}
-        </button>
+        {/* Chevron — opens drawer overlay; minimize sits beside it for a one-tap exit */}
+        <div className="voice-fullscreen-corner">
+          <button
+            className="voice-fullscreen-minimize"
+            onClick={() => setFullOrb(false)}
+            aria-label="shrink orb (exit fullscreen)"
+            title="shrink orb"
+          >⤢</button>
+          <button
+            className="voice-fullscreen-chevron"
+            onClick={() => setDrawerOpen((v) => !v)}
+            aria-label={drawerOpen ? "close controls" : "open controls"}
+          >
+            {drawerOpen ? "✕" : "⌄"}
+          </button>
+        </div>
 
         <audio ref={audioRef} autoPlay />
       </div>
@@ -1052,12 +1175,9 @@ export function VoicePanel({ active }: { active: boolean }) {
         <button
           ref={setOrbEl}
           className={`voice-orb voice-orb--${visualState}`}
-          onClick={mode === "demo" ? () => (sessionOpen ? stopSession() : startSession()) : mode === "agent" ? () => setMuted((v) => !v) : undefined}
-          onPointerDown={mode === "agent" ? (e) => { e.currentTarget.setPointerCapture(e.pointerId); } : undefined}
-          onContextMenu={mode === "agent" ? (e) => e.preventDefault() : undefined}
-          aria-label={mode === "agent"
-            ? (muted ? "unmute hosaka" : "mute hosaka")
-            : (sessionOpen ? "end voice session" : "start voice session")}
+          onClick={toggleVoiceTurn}
+          onContextMenu={(e) => e.preventDefault()}
+          aria-label={sessionOpen || agentRecording ? "stop voice session" : "start voice session"}
         >
           <span className="voice-orb-ring" />
           <span className="voice-jupiter-ring voice-jupiter-ring--a" aria-hidden="true" />
@@ -1131,20 +1251,18 @@ export function VoicePanel({ active }: { active: boolean }) {
           <div className="voice-controls-row">
             <button
               className="btn"
-              onClick={mode === "demo" ? toggleVoiceTurn : () => setMuted((v) => !v)}
+              onClick={toggleVoiceTurn}
               disabled={mode === "agent" && agentBusy}
             >
               {mode === "agent"
-                ? muted
-                  ? "unmute"
-                  : agentRecording
+                ? agentRecording
                     ? "listening…"
                     : agentBusy
                       ? "working…"
-                      : "mute"
+                      : "start turn"
                 : sessionOpen
-                  ? "end session"
-                  : "start listening"}
+                  ? "stop realtime"
+                  : "start realtime"}
             </button>
             <button
               className="btn btn-ghost"
@@ -1199,16 +1317,14 @@ export function VoicePanel({ active }: { active: boolean }) {
               <strong>transcript</strong>
               <span>
                 {mode === "agent"
-                  ? muted
-                    ? "muted · tap orb to unmute"
-                    : agentBusy
+                  ? agentBusy
                       ? agentPhaseLabel
                       : agentRecording
-                        ? "listening · will send on silence"
-                        : "always listening · just speak"
+                        ? "recording · press stop to send"
+                        : "press start turn · orb is local-only"
                   : sessionOpen
                     ? `${stateLabel} · session open`
-                    : "tap start listening"}
+                    : "press start realtime · no API while idle"}
               </span>
             </div>
             <div className="voice-transcript-actions">
@@ -1234,8 +1350,8 @@ export function VoicePanel({ active }: { active: boolean }) {
             {transcript.length === 0 && (
               <p className="voice-empty">
                 {mode === "agent"
-                  ? "just speak — hosaka is listening. try 'what files are in my home dir' or 'show disk usage'."
-                  : "say 'how are you', 'what do you see', or 'add a todo: buy coffee'."}
+                  ? "press start turn, speak, then press stop to send. try 'what files are in my home dir' or 'show disk usage'."
+                  : "press start realtime to open a session; press stop realtime to close it and stop billing."}
               </p>
             )}
             {transcript.map((item) => (

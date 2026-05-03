@@ -1,0 +1,7 @@
+Hosaka web setup available at: http://192.168.1.213:8421Hosaka web setup available at: http://192.168.1.213:8421
+
+INFO hosaka.web: Hosaka web server starting. UI dir: /Users/marco/Cursor_Folder/Cursor_Codespace/hosaka_console/Hosaka/hosaka/web/ui (exists=True)
+Hosaka warning: web setup process exited; retrying in 5sHosaka warning: web setup process exited; retrying in 5s
+
+Hosaka notice: port 8421 already in use, reusing existing web setup server.Hosaka notice: port 8421 already in use, reusing existing web setup server.
+

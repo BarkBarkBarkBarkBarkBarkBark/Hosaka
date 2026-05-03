@@ -77,11 +77,13 @@ export async function askGemini(
   prompt: string,
   history: LlmMessage[] = [],
   cfg: LlmConfig = loadConfig(),
+  signal?: AbortSignal,
 ): Promise<LlmResult> {
   try {
     const res = await fetch(`${API_BASE}/api/gemini`, {
       method: "POST",
       headers: { "content-type": "application/json" },
+      signal,
       body: JSON.stringify({
         model: cfg.model,
         prompt,
@@ -104,7 +106,8 @@ export async function askGemini(
     const text = (data.text ?? "").trim();
     if (!text) return { ok: false, code: "empty" };
     return { ok: true, model: data.model ?? cfg.model, text };
-  } catch {
+  } catch (error) {
+    if ((error as { name?: string })?.name === "AbortError") return { ok: false, code: "empty" };
     return { ok: false, code: "proxy_down" };
   }
 }

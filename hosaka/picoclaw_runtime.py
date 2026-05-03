@@ -62,8 +62,8 @@ def _read_text(path: Path) -> str:
 def _seed_config(home: Path) -> dict[str, Any]:
     workspace = str(home / ".picoclaw" / "workspace")
     return {
-        "session": {"dm_scope": "per-channel-peer"},
-        "version": 2,
+        "session": {"dimensions": ["chat"]},
+        "version": 3,
         "agents": {
             "defaults": {
                 "workspace": workspace,
@@ -78,7 +78,6 @@ def _seed_config(home: Path) -> dict[str, Any]:
             {
                 "model_name": "gpt-4o-mini",
                 "model": "openai/gpt-4o-mini",
-                "api_key": "",
                 "api_base": "https://api.openai.com/v1",
             }
         ],
@@ -148,7 +147,7 @@ def ensure_picoclaw_runtime(home: str | Path | None = None, seed_config: bool = 
     defaults.setdefault("restrict_to_workspace", False)
     defaults.setdefault("allow_read_outside_workspace", True)
     defaults.setdefault("model_name", "gpt-4o-mini")
-    defaults.setdefault("max_tokens", 16384)
+    defaults["max_tokens"] = 4096
     defaults.setdefault("max_tool_iterations", 50)
 
     gateway = config.setdefault("gateway", {})
@@ -156,16 +155,23 @@ def ensure_picoclaw_runtime(home: str | Path | None = None, seed_config: bool = 
     gateway.setdefault("port", 18790)
 
     tools = config.setdefault("tools", {})
-    read_paths = tools.setdefault("allow_read_paths", ["/"])
+    read_paths = tools.get("allow_read_paths")
+    if not isinstance(read_paths, list):
+        read_paths = []
+    tools["allow_read_paths"] = read_paths
     if "/" not in read_paths:
         read_paths.append("/")
-    write_paths = tools.setdefault("allow_write_paths", [])
+    write_paths = tools.get("allow_write_paths")
+    if not isinstance(write_paths, list):
+        write_paths = []
+    tools["allow_write_paths"] = write_paths
     for candidate in (str(home_path), "/tmp"):
         if candidate not in write_paths:
             write_paths.append(candidate)
 
     tools.setdefault("find_skills", {}).setdefault("enabled", True)
     tools.setdefault("install_skill", {}).setdefault("enabled", True)
+    tools.setdefault("web", {})["prefer_native"] = False
     skills_cfg = tools.setdefault("skills", {})
     skills_cfg.setdefault("enabled", True)
     registries = skills_cfg.setdefault("registries", {})

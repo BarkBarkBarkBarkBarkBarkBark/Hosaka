@@ -36,6 +36,7 @@ type Listener = () => void;
 
 interface Slot<T> {
   doc: A.Doc<T>;
+  snapshot?: T;
   listeners: Set<Listener>;
   initial: T;
 }
@@ -45,8 +46,13 @@ class AutomergeStore implements Store {
 
   get<T>(name: DocName, initial: T): T {
     const slot = this.ensureSlotSync<T>(name, initial);
-    // toJS gives a plain JS object snapshot React can safely diff.
-    return A.toJS(slot.doc) as T;
+    // toJS creates a fresh object every call. useSyncExternalStore requires
+    // stable snapshot references between real updates, or React will enter a
+    // nested-update loop. Cache the JS view and invalidate it when doc changes.
+    if (slot.snapshot === undefined) {
+      slot.snapshot = A.toJS(slot.doc) as T;
+    }
+    return slot.snapshot;
   }
 
   update<T>(name: DocName, initial: T, mutator: (d: T) => void): void {
@@ -56,6 +62,7 @@ class AutomergeStore implements Store {
     if (next === prev) return;
 
     slot.doc = next;
+  slot.snapshot = undefined;
     this.fire(slot);
     void idb.set(idbKey(name), A.save(next)).catch(() => {});
 
@@ -78,9 +85,12 @@ class AutomergeStore implements Store {
   }
 
   fire(slot: Slot<unknown>): void {
-    for (const fn of slot.listeners) {
-      try { fn(); } catch {}
-    }
+    const listeners = Array.from(slot.listeners);
+    queueMicrotask(() => {
+      for (const fn of listeners) {
+        try { fn(); } catch {}
+      }
+    });
   }
 
   // ── internals ──
@@ -129,6 +139,7 @@ class AutomergeStore implements Store {
       const placeholder = this.createEmptySlot(name);
       try {
         placeholder.doc = A.loadIncremental(placeholder.doc, bytes);
+        placeholder.snapshot = undefined;
       } catch {
         return;
       }
@@ -138,6 +149,7 @@ class AutomergeStore implements Store {
     }
     try {
       slot.doc = A.loadIncremental(slot.doc, bytes);
+      slot.snapshot = undefined;
     } catch {
       return;
     }
@@ -159,6 +171,7 @@ async function hydrate<T>(name: DocName, slot: Slot<T>, initial: T): Promise<voi
     const saved = await idb.get<Uint8Array>(idbKey(name));
     if (saved && saved.byteLength > 0) {
       slot.doc = A.loadIncremental(slot.doc, saved);
+      slot.snapshot = undefined;
       store?.fire(slot as Slot<unknown>);
       return;
     }
@@ -209,6 +222,7 @@ async function hydrate<T>(name: DocName, slot: Slot<T>, initial: T): Promise<voi
         }
       }
     });
+    slot.snapshot = undefined;
     void idb.set(idbKey(name), A.save(slot.doc)).catch(() => {});
     store?.fire(slot as Slot<unknown>);
   } catch {

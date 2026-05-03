@@ -59,7 +59,25 @@
           }
         });
         if (root) mo.observe(root, { childList: true });
-        setTimeout(function () { mo.disconnect(); hide(); }, 12000);
+        setTimeout(function () {
+          mo.disconnect();
+          if (root && root.childNodes.length > 0) {
+            hide();
+            return;
+          }
+          hide();
+          if (root) {
+            root.innerHTML = '<div style="min-height:100vh;box-sizing:border-box;padding:32px;background:#0b0d10;color:#f3e9c1;font:14px ui-monospace,SFMono-Regular,Menlo,monospace">'
+              + '<h1 style="margin:0 0 12px;color:#ffbf46;font-size:18px">Hosaka renderer did not mount</h1>'
+              + '<p style="margin:0 0 16px;color:#9aa4b2">The page loaded, but the React entrypoint never rendered into #root.</p>'
+              + '<pre style="white-space:pre-wrap;background:#141820;border:1px solid #30384a;border-radius:10px;padding:14px;overflow:auto">'
+              + 'URL: ' + location.href + '\n'
+              + 'Scripts: ' + Array.from(document.scripts).map(function (s) { return s.src || "inline"; }).join('\n         ')
+              + '</pre>'
+              + '<p style="margin-top:16px;color:#9aa4b2">Open the Console tab and copy any red error. No more silent black screen.</p>'
+              + '</div>';
+          }
+        }, 12000);
       })();
     </script>
   </body>

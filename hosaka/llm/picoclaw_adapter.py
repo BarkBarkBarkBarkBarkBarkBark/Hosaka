@@ -18,9 +18,10 @@ import shutil
 import subprocess
 from typing import Generator
 
-PICOCLAW_BIN = "picoclaw"
+PICOCLAW_BIN = os.getenv("PICOCLAW_BIN", "picoclaw")
 DEFAULT_SESSION = os.getenv("PICOCLAW_SESSION", "hosaka:main")
 DEFAULT_MODEL = os.getenv("PICOCLAW_MODEL", "")
+PICOCLAW_HOME = os.getenv("PICOCLAW_HOME")
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mGKHF]")
 _RESPONSE_PREFIX = "🦞"
@@ -88,6 +89,7 @@ def chat_sync(message: str, session: str | None = None) -> str:
             capture_output=True,
             text=True,
             timeout=120,
+            env={**os.environ, **({"HOME": PICOCLAW_HOME} if PICOCLAW_HOME else {})},
         )
         output = result.stdout + result.stderr
         return _extract_response(output) or "[picoclaw: empty response]"

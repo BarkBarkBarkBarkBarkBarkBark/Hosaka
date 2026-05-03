@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -74,15 +75,27 @@ else:
 ACCESS_TOKEN = os.environ.get("HOSAKA_ACCESS_TOKEN", "").strip()
 PICOCLAW_BIN = os.environ.get("PICOCLAW_BIN", "picoclaw")
 PICOCLAW_MODEL = os.environ.get("PICOCLAW_MODEL", "").strip()
-# Picoclaw reads its config from $HOME/.picoclaw/config.json. The webserver
-# runs as root under systemd, where HOME=/root and no picoclaw config exists,
-# so we have to point the child explicitly at the operator's home (override
-# with PICOCLAW_HOME in the systemd unit if you ever change kiosk users).
-PICOCLAW_HOME = os.environ.get("PICOCLAW_HOME", "/home/operator")
+def _default_picoclaw_home() -> str:
+    """Pick Picoclaw's config root, not the operator's account home."""
+    home = str(Path.home())
+    if home == "/root" and Path("/home/operator").exists():
+        return "/home/operator/.picoclaw"
+    return str(Path(home) / ".picoclaw")
+
+
+# Picoclaw 0.2.x honors PICOCLAW_HOME as its config root. The expected layout is
+# $PICOCLAW_HOME/config.json and $PICOCLAW_HOME/workspace. Do not point this at
+# the user's account home, or Picoclaw will silently use ~/config.json instead
+# of ~/.picoclaw/config.json.
+PICOCLAW_HOME = os.environ.get("PICOCLAW_HOME", _default_picoclaw_home())
 MSG_TIMEOUT_SECONDS = int(os.environ.get("HOSAKA_MSG_TIMEOUT", "90"))
 MSG_MAX_CHARS = int(os.environ.get("HOSAKA_MSG_MAX_CHARS", "4000"))
 RATE_LIMIT_PER_MIN = int(os.environ.get("HOSAKA_RATE_PER_MIN", "30"))
 PING_INTERVAL = int(os.environ.get("HOSAKA_PING_INTERVAL", "15"))
+SHELL_ENABLED = _env_flag("HOSAKA_SHELL_ENABLED", not PUBLIC_MODE)
+SHELL_TIMEOUT_SECONDS = int(os.environ.get("HOSAKA_SHELL_TIMEOUT", "20"))
+SHELL_MAX_CHARS = int(os.environ.get("HOSAKA_SHELL_MAX_CHARS", "20000"))
+SHELL_CWD = Path(os.environ.get("HOSAKA_SHELL_CWD", os.getcwd())).expanduser()
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
 _BANNER_HINTS = (
@@ -137,6 +150,109 @@ def _picoclaw_available() -> bool:
     return bool(shutil.which(PICOCLAW_BIN))
 
 
+def _picoclaw_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + env.get("PATH", "")
+    env["PICOCLAW_HOME"] = PICOCLAW_HOME
+    env.setdefault("HOME", str(Path(PICOCLAW_HOME).expanduser().parent))
+    env.setdefault("XDG_CONFIG_HOME", f"{PICOCLAW_HOME}/.config")
+    env.setdefault("XDG_CACHE_HOME", f"{PICOCLAW_HOME}/.cache")
+    if PICOCLAW_MODEL:
+        env["PICOCLAW_MODEL"] = PICOCLAW_MODEL
+    return env
+
+
+def _picoclaw_readiness() -> tuple[bool, str]:
+    """Fast readiness check with operator-facing remediation text."""
+    if not _picoclaw_available():
+        return (
+            False,
+            "picoclaw is not installed on this host. Run `/configure picoclaw` "
+            "inside Hosaka, or run `hosaka configure picoclaw` from Terminal.",
+        )
+    try:
+        result = subprocess.run(
+            [PICOCLAW_BIN, "--no-color", "status"],
+            env=_picoclaw_env(),
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "picoclaw status timed out. Run `hosaka configure picoclaw --no-onboard`, then restart `hosaka dev -fresh`."
+    except OSError as exc:
+        return False, f"picoclaw could not start: {exc}. Run `hosaka configure picoclaw`."
+
+    status = result.stdout + result.stderr
+    if result.returncode != 0:
+        return False, "picoclaw status failed. Run `hosaka configure picoclaw --no-onboard`, then restart `hosaka dev -fresh`."
+    if "Config:" not in status or "✓" not in status:
+        return False, "picoclaw config is missing. Run `/configure picoclaw` or `hosaka configure picoclaw`."
+    if not re.search(r"OpenAI API:\s*(✓|set)", status, re.IGNORECASE):
+        return False, "picoclaw has no OpenAI key. Add it in `/settings`, then run `/configure picoclaw`."
+    return True, ""
+
+
+def _picoclaw_not_ready_reply(reason: str) -> str:
+    return (
+        "picoclaw is not ready yet.\n\n"
+        f"{reason}\n\n"
+        "try:\n"
+        "  /configure picoclaw\n"
+        "  /agent local\n"
+        "  /agent test\n\n"
+        "if you are in macOS Terminal instead, run:\n"
+        "  hosaka configure picoclaw --no-onboard\n"
+        "  hosaka dev -fresh"
+    )
+
+
+def _shell_bin() -> str:
+    configured = os.environ.get("SHELL", "").strip()
+    if configured and Path(configured).exists():
+        return configured
+    for candidate in ("/bin/zsh", "/bin/bash", "/bin/sh"):
+        if Path(candidate).exists():
+            return candidate
+    return "sh"
+
+
+async def _run_local_shell(cmd: str) -> dict[str, Any]:
+    """Run one non-interactive local shell command for the dev/appliance UI."""
+    if PUBLIC_MODE or not SHELL_ENABLED:
+        return {"stdout": "", "stderr": "local shell is disabled on this host", "exit": 126}
+    if not cmd.strip():
+        return {"stdout": "", "stderr": "empty command", "exit": 2}
+    if len(cmd) > MSG_MAX_CHARS:
+        return {"stdout": "", "stderr": "command too long", "exit": 2}
+
+    env = _picoclaw_env()
+    cwd = SHELL_CWD if SHELL_CWD.exists() else Path.cwd()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            _shell_bin(),
+            "-lc",
+            cmd,
+            cwd=str(cwd),
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=SHELL_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return {"stdout": "", "stderr": f"timeout after {SHELL_TIMEOUT_SECONDS}s", "exit": 124}
+        stdout = stdout_b.decode("utf-8", errors="replace")[:SHELL_MAX_CHARS]
+        stderr = stderr_b.decode("utf-8", errors="replace")[:SHELL_MAX_CHARS]
+        return {"stdout": stdout, "stderr": stderr, "exit": int(proc.returncode or 0)}
+    except FileNotFoundError as exc:
+        return {"stdout": "", "stderr": f"shell not found: {exc}", "exit": 127}
+    except Exception as exc:  # noqa: BLE001
+        return {"stdout": "", "stderr": f"shell failed: {exc}", "exit": 1}
+
+
 def _strip_picoclaw_banner(text: str) -> str:
     """Drop picoclaw's startup banner + Go log noise from a chunk of stdout.
 
@@ -179,17 +295,9 @@ async def _run_picoclaw(message: str, session_key: str) -> AsyncGenerator[str, N
     if PICOCLAW_MODEL:
         args += ["--model", PICOCLAW_MODEL]
 
-    env = {
-        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
-        "HOME": PICOCLAW_HOME,
-        # Some Go programs (incl. picoclaw) consult these for cache/config dirs.
-        "XDG_CONFIG_HOME": f"{PICOCLAW_HOME}/.config",
-        "XDG_CACHE_HOME": f"{PICOCLAW_HOME}/.cache",
-    }
+    env = _picoclaw_env()
     if os.environ.get("OPENAI_API_KEY"):
         env["OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"]
-    if PICOCLAW_MODEL:
-        env["PICOCLAW_MODEL"] = PICOCLAW_MODEL
 
     try:
         # Merge stderr into stdout. Picoclaw writes its real errors (LLM 429s,
@@ -469,11 +577,12 @@ def get_llm_key() -> JSONResponse:
     """Return LLM provider metadata (provider, model, base_url) — never the key."""
     from hosaka.llm.llm_config import load as _llm_load
     cfg = _llm_load()
+    env_key = bool(os.environ.get("OPENAI_API_KEY"))
     return JSONResponse({
         "provider":   cfg.get("provider", "openai"),
-        "model":      cfg.get("model", ""),
-        "base_url":   cfg.get("base_url", ""),
-        "configured": bool(cfg.get("api_key")),
+        "model":      cfg.get("model") or os.environ.get("OPENAI_MODEL", ""),
+        "base_url":   cfg.get("base_url") or os.environ.get("OPENAI_BASE_URL", ""),
+        "configured": bool(cfg.get("api_key")) or env_key,
     })
 
 
@@ -566,14 +675,14 @@ async def chat(request: Request) -> JSONResponse:
         return JSONResponse({"error": "no messages"}, status_code=400)
 
     tokens: list[str] = []
-    if _picoclaw_available():
+    ready, reason = _picoclaw_readiness()
+    if ready:
         session_key = str(uuid.uuid4())[:8]
         last = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")
         async for chunk in _run_picoclaw(last[:MSG_MAX_CHARS], session_key):
             tokens.append(chunk)
     else:
-        async for chunk in _openai_stream(messages):
-            tokens.append(chunk)
+        tokens.append(_picoclaw_not_ready_reply(reason))
 
     text = "".join(tokens)
     return JSONResponse({"text": text, "model": PICOCLAW_MODEL or "openai"})
@@ -645,7 +754,7 @@ async def agent_ws(ws: WebSocket) -> None:
     sid = str(uuid.uuid4())
     remote = ws.client.host if ws.client else "local"
 
-    picoclaw_ok = _picoclaw_available()
+    picoclaw_ok, picoclaw_reason = _picoclaw_readiness()
     await ws.send_json({
         "type": "hello",
         "sid": sid,
@@ -675,6 +784,22 @@ async def agent_ws(ws: WebSocket) -> None:
                 await ws.send_json({"type": "error", "error": "bad json"})
                 continue
 
+            if payload.get("type") == "shell":
+                cmd = str(payload.get("cmd", "")).strip()
+                if not _check_rate(remote):
+                    await ws.send_json({"type": "error", "error": "rate_limited"})
+                    continue
+                if busy:
+                    await ws.send_json({"type": "error", "error": "busy"})
+                    continue
+                busy = True
+                try:
+                    result = await _run_local_shell(cmd)
+                    await ws.send_json({"type": "shell_reply", **result})
+                finally:
+                    busy = False
+                continue
+
             message: str = payload.get("message", "").strip()
             if not message:
                 continue
@@ -692,19 +817,21 @@ async def agent_ws(ws: WebSocket) -> None:
                 continue
 
             busy = True
+            log.info("agent ws message sid=%s chars=%d", sid, len(message))
             await ws.send_json({"type": "thinking"})
 
             reply_chunks: list[str] = []
             try:
+                picoclaw_ok, picoclaw_reason = _picoclaw_readiness()
                 if picoclaw_ok:
                     async for chunk in _run_picoclaw(message, sid):
                         reply_chunks.append(chunk)
                 else:
-                    msgs = [{"role": "user", "content": message}]
-                    async for chunk in _openai_stream(msgs):
-                        reply_chunks.append(chunk)
+                    log.info("agent ws picoclaw not ready sid=%s reason=%s", sid, picoclaw_reason)
+                    reply_chunks.append(_picoclaw_not_ready_reply(picoclaw_reason))
 
                 reply = "".join(reply_chunks)
+                log.info("agent ws reply sid=%s chars=%d", sid, len(reply))
                 await ws.send_json({
                     "type": "reply",
                     "text": reply,

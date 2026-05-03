@@ -20,12 +20,18 @@ export function getCommands(): CommandEntry[] {
     { cmd: "/ask <x>",   desc: st("commands.askDesc"),         cat: st("commands.catChatAI") },
     { cmd: "/model",     desc: st("commands.modelDesc"),       cat: st("commands.catChatAI") },
     { cmd: "/reset",     desc: st("commands.resetDesc"),       cat: st("commands.catChatAI") },
+    { cmd: "/cancel",    desc: st("commands.cancelDesc"),      cat: st("commands.catChatAI") },
     { cmd: "/settings",  desc: st("commands.settingsDesc"),    cat: st("commands.catChatAI") },
+    { cmd: "/configure", desc: st("commands.configureDesc"),   cat: st("commands.catSystem") },
+    { cmd: "/configure picoclaw", desc: st("commands.configurePicoclawDesc"), cat: st("commands.catSystem") },
+    { cmd: "/configure openclaw", desc: st("commands.configureOpenclawDesc"), cat: st("commands.catSystem") },
 
     { cmd: "/agent",         desc: st("commands.agentDesc"),       cat: st("commands.catAgent") },
     { cmd: "/agent on|off",  desc: st("commands.agentToggleDesc"), cat: st("commands.catAgent") },
+    { cmd: "/agent local",   desc: st("commands.agentLocalDesc"),  cat: st("commands.catAgent") },
     { cmd: "/agent test",    desc: st("commands.agentTestDesc"),   cat: st("commands.catAgent") },
     { cmd: "!<cmd>",         desc: st("commands.shellDesc"),       cat: st("commands.catAgent") },
+    { cmd: "/code",          desc: st("commands.codeDesc"),        cat: st("commands.catAgent") },
 
     { cmd: "/netscan",   desc: st("commands.netscanDesc"),     cat: st("commands.catNetwork") },
 

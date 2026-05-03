@@ -21,6 +21,7 @@ import {
   GATED,
   attemptUnlock,
   getAgent,
+  localAgentConfig,
   loadAgentConfig,
   saveAgentConfig,
   type AgentConfig,
@@ -73,12 +74,21 @@ const BLUE = `${ESC}34m`;
 const PROMPT_HOST = "hosaka";
 const PROMPT_CWD = "/operator";
 
+function sameOriginHint(): string {
+  try {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.host}/ws/agent`;
+  } catch {
+    return "/ws/agent";
+  }
+}
+
 function prompt(): string {
   return `${CYAN}${PROMPT_HOST}${R}:${BLUE}${PROMPT_CWD}${R} ${AMBER}›${R} `;
 }
 
 function pad(s: string, n: number): string {
-  if (s.length >= n) return s;
+  if (s.length >= n) return s + "  ";
   return s + " ".repeat(n - s.length);
 }
 
@@ -98,6 +108,10 @@ export class HosakaShell {
   private plantTicks = 0;
   private llmHistory: LlmMessage[] = [];
   private busy = false;
+  private cancelSeq = 0;
+  private abortController: AbortController | null = null;
+  private activeAgent: ReturnType<typeof getAgent> | null = null;
+  private promptWrittenByCancel = false;
   private thinkingTimer: number | null = null;
   private netscanTimer: number | null = null;
   private suggestion: string | null = null;
@@ -258,6 +272,10 @@ export class HosakaShell {
       } else if (ch === "\x7f" || ch === "\b") {
         this.backspace();
       } else if (ch === "\x03") {
+        if (this.busy) {
+          this.cancelCurrent();
+          return;
+        }
         if (this.netscanTimer !== null) {
           this.stopNetscan();
           return;
@@ -481,6 +499,11 @@ export class HosakaShell {
   }
 
   private async dispatch(raw: string): Promise<void> {
+    if (raw === "/cancel" || raw === "/stop") {
+      this.cancelCurrent();
+      return;
+    }
+
     if (this.busy) {
       this.writeln(`  ${GRAY}${st("dispatch.busy")}${R}`);
       this.writePrompt();
@@ -525,7 +548,7 @@ export class HosakaShell {
       } else {
         await this.askAgent(raw, agentCfg);
       }
-      this.writePrompt();
+      this.finishDispatchPrompt();
       return;
     }
 
@@ -649,18 +672,55 @@ export class HosakaShell {
       case "/settings":
         this.openSettings();
         break;
+      case "/configure":
+        await this.handleConfigure(arg);
+        break;
+      case "/code":
+        await this.handleCode(arg);
+        break;
       case "/reset":
         this.llmHistory = [];
         this.writeln(`  ${GRAY}${st("resetConvo")}${R}`);
         break;
+      case "/cancel":
+      case "/stop":
+        this.cancelCurrent();
+        return;
       default:
         this.unknown(cmd);
     }
+    this.finishDispatchPrompt();
+  }
+
+  private finishDispatchPrompt(): void {
+    if (this.promptWrittenByCancel) {
+      this.promptWrittenByCancel = false;
+      return;
+    }
+    this.writePrompt();
+  }
+
+  private cancelCurrent(): void {
+    this.cancelSeq += 1;
+    this.stopThinking();
+    this.busy = false;
+    try { this.abortController?.abort(); } catch { /* noop */ }
+    this.abortController = null;
+    try { this.activeAgent?.close(); } catch { /* noop */ }
+    this.activeAgent = null;
+    this.buffer = "";
+    this.cursor = 0;
+    this.writeln(`^C`);
+    this.writeln(`  ${GRAY}cancelled current thought. background work may finish server-side, but this terminal is free.${R}`);
+    this.promptWrittenByCancel = true;
     this.writePrompt();
   }
 
   private async askLlm(userPrompt: string): Promise<void> {
     const cfg = loadLlmConfig();
+    const runSeq = this.cancelSeq;
+    const controller = new AbortController();
+    this.abortController = controller;
     this.busy = true;
     this.startThinking();
     appendConversationEntry({
@@ -672,7 +732,8 @@ export class HosakaShell {
       appId: "terminal",
     });
     try {
-      const res = await askGemini(userPrompt, this.llmHistory, cfg);
+      const res = await askGemini(userPrompt, this.llmHistory, cfg, controller.signal);
+      if (runSeq !== this.cancelSeq || controller.signal.aborted) return;
       this.stopThinking();
       if (!res.ok) {
         this.writeGeminiFallback(res.code);
@@ -698,7 +759,8 @@ export class HosakaShell {
       });
     } finally {
       this.stopThinking();
-      this.busy = false;
+      if (this.abortController === controller) this.abortController = null;
+      if (runSeq === this.cancelSeq) this.busy = false;
     }
   }
 
@@ -804,6 +866,7 @@ export class HosakaShell {
   }
 
   private async askAgent(userPrompt: string, cfg: AgentConfig): Promise<void> {
+    const runSeq = this.cancelSeq;
     this.busy = true;
     this.startThinking();
     appendConversationEntry({
@@ -816,13 +879,17 @@ export class HosakaShell {
     });
     try {
       const agent = getAgent(cfg);
+      this.activeAgent = agent;
       let res = await agent.send(userPrompt);
+      if (runSeq !== this.cancelSeq) return;
       if (!res.ok && res.code === "unreachable") {
         this.stopThinking();
         this.writeln(`  ${DARK_GRAY}${st("agentWake")}${R}`);
         this.startThinking();
         await new Promise((r) => setTimeout(r, 1500));
+        if (runSeq !== this.cancelSeq) return;
         res = await agent.send(userPrompt);
+        if (runSeq !== this.cancelSeq) return;
       }
       this.stopThinking();
       if (!res.ok) {
@@ -857,7 +924,8 @@ export class HosakaShell {
       }
     } finally {
       this.stopThinking();
-      this.busy = false;
+      if (runSeq === this.cancelSeq) this.busy = false;
+      this.activeAgent = null;
     }
   }
 
@@ -983,6 +1051,11 @@ export class HosakaShell {
       this.writeln(`  ${GRAY}${st("agent.urlSaved")}${R}`);
       return;
     }
+    if (sub === "local") {
+      saveAgentConfig(localAgentConfig());
+      this.writeln(`  ${AMBER}agent url set to local backend.${R} ${GRAY}${sameOriginHint()}${R}`);
+      return;
+    }
     if (sub === "passphrase") {
       const value = parts.slice(1).join(" ").trim();
       if (!value) {
@@ -1014,6 +1087,58 @@ export class HosakaShell {
       return;
     }
     this.writeln(`  ${RED}${st("agent.unknownSub")}${R} ${sub}`);
+  }
+
+  private async handleCode(arg: string): Promise<void> {
+    const cmd = arg.trim();
+    if (cmd) {
+      await this.shellPassthrough(cmd, localAgentConfig());
+      return;
+    }
+    this.writeln(`  ${CYAN}/code${R} ${GRAY}is shell mode in the browser build.${R}`);
+    this.writeln(`  ${GRAY}Use ${CYAN}!<command>${R}${GRAY} for one-shot commands against the Mac/dev backend.${R}`);
+    this.writeln(`  ${GRAY}Examples:${R}`);
+    this.writeln(`    ${CYAN}!pwd${R}`);
+    this.writeln(`    ${CYAN}!ls -la${R}`);
+    this.writeln(`    ${CYAN}!command -v picoclaw && picoclaw --version${R}`);
+    this.writeln(`  ${DARK_GRAY}For a fully interactive TTY, use the real macOS Terminal pane/window. This web terminal is non-interactive per command.${R}`);
+  }
+
+  private async handleConfigure(arg: string): Promise<void> {
+    const target = arg.trim().toLowerCase();
+    if (!target || target === "status") {
+      this.writeln(`  ${CYAN}configure${R}`);
+      this.writeln(`    ${CYAN}/configure picoclaw${R} ${GRAY}check local agent install + onboarding${R}`);
+      this.writeln(`    ${CYAN}/configure openclaw${R} ${GRAY}explain the heavier desktop-agent path${R}`);
+      this.writeln(`    ${CYAN}/settings${R} ${GRAY}open api key / devices / agent settings drawer${R}`);
+      this.writeln(`    ${CYAN}/agent local${R} ${GRAY}point terminal at this dev server's local backend${R}`);
+      this.writeln(`    ${CYAN}/code${R} ${GRAY}show local shell usage${R}`);
+      return;
+    }
+    if (target === "openclaw") {
+      this.writeln(`  ${CYAN}openclaw configuration${R}`);
+      this.writeln(`  ${GRAY}Recommendation: keep ${AMBER}picoclaw${R}${GRAY} as the stable appliance/default backend.${R}`);
+      this.writeln(`  ${GRAY}OpenClaw should be the heavier desktop backend once a specific CLI/API is chosen.${R}`);
+      this.writeln(`  ${GRAY}That is not a rewrite if Hosaka keeps a small adapter boundary:${R}`);
+      this.writeln(`    ${CYAN}agent backend = picoclaw | openclaw${R}`);
+      this.writeln(`  ${DARK_GRAY}Today this build has the Picoclaw adapter wired. OpenClaw is a planned adapter slot, not an installed runtime yet.${R}`);
+      return;
+    }
+    if (target !== "picoclaw") {
+      this.writeln(`  ${GRAY}unknown configure target:${R} ${target}`);
+      this.writeln(`  ${GRAY}try:${R} ${CYAN}/configure picoclaw${R} ${GRAY}or${R} ${CYAN}/configure openclaw${R}`);
+      return;
+    }
+
+    this.writeln(`  ${CYAN}picoclaw configuration check${R}`);
+    this.writeln(`  ${DARK_GRAY}running on the local backend, not the hosted relay…${R}`);
+    await this.shellPassthrough(
+      "if command -v hosaka >/dev/null 2>&1; then hosaka configure picoclaw --no-onboard; else bash scripts/configure-picoclaw.sh --no-onboard; fi",
+      localAgentConfig(),
+    );
+    this.writeln(`  ${GRAY}For interactive onboarding from a real TTY:${R}`);
+    this.writeln(`    ${CYAN}hosaka configure picoclaw --onboard${R}`);
+    this.writeln(`  ${DARK_GRAY}After that, restart ${CYAN}hosaka dev -fresh${R}${DARK_GRAY} so the backend inherits the updated PATH/config.${R}`);
   }
 
   private switchToPanel(name: string): void {

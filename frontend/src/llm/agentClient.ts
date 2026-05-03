@@ -23,13 +23,22 @@ export type AgentConfig = {
 const PASSPHRASE_KEY = "hosaka.agent.passphrase";
 // Legacy composite key used pre-sync; read-only fallback for one release.
 const LEGACY_STORAGE_KEY = "hosaka.agent.v2";
+const HOSTED_AGENT_URL = "wss://hosaka-field-terminal-alpha.fly.dev/ws/agent";
 
-// Baked-in default so users don't have to paste the URL.  Override at build
-// time with `VITE_HOSAKA_AGENT_URL=wss://... npm run build` or at runtime in
-// the settings drawer.
+function sameOriginAgentUrl(): string {
+  if (typeof window === "undefined") return "ws://127.0.0.1:8421/ws/agent";
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}/ws/agent`;
+}
+
+// Baked-in default so users don't have to paste the URL. Local/appliance builds
+// use the same origin backend (`/ws/agent`, proxied by Vite in dev). Hosted gated
+// builds still default to the Fly relay unless VITE_HOSAKA_AGENT_URL overrides it.
 export const DEFAULT_AGENT_URL: string =
   (import.meta.env.VITE_HOSAKA_AGENT_URL as string | undefined) ??
-  "wss://hosaka-field-terminal-alpha.fly.dev/ws/agent";
+  ((import.meta.env.VITE_HOSAKA_GATED as string | undefined) === "1"
+    ? HOSTED_AGENT_URL
+    : sameOriginAgentUrl());
 
 // Whether the hosted build starts with the agent channel locked. The client
 // deliberately does NOT know the password — that's the point. Users type a
@@ -89,7 +98,16 @@ export function loadAgentConfig(): AgentConfig {
     } catch {}
   }
 
+  if (!GATED && url === HOSTED_AGENT_URL) {
+    url = sameOriginAgentUrl();
+    passphrase = "";
+  }
+
   return { url, passphrase, enabled };
+}
+
+export function localAgentConfig(): AgentConfig {
+  return { url: sameOriginAgentUrl(), passphrase: "", enabled: true };
 }
 
 type AgentStoreFields = {
@@ -243,8 +261,15 @@ export class AgentClient {
   constructor(private cfg: AgentConfig) {}
 
   updateConfig(cfg: AgentConfig): void {
+    if (this.sameConfig(cfg)) return;
     this.cfg = cfg;
     this.close();
+  }
+
+  private sameConfig(next: AgentConfig): boolean {
+    return this.cfg.url === next.url
+      && this.cfg.passphrase === next.passphrase
+      && this.cfg.enabled === next.enabled;
   }
 
   private async ensureOpen(): Promise<AgentErrorCode | null> {
@@ -266,9 +291,19 @@ export class AgentClient {
       let sawClose = false;
 
       const cleanup = () => {
+        window.clearTimeout(helloTimer);
         ws.removeEventListener("open", onOpen);
         ws.removeEventListener("error", onError);
       };
+
+      const helloTimer = window.setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          try { ws.close(); } catch { /* noop */ }
+          resolve("timeout");
+        }
+      }, 4000);
 
       const onOpen = () => {
         // Wait for the "hello" frame before considering the channel ready.
@@ -327,20 +362,25 @@ export class AgentClient {
         }
 
         if (data.type === "error") {
+          const e = (data.error ?? "").toLowerCase();
+          const code: AgentErrorCode = /unauth/.test(e)
+            ? "unauthorized"
+            : /rate/.test(e)
+              ? "rate_limited"
+              : /timed out|timeout/.test(e)
+                ? "timeout"
+                : /still thinking|patience|busy/.test(e)
+                  ? "busy"
+                  : "unknown";
           if (this.inflight) {
             window.clearTimeout(this.inflight.timer);
-            const e = (data.error ?? "").toLowerCase();
-            const code: AgentErrorCode = /unauth/.test(e)
-              ? "unauthorized"
-              : /rate/.test(e)
-                ? "rate_limited"
-                : /timed out|timeout/.test(e)
-                  ? "timeout"
-                  : /still thinking|patience/.test(e)
-                    ? "busy"
-                    : "unknown";
             this.inflight.resolve({ ok: false, code });
             this.inflight = null;
+          }
+          if (this.shellInflight) {
+            window.clearTimeout(this.shellInflight.timer);
+            this.shellInflight.resolve({ ok: false, code });
+            this.shellInflight = null;
           }
           return;
         }
@@ -405,7 +445,7 @@ export class AgentClient {
           this.inflight = null;
           resolve({ ok: false, code: "timeout" });
         }
-      }, 120_000);
+      }, 35_000);
 
       this.inflight = { resolve, timer };
       ws.send(JSON.stringify({ message }));

@@ -116,11 +116,11 @@ class RealtimeSession:
             {
                 "type": "session.update",
                 "session": {
-                    "modalities": ["audio", "text"],
+                    "modalities": ["audio"],
                     "voice": self._voice,
                     "input_audio_format": "pcm16",
                     "output_audio_format": "pcm16",
-                    "input_audio_transcription": {"model": "whisper-1"},
+                    "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
                     "turn_detection": {
                         "type": "server_vad",
                         "threshold": 0.5,
@@ -285,10 +285,14 @@ async def mint_ephemeral_session(
     session: dict[str, Any] = {
         "type": "realtime",
         "model": model,
-        "output_modalities": ["audio", "text"],
+        # OpenAI's GA Realtime endpoint only accepts a single modality per
+        # session: either ["audio"] or ["text"]. Asking for both returns 400
+        # "Invalid modalities". Audio responses still include a text transcript
+        # in the event stream, so ["audio"] is what we want for the orb.
+        "output_modalities": ["audio"],
         "audio": {
             "input": {
-                "transcription": {"model": "whisper-1"},
+                "transcription": {"model": "gpt-4o-mini-transcribe"},
                 "turn_detection": {
                     "type": "server_vad",
                     "threshold": 0.5,
@@ -315,7 +319,21 @@ async def mint_ephemeral_session(
             json={"session": session},
         )
         if resp.status_code != 404:
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                # Surface the OpenAI error body so callers can see *why*
+                # instead of just "400 Bad Request".
+                detail = resp.text.strip()
+                try:
+                    body = resp.json()
+                    err = (body.get("error") or {}) if isinstance(body, dict) else {}
+                    msg = err.get("message") or detail
+                    code = err.get("code") or err.get("type") or ""
+                    detail = f"{msg}" + (f" [{code}]" if code else "")
+                except Exception:  # noqa: BLE001
+                    pass
+                raise RealtimeError(
+                    f"openai /v1/realtime/client_secrets {resp.status_code}: {detail[:500]}"
+                )
             data = resp.json()
             data.setdefault("_hosaka_api_shape", "ga")
             data.setdefault("_hosaka_sdp_url", f"{base}/v1/realtime/calls")
@@ -326,7 +344,7 @@ async def mint_ephemeral_session(
         legacy_payload: dict[str, Any] = {
             "model": model,
             "voice": voice,
-            "modalities": ["audio", "text"],
+            "modalities": ["audio"],
             "instructions": instructions,
         }
         if tools:

@@ -43,6 +43,11 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 5173,
+    fs: {
+      // The frontend imports hosaka-apps/*.yaml via ?raw/import.meta.glob.
+      // Those files live outside frontend/, so Vite dev needs explicit access.
+      allow: [__dirname, path.resolve(__dirname, "..")],
+    },
     proxy: {
       "/api": {
         target: apiTarget,
