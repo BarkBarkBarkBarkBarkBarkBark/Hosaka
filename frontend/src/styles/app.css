@@ -4249,23 +4249,37 @@ html, body, #root {
 .diagnostics-panel {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
   min-height: 100%;
-  padding: 18px;
+  padding: 12px;
   overflow: auto;
 }
 
 .diagnostics-header {
   display: flex;
   justify-content: space-between;
-  gap: 14px;
+  gap: 10px;
   align-items: flex-start;
+  padding-bottom: 4px;
+}
+
+.diagnostics-panel .panel-header {
+  padding: 8px 0 2px;
+}
+
+.diagnostics-panel .panel-header h2 {
+  font-size: 16px;
+  margin-bottom: 3px;
+}
+
+.diagnostics-panel .panel-sub {
+  font-size: 11px;
 }
 
 .diagnostics-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   justify-content: flex-end;
 }
 
@@ -4287,21 +4301,21 @@ html, body, #root {
 .diag-overview,
 .diag-test-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  gap: 8px;
 }
 
 .diag-card,
 .diag-test-card {
   border: 1px solid var(--border);
   background: rgba(17, 20, 24, 0.82);
-  padding: 14px;
-  min-height: 112px;
+  padding: 9px 10px;
+  min-height: 70px;
 }
 
 .diag-card--hero {
   display: flex;
-  gap: 12px;
+  gap: 9px;
   align-items: flex-start;
 }
 
@@ -4322,32 +4336,32 @@ html, body, #root {
 .diag-test-title {
   font-family: var(--font-mono);
   color: var(--fg-2);
-  font-size: 11px;
-  letter-spacing: 0.12em;
+  font-size: 9px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 .diag-value {
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--fg-0);
   font-family: var(--font-mono);
-  font-size: 18px;
+  font-size: 14px;
   word-break: break-word;
 }
 
 .diag-small {
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--fg-2);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 10px;
   word-break: break-word;
 }
 
 .diag-meter {
-  height: 9px;
+  height: 7px;
   border: 1px solid var(--border);
   background: var(--bg-0);
-  margin-top: 12px;
+  margin-top: 8px;
   overflow: hidden;
 }
 
@@ -4360,15 +4374,16 @@ html, body, #root {
 }
 
 .diag-meter--audio {
-  height: 18px;
-  margin: 14px 0;
+  height: 14px;
+  margin: 10px 0;
 }
 
 .diag-video {
   display: block;
   width: 100%;
   aspect-ratio: 4 / 3;
-  margin: 12px 0;
+  max-height: 260px;
+  margin: 10px 0;
   object-fit: cover;
   background: #05070a;
   border: 1px solid var(--border);
@@ -4384,16 +4399,46 @@ html, body, #root {
 .diag-badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .diag-badge {
   border: 1px solid var(--border);
   background: var(--bg-1);
   color: var(--fg-1);
-  padding: 6px 9px;
+  padding: 4px 7px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 10px;
+}
+
+.diag-peripheral-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.diag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-0);
+  color: var(--fg-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: lowercase;
+}
+
+.diag-pill.is-ok {
+  color: var(--green);
+  border-color: rgba(126, 231, 135, 0.35);
+}
+
+.diag-pill.is-warn {
+  color: var(--amber);
+  border-color: rgba(255, 191, 70, 0.25);
 }
 
 .diag-badge--granted { border-color: rgba(126, 231, 135, 0.45); color: var(--green); }
@@ -4401,36 +4446,48 @@ html, body, #root {
 
 .diag-disclosures {
   display: grid;
-  gap: 10px;
+  gap: 6px;
+}
+
+.diag-disclosures .disclosure-summary {
+  min-height: 30px;
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.diag-disclosures .disclosure-body {
+  padding: 6px 0 2px 0;
 }
 
 .diag-json {
-  max-height: 360px;
+  max-height: 240px;
   overflow: auto;
   margin: 0;
-  padding: 12px;
+  padding: 8px;
   border: 1px solid var(--border);
   background: #07090d;
   color: var(--fg-1);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 10px;
   white-space: pre-wrap;
 }
 
 .diag-list {
   display: grid;
-  gap: 6px;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
 }
 
 .diag-list-row {
   display: grid;
   grid-template-columns: 110px 1fr;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: 8px;
+  padding: 5px 7px;
   border: 1px solid var(--border);
   background: var(--bg-0);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 10px;
 }
 
 .diag-list-row span {

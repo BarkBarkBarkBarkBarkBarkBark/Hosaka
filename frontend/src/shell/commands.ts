@@ -44,6 +44,7 @@ export function getCommands(): CommandEntry[] {
     { cmd: "/todo list", desc: st("commands.todoListDesc"),    cat: st("commands.catOpenLoops") },
 
     { cmd: "/status",    desc: st("commands.statusDesc"),      cat: st("commands.catSystem") },
+    { cmd: "/devices",   desc: "terminal flyout: default mic/camera + live signal probes.", cat: st("commands.catSystem") },
     { cmd: "/signal",    desc: st("commands.signalDesc"),      cat: st("commands.catSystem") },
     { cmd: "/update",    desc: st("commands.updateDesc"),      cat: st("commands.catSystem") },
     { cmd: "/clear",     desc: st("commands.clearDesc"),       cat: st("commands.catSystem") },

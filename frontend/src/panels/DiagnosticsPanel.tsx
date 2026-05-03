@@ -227,6 +227,13 @@ export function DiagnosticsPanel({ active = true }: DiagnosticsPanelProps) {
   const primary = (network.primary ?? {}) as Record<string, any>;
   const diskRoot = (system.disk_root ?? {}) as Record<string, any>;
   const mem = (system.mem ?? {}) as Record<string, any>;
+  const peripheralSummary = [
+    ["audio", peripherals.audio],
+    ["video", peripherals.video],
+    ["usb", peripherals.usb],
+    ["bluetooth", peripherals.bluetooth],
+    ["battery", peripherals.battery],
+  ] as const;
 
   return (
     <div className="diagnostics-panel">
@@ -274,24 +281,15 @@ export function DiagnosticsPanel({ active = true }: DiagnosticsPanelProps) {
         </div>
       </section>
 
-      <section className="diag-test-grid">
-        <div className="diag-test-card">
-          <div className="diag-test-title">audio meter</div>
-          <div className="diag-meter diag-meter--audio"><span style={{ width: `${Math.round(meter.level * 100)}%` }} /></div>
-          <div className="diag-small">{meter.state}{meter.error ? ` · ${meter.error}` : ""}</div>
-          <button type="button" className="secondary-btn" onClick={() => setAudioTest((value) => !value)}>
-            {audioTest ? "stop mic test" : "start mic test"}
-          </button>
-        </div>
-        <div className="diag-test-card diag-test-card--video">
-          <div className="diag-test-title">camera preview</div>
-          {videoTest ? <video ref={camera.videoRef} className="diag-video" muted playsInline /> : <div className="diag-video diag-video--blank">camera off</div>}
-          <div className="diag-small">{camera.state}{camera.error ? ` · ${camera.error}` : ""}</div>
-          <button type="button" className="secondary-btn" onClick={() => setVideoTest((value) => !value)}>
-            {videoTest ? "stop video test" : "start video test"}
-          </button>
-          {camera.state === "error" && <button type="button" className="secondary-btn" onClick={camera.retry}>retry</button>}
-        </div>
+      <section className="diag-peripheral-strip" aria-label="peripheral summary">
+        {peripheralSummary.map(([name, item]) => {
+          const available = Boolean((item as Record<string, any> | undefined)?.available);
+          return (
+            <span key={name} className={`diag-pill ${available ? "is-ok" : "is-warn"}`}>
+              <span className="diag-pill-dot">{available ? "●" : "○"}</span> {name}
+            </span>
+          );
+        })}
       </section>
 
       <section className="diag-badges" aria-label="browser devices">
@@ -301,7 +299,29 @@ export function DiagnosticsPanel({ active = true }: DiagnosticsPanelProps) {
       </section>
 
       <div className="diag-disclosures">
-        <Disclosure label="browser media devices" defaultOpen level={1}>
+        <Disclosure label="live tests: microphone meter + camera preview" level={1}>
+          <section className="diag-test-grid">
+            <div className="diag-test-card">
+              <div className="diag-test-title">audio meter</div>
+              <div className="diag-meter diag-meter--audio"><span style={{ width: `${Math.round(meter.level * 100)}%` }} /></div>
+              <div className="diag-small">{meter.state}{meter.error ? ` · ${meter.error}` : ""}</div>
+              <button type="button" className="secondary-btn" onClick={() => setAudioTest((value) => !value)}>
+                {audioTest ? "stop mic test" : "start mic test"}
+              </button>
+            </div>
+            <div className="diag-test-card diag-test-card--video">
+              <div className="diag-test-title">camera preview</div>
+              {videoTest ? <video ref={camera.videoRef} className="diag-video" muted playsInline /> : <div className="diag-video diag-video--blank">camera off</div>}
+              <div className="diag-small">{camera.state}{camera.error ? ` · ${camera.error}` : ""}</div>
+              <button type="button" className="secondary-btn" onClick={() => setVideoTest((value) => !value)}>
+                {videoTest ? "stop video test" : "start video test"}
+              </button>
+              {camera.state === "error" && <button type="button" className="secondary-btn" onClick={camera.retry}>retry</button>}
+            </div>
+          </section>
+        </Disclosure>
+
+        <Disclosure label="browser media devices" level={1}>
           <div className="diag-list">
             {browser.devices.length === 0 ? <div className="dim">no browser devices listed yet.</div> : browser.devices.map((device) => (
               <div key={`${device.kind}:${device.deviceId}`} className="diag-list-row">
@@ -312,7 +332,7 @@ export function DiagnosticsPanel({ active = true }: DiagnosticsPanelProps) {
           </div>
         </Disclosure>
 
-        <Disclosure label="server peripherals" defaultOpen level={1}>
+        <Disclosure label="server peripherals" level={1}>
           <JsonBlock value={peripherals} />
         </Disclosure>
 

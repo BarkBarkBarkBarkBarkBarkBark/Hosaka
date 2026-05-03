@@ -567,6 +567,10 @@ export class HosakaShell {
       case "/status":
         this.status();
         break;
+      case "/devices":
+      case "/device":
+        await this.handleDevices(arg);
+        break;
       case "/plant":
         this.writeln(this.renderPlant());
         break;
@@ -1147,6 +1151,257 @@ export class HosakaShell {
     this.writeln(`  ${GRAY}For interactive onboarding from a real TTY:${R}`);
     this.writeln(`    ${CYAN}hosaka configure picoclaw --onboard${R}`);
     this.writeln(`  ${DARK_GRAY}After that, restart ${CYAN}hosaka dev -fresh${R}${DARK_GRAY} so the backend inherits the updated PATH/config.${R}`);
+  }
+
+  private async handleDevices(arg: string): Promise<void> {
+    const sub = arg.trim().toLowerCase();
+    if (sub === "open" || sub === "app" || sub === "panel") {
+      this.switchToPanel("diagnostics");
+      return;
+    }
+
+    this.busy = true;
+    this.writeln(`  ${AMBER}╭─ /devices ─────────────────────────────────────────╮${R}`);
+    this.writeln(`  ${AMBER}│${R} ${GRAY}dusty terminal probe: mic rms + camera luma/delta${R}`);
+    this.writeln(`  ${AMBER}╰──────────────────────────────────────────────────────╯${R}`);
+    this.writeln(`  ${DARK_GRAY}permission prompts may appear. no media leaves this browser.${R}`);
+    this.writeln("");
+
+    try {
+      const snapshot = await this.fetchDeviceSnapshot();
+      if (snapshot) this.writeDeviceSnapshot(snapshot);
+
+      this.writeln(`  ${CYAN}live probe${R}`);
+      const mic = await this.probeMicSignal();
+      this.writeln(`    mic    ${mic.ok ? GREEN + "●" : RED + "✗"}${R} ${mic.summary}`);
+      if (mic.detail) this.writeln(`           ${DARK_GRAY}${mic.detail}${R}`);
+
+      const cam = await this.probeCameraSignal();
+      this.writeln(`    camera ${cam.ok ? GREEN + "●" : RED + "✗"}${R} ${cam.summary}`);
+      if (cam.detail) this.writeln(`           ${DARK_GRAY}${cam.detail}${R}`);
+      if (cam.ascii) {
+        this.writeln(`           ${DARK_GRAY}ascii luma plate:${R}`);
+        for (const line of cam.ascii.split("\n")) this.writeln(`           ${DARK_GRAY}${line}${R}`);
+      }
+
+      this.writeln("");
+      const devices = await this.enumerateBrowserDevices();
+      this.writeBrowserDeviceSummary(devices);
+
+      this.writeln("");
+      this.writeln(`  ${GRAY}open full app:${R} ${CYAN}/devices open${R} ${GRAY}or click the devices tab.${R}`);
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private async fetchDeviceSnapshot(): Promise<Record<string, any> | null> {
+    try {
+      const resp = await fetch("/api/v1/diag/snapshot");
+      if (!resp.ok) return null;
+      return await resp.json() as Record<string, any>;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeDeviceSnapshot(snapshot: Record<string, any>): void {
+    const per = (snapshot.peripherals ?? {}) as Record<string, any>;
+    const system = (snapshot.system ?? {}) as Record<string, any>;
+    const network = (snapshot.network ?? {}) as Record<string, any>;
+    const primary = (network.primary ?? {}) as Record<string, any>;
+    this.writeln(`  ${CYAN}host${R} ${snapshot.hostname ?? "unknown"} ${DARK_GRAY}mode=${snapshot.mode ?? "?"} platform=${system.platform ?? "?"}${R}`);
+    this.writeln(`  ${CYAN}net ${R} ${primary.ip ?? primary.tailscale_ip ?? "no ip"} ${DARK_GRAY}${primary.iface ?? "iface ?"}${R}`);
+    const names = ["audio", "video", "usb", "bluetooth", "battery"];
+    const bits = names.map((name) => {
+      const ok = Boolean(per[name]?.available);
+      return `${ok ? GREEN + "●" : AMBER + "○"}${R} ${name}`;
+    });
+    this.writeln(`  ${CYAN}srv ${R} ${bits.join(`${DARK_GRAY} · ${R}`)}`);
+    this.writeln("");
+  }
+
+  private async enumerateBrowserDevices(): Promise<MediaDeviceInfo[]> {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    try {
+      return await navigator.mediaDevices.enumerateDevices();
+    } catch {
+      return [];
+    }
+  }
+
+  private writeBrowserDeviceSummary(devices: MediaDeviceInfo[]): void {
+    const audioIn = devices.filter((d) => d.kind === "audioinput");
+    const videoIn = devices.filter((d) => d.kind === "videoinput");
+    const audioOut = devices.filter((d) => d.kind === "audiooutput");
+    const pick = (items: MediaDeviceInfo[]) => items.find((d) => d.deviceId === "default") ?? items[0];
+    const label = (device?: MediaDeviceInfo) => device?.label || (device ? `${device.kind} ${device.deviceId.slice(0, 8)}…` : "none");
+    this.writeln(`  ${CYAN}browser devices${R}`);
+    this.writeln(`    default mic    ${AMBER}${label(pick(audioIn))}${R}`);
+    this.writeln(`    default camera ${AMBER}${label(pick(videoIn))}${R}`);
+    this.writeln(`    default audio  ${AMBER}${label(pick(audioOut))}${R}`);
+    this.writeln(`    counts         ${audioIn.length} mic · ${videoIn.length} camera · ${audioOut.length} output`);
+    this.writeln("");
+  }
+
+  private async probeMicSignal(): Promise<{ ok: boolean; summary: string; detail?: string }> {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      return { ok: false, summary: "getUserMedia unavailable" };
+    }
+    let stream: MediaStream | null = null;
+    let ctx: AudioContext | null = null;
+    try {
+      const AudioCtx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return { ok: false, summary: "AudioContext unavailable" };
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      ctx = new AudioCtx();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      const source = ctx.createMediaStreamSource(stream);
+      source.connect(analyser);
+      const buf = new Float32Array(analyser.fftSize);
+      const samples: number[] = [];
+      for (let i = 0; i < 18; i++) {
+        await new Promise((resolve) => window.setTimeout(resolve, 70));
+        analyser.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (const value of buf) sum += value * value;
+        samples.push(Math.sqrt(sum / buf.length));
+      }
+      const peak = Math.max(...samples);
+      const avg = samples.reduce((a, b) => a + b, 0) / Math.max(samples.length, 1);
+      const active = peak > 0.01;
+      const bars = this.sparkline(samples.map((v) => Math.min(1, v * 12)));
+      return {
+        ok: active,
+        summary: active ? `signal present  peak=${peak.toFixed(4)} avg=${avg.toFixed(4)}` : `very quiet / no signal  peak=${peak.toFixed(4)}`,
+        detail: bars,
+      };
+    } catch (exc) {
+      return { ok: false, summary: `mic probe failed: ${String(exc)}` };
+    } finally {
+      stream?.getTracks().forEach((track) => track.stop());
+      void ctx?.close().catch(() => undefined);
+    }
+  }
+
+  private async probeCameraSignal(): Promise<{ ok: boolean; summary: string; detail?: string; ascii?: string }> {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      return { ok: false, summary: "getUserMedia unavailable" };
+    }
+    let stream: MediaStream | null = null;
+    const video = document.createElement("video");
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 320 }, height: { ideal: 240 } },
+        audio: false,
+      });
+      video.muted = true;
+      video.playsInline = true;
+      video.srcObject = stream;
+      await video.play().catch(() => undefined);
+      await new Promise((resolve) => window.setTimeout(resolve, 350));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = 96;
+      canvas.height = 54;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return { ok: false, summary: "canvas unavailable" };
+
+      const frames: ImageData[] = [];
+      const means: number[] = [];
+      const variances: number[] = [];
+      for (let i = 0; i < 5; i++) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        frames.push(frame);
+        const stats = this.lumaStats(frame.data);
+        means.push(stats.mean);
+        variances.push(stats.variance);
+        await new Promise((resolve) => window.setTimeout(resolve, 120));
+      }
+
+      const mean = means.reduce((a, b) => a + b, 0) / means.length;
+      const variance = variances.reduce((a, b) => a + b, 0) / variances.length;
+      const deltas: number[] = [];
+      for (let i = 1; i < frames.length; i++) {
+        deltas.push(this.frameDelta(frames[i - 1].data, frames[i].data));
+      }
+      const delta = deltas.reduce((a, b) => a + b, 0) / Math.max(deltas.length, 1);
+      const black = mean < 8;
+      const flat = variance < 18;
+      const dynamic = delta > 0.35;
+      const ok = !black && (!flat || dynamic);
+      const ascii = this.asciiFrame(frames[frames.length - 1], 32, 12);
+      return {
+        ok,
+        summary: black
+          ? `stream is black-ish  luma=${mean.toFixed(1)}`
+          : ok
+            ? `stream alive  luma=${mean.toFixed(1)} variance=${variance.toFixed(1)} delta=${delta.toFixed(2)}`
+            : `stream present but flat  luma=${mean.toFixed(1)} variance=${variance.toFixed(1)} delta=${delta.toFixed(2)}`,
+        detail: dynamic ? "dynamic signal detected between frames" : "static frame; wave at camera to raise delta",
+        ascii,
+      };
+    } catch (exc) {
+      return { ok: false, summary: `camera probe failed: ${String(exc)}` };
+    } finally {
+      stream?.getTracks().forEach((track) => track.stop());
+      video.srcObject = null;
+    }
+  }
+
+  private lumaStats(data: Uint8ClampedArray): { mean: number; variance: number } {
+    let sum = 0;
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      sum += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      count += 1;
+    }
+    const mean = sum / Math.max(count, 1);
+    let sq = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const y = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      sq += (y - mean) * (y - mean);
+    }
+    return { mean, variance: sq / Math.max(count, 1) };
+  }
+
+  private frameDelta(a: Uint8ClampedArray, b: Uint8ClampedArray): number {
+    let sum = 0;
+    let count = 0;
+    const len = Math.min(a.length, b.length);
+    for (let i = 0; i < len; i += 16) {
+      const ay = 0.2126 * a[i] + 0.7152 * a[i + 1] + 0.0722 * a[i + 2];
+      const by = 0.2126 * b[i] + 0.7152 * b[i + 1] + 0.0722 * b[i + 2];
+      sum += Math.abs(ay - by);
+      count += 1;
+    }
+    return sum / Math.max(count, 1);
+  }
+
+  private asciiFrame(frame: ImageData, width: number, height: number): string {
+    const chars = " .:-=+*#%@";
+    const srcW = frame.width;
+    const srcH = frame.height;
+    const lines: string[] = [];
+    for (let y = 0; y < height; y++) {
+      let line = "";
+      const sy = Math.floor((y / height) * srcH);
+      for (let x = 0; x < width; x++) {
+        const sx = Math.floor((x / width) * srcW);
+        const idx = (sy * srcW + sx) * 4;
+        const luma = 0.2126 * frame.data[idx] + 0.7152 * frame.data[idx + 1] + 0.0722 * frame.data[idx + 2];
+        line += chars[Math.min(chars.length - 1, Math.floor((luma / 256) * chars.length))];
+      }
+      lines.push(line.replace(/\s+$/g, ""));
+    }
+    return lines.join("\n");
+  }
+
+  private sparkline(values: number[]): string {
+    const chars = "▁▂▃▄▅▆▇█";
+    return values.map((value) => chars[Math.max(0, Math.min(chars.length - 1, Math.round(value * (chars.length - 1))))]).join("");
   }
 
   private switchToPanel(name: string): void {
