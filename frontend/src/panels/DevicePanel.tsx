@@ -28,17 +28,58 @@ const CATEGORIES: Category[] = [
   { kind: "audiooutput", icon: "🔊",  label: "speaker",     storageKey: "hosaka.device.spk" },
 ];
 
+// ALSA / Pulse aliases that show up in Chromium's enumerateDevices() but
+// are not user-meaningful: monitor loopbacks, ALSA "front:" / "surround:" /
+// "iec958:" / "snoop:" virtuals, etc. We keep the friendly card label per
+// physical device (groupId) and drop these clones.
+const NOISE_LABEL_RE = /\b(monitor of|loopback|sample snooping|direct (sample )?(snooping|hardware)|front:|surround(2[01]|40|41|50|51|71)|iec958:|spdif|hdmi:CARD=|hw:CARD=)/i;
+
+function isPlaceholderId(id: string): boolean {
+  return !id || id === "default" || id === "communications";
+}
+
+function dedupeDevices(raw: MediaDeviceInfo[]): Device[] {
+  // Pass 1: bucket by (kind, groupId). Within a bucket, the first entry
+  // with a "clean" label wins; if none are clean, we keep the first entry
+  // so the device is still selectable.
+  const buckets = new Map<string, Device>();
+  const order: string[] = [];
+
+  for (const d of raw) {
+    if (isPlaceholderId(d.deviceId)) continue;
+    const labelRaw = d.label || `${d.kind} (${d.deviceId.slice(0, 8)}…)`;
+    // Use groupId when present so all variants of the same physical card
+    // collapse to one row. Fall back to deviceId so unique devices without
+    // a groupId still appear once.
+    const bucketKey = `${d.kind}:${d.groupId || d.deviceId}`;
+    const isNoise = NOISE_LABEL_RE.test(labelRaw);
+    const existing = buckets.get(bucketKey);
+
+    if (!existing) {
+      buckets.set(bucketKey, { deviceId: d.deviceId, label: labelRaw, kind: d.kind });
+      order.push(bucketKey);
+      continue;
+    }
+    // Prefer a clean label over a noisy one for the same physical device.
+    if (NOISE_LABEL_RE.test(existing.label) && !isNoise) {
+      buckets.set(bucketKey, { deviceId: d.deviceId, label: labelRaw, kind: d.kind });
+    }
+  }
+
+  return order
+    .map((k) => buckets.get(k)!)
+    // Drop entries that survived but are still pure noise (e.g. a card whose
+    // only enumerated form is "Monitor of …"). User has nothing useful here.
+    .filter((d) => !NOISE_LABEL_RE.test(d.label));
+}
+
 function useDevices() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [permissionGranted, setPermissionGranted] = useState(false);
 
   const refresh = async () => {
     const raw = await navigator.mediaDevices.enumerateDevices();
-    setDevices(raw.map((d) => ({
-      deviceId: d.deviceId,
-      label: d.label || `${d.kind} (${d.deviceId.slice(0, 8)}…)`,
-      kind: d.kind,
-    })));
+    setDevices(dedupeDevices(raw));
   };
 
   const requestPermissions = async () => {
@@ -101,6 +142,17 @@ function CategoryRow({ category, devices, hasLabels, onRequestPermissions }: Cat
 
   const filtered = devices.filter((d) => d.kind === category.kind);
 
+  // If a remembered deviceId no longer enumerates (driver swap, USB unplug,
+  // OS reboot), drop it back to "default" so the orb doesn't fail with a
+  // mysterious "OverconstrainedError: deviceId" on the next mic open.
+  useEffect(() => {
+    if (!hasLabels) return;
+    if (selected === "default") return;
+    if (filtered.some((d) => d.deviceId === selected)) return;
+    setSelected("default");
+    writePref(category.storageKey, "default");
+  }, [hasLabels, filtered, selected, category.storageKey]);
+
   const handleSelect = async (deviceId: string) => {
     setSelected(deviceId);
     writePref(category.storageKey, deviceId);
@@ -109,6 +161,8 @@ function CategoryRow({ category, devices, hasLabels, onRequestPermissions }: Cat
     }
     // Emit a custom event so VoicePanel can re-open getUserMedia with new deviceId.
     window.dispatchEvent(new CustomEvent("hosaka:devicechange", { detail: { kind: category.kind, deviceId } }));
+    // Auto-collapse so a long list never traps the operator inside the row.
+    setOpen(false);
   };
 
   const selectedLabel =

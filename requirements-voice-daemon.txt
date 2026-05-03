@@ -1,0 +1,27 @@
+# Voice deps required ONLY by the headless `hosaka voice` daemon path.
+#
+# These are *not* needed by the webserver (the kiosk uses WebRTC straight
+# from the browser). Install only on hosts that will run the systemd
+# `hosaka-voice.service` unit, on top of requirements-voice.txt:
+#
+#   pip install -r requirements-voice.txt -r requirements-voice-daemon.txt
+#
+# Python version note (2026-05): openwakeword pulls tflite-runtime as a
+# hard dep on Linux. tflite-runtime has no cp313 aarch64 wheel, so on a
+# Pi running Python 3.13 you must either:
+#   - run the daemon in a Python 3.11 venv, or
+#   - install with `pip install --no-deps openwakeword` and accept that
+#     `inference_framework="tflite"` won't work (we already pass
+#     `inference_framework="onnx"` in hosaka/voice/wake.py, so the daemon
+#     functions fine without tflite).
+#
+# The bare-bones path:
+#   pip install --no-deps openwakeword
+#   pip install onnxruntime sounddevice scipy
+
+sounddevice>=0.4.6,<1.0
+onnxruntime>=1.17,<2
+scipy>=1.10,<2
+# openwakeword is intentionally NOT pinned here — install it manually with
+# `pip install --no-deps openwakeword` to skip the tflite-runtime dep that
+# fails on Python 3.13 / aarch64.

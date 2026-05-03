@@ -1,13 +1,19 @@
-# Hosaka voice-mode dependencies.
+# Voice deps required by the *webserver* (browser/kiosk path).
 #
-# Install on top of requirements-hosaka.txt:
-#   pip install -r requirements-hosaka.txt -r requirements-voice.txt
+# This is the slim set: just what the FastAPI process needs to serve
+#   GET /api/v1/voice/camera/snapshot.jpg
+# and
+#   POST /api/v1/voice/ephemeral-token / tools/{name}.
 #
-# System packages (apt) are handled by scripts/install_voice_deps.sh —
-# you need portaudio19-dev before `pip install sounddevice` works.
+# All real audio capture happens in the browser (WebRTC -> OpenAI Realtime),
+# so we don't need sounddevice / openwakeword / onnxruntime here. That keeps
+# the deployed venv lean and avoids the tflite-runtime cp313 wheel problem.
+#
+# If you want the headless `hosaka voice` daemon (wake-word on a USB mic),
+# install requirements-voice-daemon.txt on top — that path needs Python 3.11
+# because openwakeword pulls tflite-runtime, which has no cp313 aarch64 wheel
+# as of 2026-05.
 
-sounddevice>=0.4.6,<1.0
-numpy>=1.26,<3.0
-openwakeword>=0.6.0,<1.0
-websockets>=12.0,<14.0
 opencv-python-headless>=4.9,<5.0
+numpy>=1.26,<3.0
+websockets>=12.0,<14.0

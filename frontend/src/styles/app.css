@@ -2532,6 +2532,12 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* Cap the drawer so an expanded device list can never push the close
+     button off the top of the viewport. The drawer scrolls inside itself
+     instead of growing past 75vh. */
+  max-height: 75vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   animation: drawerSlideUp 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -2541,9 +2547,16 @@ html, body, #root {
 }
 
 .voice-fullscreen-drawer-actions {
-  position: absolute;
-  top: 10px;
+  position: sticky;
+  /* Pin to the top of the scrollable drawer so the ✕/⤢ controls are
+     always reachable, even with a long device list expanded. */
+  top: -24px;
   right: 14px;
+  margin: -24px -20px 0;
+  padding: 6px 14px 6px 0;
+  align-self: flex-end;
+  z-index: 1;
+  background: linear-gradient(180deg, rgba(10, 12, 16, 0.94) 70%, rgba(10, 12, 16, 0));
   display: flex;
   gap: 4px;
   align-items: center;
@@ -3782,6 +3795,12 @@ html, body, #root {
   flex-direction: column;
   gap: 2px;
   padding: 8px 12px 10px;
+  /* A USB hub plus PulseAudio aliases can still produce 5–10 entries per
+     category. Cap the row body so an expanded list scrolls inside itself
+     instead of extending past the drawer / screen. */
+  max-height: 38vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .device-option {

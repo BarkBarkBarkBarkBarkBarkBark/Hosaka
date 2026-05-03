@@ -787,17 +787,39 @@ cmd_dev() {
 
 cmd_deploy() {
   cmd_build "$@"
-  if [[ -d "$DEPLOY_ROOT/hosaka/web/ui" ]]; then
-    note "syncing into $(c_cyan "$DEPLOY_ROOT/hosaka/web/ui")"
+  if [[ -d "$DEPLOY_ROOT" ]]; then
+    note "syncing python sources into $(c_cyan "$DEPLOY_ROOT/hosaka/")"
+    # Rsync the entire python package so new modules (e.g. hosaka.secrets,
+    # hosaka.web.voice_api) actually reach the systemd-launched webserver.
+    # --delete prunes files removed in the repo so stale .pyc/.py don't keep
+    # routes registered after they're deleted upstream.
     sudo rsync -a --delete \
-      "$REPO_ROOT/hosaka/web/ui/" "$DEPLOY_ROOT/hosaka/web/ui/"
-    ok "rsync done"
+      --exclude='__pycache__/' \
+      --exclude='*.pyc' \
+      "$REPO_ROOT/hosaka/" "$DEPLOY_ROOT/hosaka/"
+    # Also refresh the operator-facing files most useful at runtime so a
+    # stale README / scripts dir doesn't lie about what's deployed.
+    if [[ -d "$REPO_ROOT/scripts" ]]; then
+      sudo rsync -a --delete \
+        --exclude='__pycache__/' \
+        "$REPO_ROOT/scripts/" "$DEPLOY_ROOT/scripts/"
+    fi
+    if [[ -f "$REPO_ROOT/README.md" ]]; then
+      sudo cp "$REPO_ROOT/README.md" "$DEPLOY_ROOT/README.md"
+    fi
+    ok "python sync done"
   else
-    warn "deploy root $DEPLOY_ROOT/hosaka/web/ui missing — skipped rsync"
+    warn "deploy root $DEPLOY_ROOT missing — skipped rsync"
   fi
   if systemctl is-enabled --quiet "$WEB_UNIT" 2>/dev/null; then
     sudo systemctl restart "$WEB_UNIT"
     ok "restarted $WEB_UNIT"
+  fi
+  # Voice daemon picks up new voice_api.py / tools.py / realtime_client.py
+  # too. Restart it when it's enabled so the daemon side stays in sync.
+  if systemctl is-enabled --quiet hosaka-voice.service 2>/dev/null; then
+    sudo systemctl restart hosaka-voice.service
+    ok "restarted hosaka-voice.service"
   fi
 }
 
