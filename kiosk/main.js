@@ -607,6 +607,7 @@ function resolveStartUrl() {
 }
 
 const START_URL = resolveStartUrl();
+let currentStartUrl = START_URL;
 const FULLSCREEN = process.env.HOSAKA_KIOSK_FULLSCREEN !== "0";
 const DEVTOOLS = process.env.HOSAKA_KIOSK_DEVTOOLS === "1";
 const WIDTH = Number(process.env.HOSAKA_KIOSK_WIDTH) || 1024;
@@ -620,21 +621,57 @@ if (FULLSCREEN) {
 }
 
 // Single-instance lock — if the operator somehow runs `electron .` a second
-// time, focus the existing window instead of spawning a second kiosk.
-const gotLock = app.requestSingleInstanceLock();
+// time, focus the existing window instead of spawning a second kiosk. In dev,
+// also retarget the existing window to the requested HOSAKA_KIOSK_URL; otherwise
+// `hosaka dev` can merely focus a stale :8421 window instead of the Vite :5173
+// window the operator asked for.
+function coerceRetargetUrl(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:", "file:"].includes(url.protocol)) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function sameUrl(a, b) {
+  try {
+    return new URL(a).toString() === new URL(b).toString();
+  } catch {
+    return a === b;
+  }
+}
+
+function focusWindow(win) {
+  if (win.isMinimized()) win.restore();
+  if (!win.isVisible()) win.show();
+  win.focus();
+}
+
+const gotLock = app.requestSingleInstanceLock({ hosakaKioskUrl: START_URL });
 if (!gotLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, _argv, _workingDir, additionalData) => {
     const [win] = BrowserWindow.getAllWindows();
+    const targetUrl = coerceRetargetUrl(additionalData?.hosakaKioskUrl);
     if (win) {
-      if (win.isMinimized()) win.restore();
-      win.focus();
+      if (targetUrl && !sameUrl(targetUrl, currentStartUrl)) {
+        currentStartUrl = targetUrl;
+        win.loadURL(targetUrl);
+      }
+      focusWindow(win);
+    } else if (targetUrl) {
+      currentStartUrl = targetUrl;
+      createWindow(targetUrl);
     }
   });
 }
 
-function createWindow() {
+function createWindow(startUrl = currentStartUrl) {
+  currentStartUrl = startUrl;
   const win = new BrowserWindow({
     width: WIDTH,
     height: HEIGHT,
@@ -660,7 +697,7 @@ function createWindow() {
   });
 
   win.once("ready-to-show", () => win.show());
-  win.loadURL(START_URL);
+  win.loadURL(startUrl);
   if (DEVTOOLS) win.webContents.openDevTools({ mode: "detach" });
 
   win.webContents.setWindowOpenHandler(({ url }) => {

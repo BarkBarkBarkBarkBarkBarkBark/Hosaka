@@ -723,7 +723,7 @@ export class HosakaShell {
     this.abortController = controller;
     this.busy = true;
     this.startThinking();
-    appendConversationEntry({
+    this.safeAppendConversation({
       role: "user",
       source: "shell",
       channel: "text",
@@ -749,7 +749,7 @@ export class HosakaShell {
         this.writeln(`  ${line}`);
       }
       this.writeln("");
-      appendConversationEntry({
+      this.safeAppendConversation({
         role: "assistant",
         source: "shell",
         channel: "text",
@@ -869,7 +869,7 @@ export class HosakaShell {
     const runSeq = this.cancelSeq;
     this.busy = true;
     this.startThinking();
-    appendConversationEntry({
+    this.safeAppendConversation({
       role: "user",
       source: "agent",
       channel: "text",
@@ -901,7 +901,7 @@ export class HosakaShell {
         this.writeln(`  ${line}`);
       }
       this.writeln("");
-      appendConversationEntry({
+      this.safeAppendConversation({
         role: "assistant",
         source: "agent",
         channel: "text",
@@ -913,7 +913,7 @@ export class HosakaShell {
       const cmd = this.extractSuggestion(res.text);
       if (cmd) {
         this.suggestion = cmd;
-        appendConversationEntry({
+        this.safeAppendConversation({
           role: "system",
           source: "agent",
           channel: "system",
@@ -1001,6 +1001,14 @@ export class HosakaShell {
     } as Record<string, string>)[code] ?? "default";
     this.writeln(`  ${GRAY}${st(`agentError.${key}`)}${R}`);
     this.writeln("");
+  }
+
+  private safeAppendConversation(input: Parameters<typeof appendConversationEntry>[0]): void {
+    try {
+      appendConversationEntry(input);
+    } catch (error) {
+      console.warn("conversation log append failed", error);
+    }
   }
 
   private async handleAgent(arg: string): Promise<void> {
@@ -1289,7 +1297,7 @@ export class HosakaShell {
     const status = await installHosakaApp(target);
     this.writeHosakaAppResponse(status);
     if (status.ok) {
-      appendConversationEntry({
+      this.safeAppendConversation({
         role: "system",
         source: "ui",
         channel: "system",
@@ -1324,7 +1332,7 @@ export class HosakaShell {
       const status = await launchHosakaApp(hosakaAppId);
       this.writeHosakaAppResponse(status);
       if (status.ok) {
-        appendConversationEntry({
+        this.safeAppendConversation({
           role: "system",
           source: "ui",
           channel: "system",
@@ -1345,7 +1353,7 @@ export class HosakaShell {
       this.writeln(`  ${GRAY}couldn't launch ${appId}.${R}`);
       return;
     }
-    appendConversationEntry({
+    this.safeAppendConversation({
       role: "system",
       source: "ui",
       channel: "system",
