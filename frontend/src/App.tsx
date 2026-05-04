@@ -17,7 +17,8 @@ import {
   resolveAppId,
   type AppId,
 } from "./ui/appRegistry";
-import { dedupeAppIds, INITIAL_WINDOWS_DOC, type WindowsDoc } from "./ui/windowState";
+import { dedupeAppIds, INITIAL_WINDOWS_DOC, type WindowEntry, type WindowsDoc } from "./ui/windowState";
+import { OverlayStack } from "./components/OverlayStack";
 
 // Each panel becomes its own chunk so first paint of the kiosk only ships
 // the shell (header + dock + footer + the active panel). Big panels — xterm
@@ -168,11 +169,11 @@ export function App() {
   );
   const syncedOpenAppIds = useMemo(() => {
     const filtered = windowDoc.openAppIds.filter((appId) => enabledIds.has(appId));
-    return dedupeAppIds(["home", ...filtered]);
+    return dedupeAppIds(["terminal", ...filtered]);
   }, [enabledIds, windowDoc.openAppIds]);
   const openAppIds = useMemo(() => {
     const source = openOverride ?? syncedOpenAppIds;
-    return dedupeAppIds(["home", ...source.filter((appId) => enabledIds.has(appId))]);
+    return dedupeAppIds(["terminal", ...source.filter((appId) => enabledIds.has(appId))]);
   }, [enabledIds, openOverride, syncedOpenAppIds]);
   const activeAppId = useMemo(() => {
     if (activeOverride && enabledIds.has(activeOverride) && openAppIds.includes(activeOverride)) {
@@ -181,8 +182,47 @@ export function App() {
     if (enabledIds.has(windowDoc.activeAppId) && openAppIds.includes(windowDoc.activeAppId)) {
       return windowDoc.activeAppId;
     }
-    return openAppIds[openAppIds.length - 1] ?? "home";
+    return openAppIds[openAppIds.length - 1] ?? "terminal";
   }, [activeOverride, enabledIds, openAppIds, windowDoc.activeAppId]);
+
+  // #region agent log
+  useEffect(() => {
+    const dbg = (window as unknown as { __hosakaDbg?: (loc: string, msg: string, data?: Record<string, unknown>) => void }).__hosakaDbg;
+    dbg?.("App.tsx:render", "active state computed", {
+      activeAppId,
+      docActiveAppId: windowDoc.activeAppId,
+      docChromeCollapsed: windowDoc.chromeCollapsed,
+      docOpenAppIds: windowDoc.openAppIds,
+      openAppIds,
+      activeOverride,
+      openOverride,
+      enabledCount: enabledIds.size,
+    });
+  }, [activeAppId, windowDoc.activeAppId, windowDoc.chromeCollapsed, windowDoc.openAppIds, openAppIds, activeOverride, openOverride, enabledIds]);
+
+  useEffect(() => {
+    const dbg = (window as unknown as { __hosakaDbg?: (loc: string, msg: string, data?: Record<string, unknown>) => void }).__hosakaDbg;
+    const tick = () => {
+      const stage = document.querySelector(".hosaka-stage") as HTMLElement | null;
+      const panel = document.querySelector(".hosaka-panel:not([hidden])") as HTMLElement | null;
+      const termWrap = document.querySelector(".terminal-wrap") as HTMLElement | null;
+      const termHost = document.querySelector(".terminal-host") as HTMLElement | null;
+      const xterm = document.querySelector(".xterm") as HTMLElement | null;
+      dbg?.("App.tsx:layout", "post-paint dimensions", {
+        viewport: { w: window.innerWidth, h: window.innerHeight },
+        stage: stage ? { w: stage.offsetWidth, h: stage.offsetHeight, display: getComputedStyle(stage).display } : null,
+        panel: panel ? { w: panel.offsetWidth, h: panel.offsetHeight, hidden: panel.hidden, classes: panel.className.slice(0, 60) } : null,
+        termWrap: termWrap ? { w: termWrap.offsetWidth, h: termWrap.offsetHeight } : null,
+        termHost: termHost ? { w: termHost.offsetWidth, h: termHost.offsetHeight, children: termHost.childElementCount } : null,
+        xterm: xterm ? { w: xterm.offsetWidth, h: xterm.offsetHeight } : null,
+        rootChildren: document.getElementById("root")?.childElementCount ?? 0,
+      });
+    };
+    const t1 = setTimeout(tick, 500);
+    const t2 = setTimeout(tick, 2000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+  // #endregion
 
   const openApp = useCallback((appId: AppId) => {
     const definition = getAppDefinition(appId);
@@ -191,18 +231,23 @@ export function App() {
     setActiveOverride(appId);
     const now = Date.now();
     updateWindows((doc) => {
-      const openIds: AppId[] = Array.isArray(doc.openAppIds) ? doc.openAppIds : ["home"];
+      const openIds: AppId[] = Array.isArray(doc.openAppIds) ? doc.openAppIds : ["terminal"];
       doc.openAppIds = dedupeAppIds([...openIds, appId]);
       doc.activeAppId = appId;
       if (!doc.windows || typeof doc.windows !== "object") doc.windows = {};
-      doc.windows[appId] = {
+      const prev = doc.windows[appId];
+      // Automerge rejects assignment of `undefined` (see runtime evidence:
+      // RangeError: Cannot assign undefined value at /windows/<id>/snapshot).
+      // Build the new entry with snapshot only when we have one to carry over.
+      const next: WindowEntry = {
         appId,
-        background: doc.windows[appId]?.background ?? Boolean(definition.defaultBackground),
-        lastOpenedAt: doc.windows[appId]?.lastOpenedAt ?? now,
+        background: prev?.background ?? Boolean(definition.defaultBackground),
+        lastOpenedAt: prev?.lastOpenedAt ?? now,
         lastFocusedAt: now,
-        openCount: (doc.windows[appId]?.openCount ?? 0) + 1,
-        snapshot: doc.windows[appId]?.snapshot,
+        openCount: (prev?.openCount ?? 0) + 1,
       };
+      if (prev?.snapshot !== undefined) next.snapshot = prev.snapshot;
+      doc.windows[appId] = next;
     });
   }, [enabledIds, openAppIds, updateWindows]);
 
@@ -212,14 +257,14 @@ export function App() {
     const nextOpen = openAppIds.filter((id) => id !== appId);
     setOpenOverride(nextOpen);
     if (activeOverride === appId) {
-      setActiveOverride(nextOpen[nextOpen.length - 1] ?? "home");
+      setActiveOverride(nextOpen[nextOpen.length - 1] ?? "terminal");
     }
     updateWindows((doc) => {
-      const openIds: AppId[] = Array.isArray(doc.openAppIds) ? doc.openAppIds : ["home"];
+      const openIds: AppId[] = Array.isArray(doc.openAppIds) ? doc.openAppIds : ["terminal"];
       doc.openAppIds = openIds.filter((id) => id !== appId);
       if (doc.activeAppId === appId) {
-        const remaining = dedupeAppIds(["home", ...doc.openAppIds]);
-        doc.activeAppId = remaining[remaining.length - 1] ?? "home";
+        const remaining = dedupeAppIds(["terminal", ...doc.openAppIds]);
+        doc.activeAppId = remaining[remaining.length - 1] ?? "terminal";
         setActiveOverride(doc.activeAppId);
       }
     });
@@ -268,17 +313,31 @@ export function App() {
       const appId = resolveAppId(target);
       if (appId) closeApp(appId);
     };
+    const onToggleMenu = () => setNavOpen((v) => !v);
+    const onToggleChrome = () => {
+      updateWindows((doc) => { doc.chromeCollapsed = !doc.chromeCollapsed; });
+    };
+    const onFocusTerminal = () => {
+      openApp("terminal");
+      window.dispatchEvent(new CustomEvent("hosaka:overlay-close-all", { detail: { keepPinned: true } }));
+    };
     window.addEventListener("hosaka:open-settings", onSettings);
     window.addEventListener("hosaka:open-tab", onTab as EventListener);
     window.addEventListener("hosaka:open-app", onTab as EventListener);
     window.addEventListener("hosaka:close-app", onClose as EventListener);
+    window.addEventListener("hosaka:toggle-menu", onToggleMenu);
+    window.addEventListener("hosaka:toggle-chrome", onToggleChrome);
+    window.addEventListener("hosaka:focus-terminal", onFocusTerminal);
     return () => {
       window.removeEventListener("hosaka:open-settings", onSettings);
       window.removeEventListener("hosaka:open-tab", onTab as EventListener);
       window.removeEventListener("hosaka:open-app", onTab as EventListener);
       window.removeEventListener("hosaka:close-app", onClose as EventListener);
+      window.removeEventListener("hosaka:toggle-menu", onToggleMenu);
+      window.removeEventListener("hosaka:toggle-chrome", onToggleChrome);
+      window.removeEventListener("hosaka:focus-terminal", onFocusTerminal);
     };
-  }, [closeApp, openApp]);
+  }, [closeApp, openApp, updateWindows]);
 
   // Doc-write toast: agent saved a markdown doc — surface a non-hijacking
   // hint with tap-to-open. Fires from realtimeClient and DocsPanel saves.
@@ -402,6 +461,32 @@ export function App() {
           <span className="hosaka-brand-logo">{t("brand")}</span>
           <span className="hosaka-brand-sub">{t("brandSub")}</span>
         </div>
+        <div className="hosaka-quickbar" role="toolbar" aria-label="quick actions">
+          <button
+            type="button"
+            className={`icon-btn hosaka-quick-btn ${activeAppId === "terminal" ? "is-active" : ""}`}
+            aria-label="focus terminal"
+            title="terminal"
+            onClick={() => {
+              setActiveApp("terminal");
+              window.dispatchEvent(new CustomEvent("hosaka:overlay-close-all", { detail: { keepPinned: true } }));
+            }}
+          >›_</button>
+          <button
+            type="button"
+            className="icon-btn hosaka-quick-btn"
+            aria-label="open devices overlay"
+            title="device mode"
+            onClick={() => window.dispatchEvent(new CustomEvent("hosaka:overlay-open", { detail: { id: "diag" } }))}
+          >⚇</button>
+          <button
+            type="button"
+            className="icon-btn hosaka-quick-btn"
+            aria-label="open voice orb"
+            title="orb"
+            onClick={() => setActiveApp("voice")}
+          >◎</button>
+        </div>
         <div className="hosaka-topbar-right">
           <LangPicker />
           <SignalBadge label={bootMessage} />
@@ -524,6 +609,8 @@ export function App() {
       </footer>
 
       <FloatingOrb voiceActive={activeAppId === "voice"} />
+
+      <OverlayStack />
 
       {docToast && (
         <div className="doc-toast" role="status" aria-live="polite">

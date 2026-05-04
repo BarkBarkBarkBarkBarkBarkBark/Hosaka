@@ -24,6 +24,7 @@ export type DocName =
   | "lang"
   | "llm"
   | "windows"
+  | "overlays"
   | "conversation";
 
 export interface Store {

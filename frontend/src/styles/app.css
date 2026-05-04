@@ -341,13 +341,16 @@ html, body, #root {
 .terminal-wrap {
   position: absolute;
   inset: 0;
-  padding: 10px;
   background: var(--bg-0);
 }
 
+/* Host is anchored with top/right/bottom/left so its height is always
+   "definite" (the percentage-height chain through stacked abs-positioned
+   ancestors collapsed to ~22px in Chromium 130 — see
+   debug-860fc3.log #10/#25). Padding stays on the host itself. */
 .terminal-host {
-  height: 100%;
-  width: 100%;
+  position: absolute;
+  inset: 10px;
   padding: 10px;
   background: #0b0d10;
   border: 1px solid var(--border-strong);
@@ -1530,7 +1533,43 @@ html, body, #root {
   gap: 6px;
 }
 
+/* Terminal-first: hide the full dock/launchbar/tab strip when chrome is
+   collapsed. The new .hosaka-quickbar in the topbar (menu/terminal/device/orb)
+   is the primary nav surface. Users re-open the dock via the chevron. */
+.hosaka-shell--chrome-collapsed .hosaka-dock,
+.hosaka-shell--chrome-collapsed .hosaka-launchbar,
+.hosaka-shell--chrome-collapsed .hosaka-window-strip {
+  display: none !important;
+}
+
 .hosaka-shell--chrome-collapsed .web-hint { display: none; }
+
+/* Quickbar — the four persistent terminal-first buttons next to the brand.
+   Always visible, but emphasized when chrome is collapsed. */
+.hosaka-quickbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+}
+.hosaka-quick-btn {
+  min-width: 34px;
+  height: 30px;
+  padding: 0 8px;
+  background: var(--bg-0);
+  color: var(--fg-1);
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.hosaka-quick-btn:hover { color: var(--cyan); border-color: var(--cyan-dim); }
+.hosaka-quick-btn.is-active {
+  color: var(--amber);
+  border-color: var(--amber-dim);
+  background: color-mix(in srgb, var(--amber-dim) 12%, var(--bg-0));
+}
 
 .desktop-panel {
   height: 100%;
@@ -2102,8 +2141,7 @@ html, body, #root {
   }
 
   /* Terminal: zero chrome so xterm gets the entire stage */
-  .terminal-wrap { padding: 2px; }
-  .terminal-host { padding: 4px; }
+  .terminal-host { inset: 2px; padding: 4px; }
 
   /* Reading: collapse sidebar to top on small screens */
   .reading-wrap { flex-direction: column; }
@@ -4530,3 +4568,208 @@ html, body, #root {
     grid-template-columns: 1fr;
   }
 }
+
+/* ───── surface windows (floating instrument overlays) ─────────────────
+   90s hacker-instrument aesthetic above the terminal. Small, draggable by
+   title bar only (no lib), monospaced, amber accents on dark. Children
+   own their media streams and stop them on unmount when we close the
+   overlay. */
+
+.overlay-stack {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+}
+
+.surface-window {
+  position: absolute;
+  pointer-events: auto;
+  background: var(--bg-1);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.4);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-1);
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 60px);
+}
+
+.surface-window--pinned {
+  border-color: var(--amber-dim);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55),
+              0 0 0 1px color-mix(in srgb, var(--amber) 30%, transparent);
+}
+
+.surface-window-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  height: 24px;
+  background: linear-gradient(to bottom, var(--bg-2), var(--bg-0));
+  border-bottom: 1px solid var(--border-strong);
+  user-select: none;
+  touch-action: none;
+  cursor: grab;
+}
+.surface-window-titlebar:active { cursor: grabbing; }
+
+.surface-window-glyph { font-size: 12px; }
+.surface-window-title {
+  color: var(--amber);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: lowercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.surface-window-spacer { flex: 1; }
+
+.surface-window-btn {
+  background: transparent;
+  color: var(--fg-2);
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: 11px;
+  width: 22px;
+  height: 18px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+.surface-window-btn:hover { color: var(--cyan); border-color: var(--cyan-dim); }
+.surface-window-btn.is-on { color: var(--amber); border-color: var(--amber-dim); }
+.surface-window-close:hover { color: var(--red); border-color: var(--red); }
+
+.surface-window-body {
+  padding: 10px 12px 12px;
+  overflow: auto;
+}
+
+/* ───── instrument window contents ────────────────────────────────── */
+
+.instrument {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.instrument-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.instrument-label {
+  color: var(--fg-2);
+  text-transform: lowercase;
+  letter-spacing: 0.3px;
+  min-width: 52px;
+}
+
+.instrument-value {
+  color: var(--fg-0);
+  font-variant-numeric: tabular-nums;
+}
+
+.instrument-select {
+  flex: 1;
+  min-width: 140px;
+  background: var(--bg-0);
+  color: var(--fg-0);
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 3px 4px;
+}
+
+.instrument-meter {
+  position: relative;
+  height: 14px;
+  background: var(--bg-0);
+  border: 1px solid var(--border-strong);
+  overflow: hidden;
+}
+.instrument-meter span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(to right, var(--green), var(--amber) 60%, var(--red));
+  transition: width 60ms linear;
+}
+
+.instrument-meter--segments {
+  display: flex;
+  gap: 2px;
+  background: transparent;
+  border: 0;
+  height: 16px;
+}
+.instrument-meter--segments .seg {
+  flex: 1;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+}
+.instrument-meter--segments .seg.is-on { background: var(--green); }
+.instrument-meter--segments .seg.is-on.is-warn { background: var(--amber); }
+.instrument-meter--segments .seg.is-on.is-hot { background: var(--red); }
+
+.instrument-video {
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border: 1px solid var(--border-strong);
+  object-fit: cover;
+  filter: contrast(1.05) saturate(0.9);
+}
+.instrument-video--blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-3);
+  font-size: 11px;
+}
+
+.instrument-note {
+  color: var(--fg-3);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.instrument-note--err { color: var(--red); }
+
+.instrument-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.instrument-btn {
+  background: var(--bg-0);
+  color: var(--fg-1);
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+  text-transform: lowercase;
+  letter-spacing: 0.3px;
+}
+.instrument-btn:hover { color: var(--cyan); border-color: var(--cyan-dim); }
+.instrument-btn.is-on { color: var(--amber); border-color: var(--amber-dim); }
+
+.instrument-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--fg-3);
+}
+.instrument-dot.is-ok { background: var(--green); }
+.instrument-dot.is-warn { background: var(--amber); }
+.instrument-dot.is-err { background: var(--red); }

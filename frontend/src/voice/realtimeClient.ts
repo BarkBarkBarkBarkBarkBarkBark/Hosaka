@@ -349,6 +349,12 @@ export class VoiceSession {
 
 async function fetchEphemeralToken(): Promise<EphemeralToken> {
   const resp = await fetch("/api/v1/voice/ephemeral-token", { method: "POST" });
+  // #region agent log H3
+  try {
+    const peek = await resp.clone().text().catch(() => "");
+    fetch('http://localhost:7689/ingest/1a43a65d-59a9-4e4d-b675-be2f9e8f84bd',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'eac2ea'},body:JSON.stringify({sessionId:'eac2ea',runId:'r1',hypothesisId:'H3',location:'realtimeClient:ephemeral-token',message:'/api/v1/voice/ephemeral-token response',data:{status:resp.status,ok:resp.ok,bodyLen:peek.length,bodyHead:peek.slice(0,240)},timestamp:Date.now()})}).catch(()=>{});
+  } catch { /* noop */ }
+  // #endregion
   if (!resp.ok) {
     let detail = "";
     try {

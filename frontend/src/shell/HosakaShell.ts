@@ -575,7 +575,11 @@ export class HosakaShell {
         this.writeln(this.renderPlant());
         break;
       case "/orb":
-        this.orb();
+        this.handleOrb(arg);
+        break;
+      case "/menu":
+        executeHosakaUiCommand({ id: "ui.toggle_menu" });
+        this.writeln(`  ${GRAY}toggled menu.${R}`);
         break;
       case "/lore":
         this.lore();
@@ -595,10 +599,13 @@ export class HosakaShell {
           `  ${AMBER}https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka${R}`,
         );
         break;
+      case "/terminal":
+        executeHosakaUiCommand({ id: "ui.focus_terminal" });
+        this.writeln(`  ${GRAY}focused terminal.${R} ${DARK_GRAY}non-pinned overlays closed.${R}`);
+        break;
       case "/messages":
       case "/home":
       case "/desktop":
-      case "/terminal":
       case "/reading":
       case "/video":
       case "/games":
@@ -1157,6 +1164,52 @@ export class HosakaShell {
     const sub = arg.trim().toLowerCase();
     if (sub === "open" || sub === "app" || sub === "panel") {
       this.switchToPanel("diagnostics");
+      return;
+    }
+
+    if (sub === "" && arg.trim() === "") {
+      // bare /device opens the compact overlay; the legacy terminal probe
+      // still runs behind `/device probe` so agents that expected the old
+      // flow can opt-in.
+      executeHosakaUiCommand({ id: "ui.show_diagnostics" });
+      this.writeln(`  ${GRAY}opened diagnostics overlay.${R} ${DARK_GRAY}try ${CYAN}/device check mic${DARK_GRAY}, ${CYAN}cam${DARK_GRAY}, or ${CYAN}spk${DARK_GRAY}.${R}`);
+      return;
+    }
+
+    const parts = arg.trim().split(/\s+/).filter(Boolean);
+    if (parts[0] === "check") {
+      const target = (parts[1] ?? "").toLowerCase();
+      const map: Record<string, { kind: "mic" | "cam" | "spk"; label: string }> = {
+        mic: { kind: "mic", label: "microphone" },
+        microphone: { kind: "mic", label: "microphone" },
+        audio: { kind: "mic", label: "microphone" },
+        cam: { kind: "cam", label: "camera" },
+        camera: { kind: "cam", label: "camera" },
+        video: { kind: "cam", label: "camera" },
+        spk: { kind: "spk", label: "speaker" },
+        speaker: { kind: "spk", label: "speaker" },
+        out: { kind: "spk", label: "speaker" },
+      };
+      const resolved = map[target];
+      if (!resolved) {
+        this.writeln(`  ${GRAY}usage: /device check <mic|cam|spk>${R}`);
+        return;
+      }
+      executeHosakaUiCommand({ id: "ui.device_check", kind: resolved.kind });
+      this.writeln(`  ${GRAY}opened ${AMBER}${resolved.label}${R}${GRAY} check overlay.${R}`);
+      this.writeln(`  ${DARK_GRAY}live meter / preview runs above the terminal. ${CYAN}/terminal${DARK_GRAY} closes non-pinned overlays.${R}`);
+      return;
+    }
+
+    if (parts[0] === "list" || parts[0] === "ls") {
+      const devices = await this.enumerateBrowserDevices();
+      this.writeBrowserDeviceSummary(devices);
+      return;
+    }
+
+    if (parts[0] !== "probe" && parts[0] !== undefined) {
+      this.writeln(`  ${GRAY}unknown /device subcommand:${R} ${AMBER}${parts[0]}${R}`);
+      this.writeln(`  ${GRAY}try:${R} ${CYAN}/device${R}${GRAY}, ${CYAN}/device check mic|cam|spk${R}${GRAY}, ${CYAN}/device list${R}${GRAY}, or ${CYAN}/device probe${R}${GRAY}.${R}`);
       return;
     }
 
@@ -1749,6 +1802,16 @@ export class HosakaShell {
     const captions = i18next.t("orbCaptions", { ns: "shell", returnObjects: true }) as unknown as string[];
     this.writeln(`  ${GRAY}${pickRandom(captions)}${R}`);
     this.writeln("");
+  }
+
+  private handleOrb(arg: string): void {
+    const sub = arg.trim().toLowerCase();
+    if (sub === "art" || sub === "show") {
+      this.orb();
+      return;
+    }
+    executeHosakaUiCommand({ id: "ui.toggle_orb" });
+    this.writeln(`  ${GRAY}opened voice orb.${R} ${DARK_GRAY}try ${CYAN}/orb art${DARK_GRAY} for the lore glyph.${R}`);
   }
 
   private lore(): void {

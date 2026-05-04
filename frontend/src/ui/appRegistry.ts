@@ -165,6 +165,7 @@ export const APP_REGISTRY: AppDefinition[] = [
     glyph: "›_",
     aliases: ["terminal", "shell", "console"],
     family: "core",
+    closable: false,
     showInLauncher: true,
     preferredHost: "electron",
     fallbackHosts: ["web"],

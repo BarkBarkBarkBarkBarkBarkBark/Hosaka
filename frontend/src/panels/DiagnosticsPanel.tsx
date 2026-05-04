@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Disclosure } from "../components/Disclosure";
-import { getPreferredCamConstraints, getPreferredMicConstraints } from "./DevicePanel";
+import {
+  DiagnosticJsonBlock,
+  statusClass,
+  useAudioMeter,
+  useBrowserDevices,
+  useWebcamPreview,
+} from "./diagPrimitives";
 
 type DiagnosticsPanelProps = {
   active?: boolean;
@@ -15,171 +21,6 @@ type DiagSnapshot = {
   network?: Record<string, any>;
   peripherals?: Record<string, any>;
 };
-
-type BrowserDevice = {
-  deviceId: string;
-  kind: MediaDeviceKind;
-  label: string;
-};
-
-type CamState = "off" | "starting" | "on" | "error";
-
-function useBrowserDevices(active: boolean) {
-  const [devices, setDevices] = useState<BrowserDevice[]>([]);
-  const [permission, setPermission] = useState<"unknown" | "granted" | "blocked">("unknown");
-
-  const refresh = useCallback(async () => {
-    if (!navigator.mediaDevices?.enumerateDevices) return;
-    const raw = await navigator.mediaDevices.enumerateDevices();
-    setDevices(raw.map((device) => ({
-      deviceId: device.deviceId,
-      kind: device.kind,
-      label: device.label || `${device.kind} (${device.deviceId.slice(0, 8)}…)`,
-    })));
-  }, []);
-
-  const requestLabels = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-      stream.getTracks().forEach((track) => track.stop());
-      setPermission("granted");
-    } catch {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach((track) => track.stop());
-        setPermission("granted");
-      } catch {
-        setPermission("blocked");
-      }
-    }
-    await refresh();
-  }, [refresh]);
-
-  useEffect(() => {
-    if (!active || !navigator.mediaDevices) return;
-    void refresh();
-    navigator.mediaDevices.addEventListener?.("devicechange", refresh);
-    return () => navigator.mediaDevices.removeEventListener?.("devicechange", refresh);
-  }, [active, refresh]);
-
-  return { devices, permission, refresh, requestLabels };
-}
-
-function useAudioMeter(active: boolean) {
-  const [level, setLevel] = useState(0);
-  const [state, setState] = useState<"off" | "starting" | "on" | "error">("off");
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!active) {
-      setLevel(0);
-      setState("off");
-      return;
-    }
-    let cancelled = false;
-    let raf = 0;
-    let stream: MediaStream | null = null;
-    let ctx: AudioContext | null = null;
-    setState("starting");
-    setError(null);
-
-    (async () => {
-      try {
-        const AudioCtx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-        if (!AudioCtx) throw new Error("AudioContext unavailable");
-        stream = await navigator.mediaDevices.getUserMedia({ audio: getPreferredMicConstraints(), video: false });
-        if (cancelled) return;
-        ctx = new AudioCtx();
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 512;
-        const source = ctx.createMediaStreamSource(stream);
-        source.connect(analyser);
-        const buf = new Float32Array(analyser.fftSize);
-        let smooth = 0;
-        setState("on");
-        const tick = () => {
-          analyser.getFloatTimeDomainData(buf);
-          let sum = 0;
-          for (const sample of buf) sum += sample * sample;
-          const rms = Math.sqrt(sum / buf.length);
-          smooth = smooth * 0.82 + Math.min(1, rms * 8) * 0.18;
-          setLevel(smooth);
-          raf = requestAnimationFrame(tick);
-        };
-        tick();
-      } catch (exc) {
-        if (cancelled) return;
-        setError(String(exc));
-        setState("error");
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      if (raf) cancelAnimationFrame(raf);
-      stream?.getTracks().forEach((track) => track.stop());
-      void ctx?.close().catch(() => undefined);
-    };
-  }, [active]);
-
-  return { level, state, error };
-}
-
-function useWebcamPreview(active: boolean) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [state, setState] = useState<CamState>("off");
-  const [error, setError] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
-
-  useEffect(() => {
-    if (!active) {
-      setState("off");
-      return;
-    }
-    let cancelled = false;
-    let stream: MediaStream | null = null;
-    setState("starting");
-    setError(null);
-    (async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 640 }, height: { ideal: 480 }, ...getPreferredCamConstraints() },
-          audio: false,
-        });
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => undefined);
-        }
-        setState("on");
-      } catch (exc) {
-        if (!cancelled) {
-          setError(String(exc));
-          setState("error");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-      stream?.getTracks().forEach((track) => track.stop());
-    };
-  }, [active, tick]);
-
-  return { videoRef, state, error, retry: () => setTick((value) => value + 1) };
-}
-
-function statusClass(value: unknown): string {
-  if (value === true || value === "console" || value === "on") return "ok";
-  if (value === false || value === "error") return "bad";
-  return "warn";
-}
-
-function JsonBlock({ value }: { value: unknown }) {
-  return <pre className="diag-json">{JSON.stringify(value ?? {}, null, 2)}</pre>;
-}
 
 function CountBadge({ label, value }: { label: string; value: number }) {
   return <span className="diag-badge"><strong>{value}</strong> {label}</span>;
@@ -303,8 +144,8 @@ export function DiagnosticsPanel({ active = true }: DiagnosticsPanelProps) {
           <section className="diag-test-grid">
             <div className="diag-test-card">
               <div className="diag-test-title">audio meter</div>
-              <div className="diag-meter diag-meter--audio"><span style={{ width: `${Math.round(meter.level * 100)}%` }} /></div>
-              <div className="diag-small">{meter.state}{meter.error ? ` · ${meter.error}` : ""}</div>
+              <div className="diag-meter diag-meter--audio"><span style={{ width: `${Math.round(meter.sample.level * 100)}%` }} /></div>
+              <div className="diag-small">{meter.sample.state}{meter.sample.error ? ` · ${meter.sample.error}` : ""}</div>
               <button type="button" className="secondary-btn" onClick={() => setAudioTest((value) => !value)}>
                 {audioTest ? "stop mic test" : "start mic test"}
               </button>
@@ -333,15 +174,15 @@ export function DiagnosticsPanel({ active = true }: DiagnosticsPanelProps) {
         </Disclosure>
 
         <Disclosure label="server peripherals" level={1}>
-          <JsonBlock value={peripherals} />
+          <DiagnosticJsonBlock value={peripherals} />
         </Disclosure>
 
         <Disclosure label="network details" level={1}>
-          <JsonBlock value={network} />
+          <DiagnosticJsonBlock value={network} />
         </Disclosure>
 
         <Disclosure label="system details" level={1}>
-          <JsonBlock value={system} />
+          <DiagnosticJsonBlock value={system} />
         </Disclosure>
       </div>
     </div>

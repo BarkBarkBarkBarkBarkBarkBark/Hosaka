@@ -21,17 +21,10 @@ export type WindowsDoc = {
 };
 
 export const INITIAL_WINDOWS_DOC: WindowsDoc = {
-  activeAppId: "home",
-  chromeCollapsed: false,
-  openAppIds: ["home", "terminal"],
+  activeAppId: "terminal",
+  chromeCollapsed: true,
+  openAppIds: ["terminal"],
   windows: {
-    home: {
-      appId: "home",
-      background: true,
-      lastOpenedAt: 0,
-      lastFocusedAt: 0,
-      openCount: 1,
-    },
     terminal: {
       appId: "terminal",
       background: false,

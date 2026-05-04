@@ -19,6 +19,22 @@ export function TerminalPanel({ active }: Props) {
 
   useEffect(() => {
     if (!hostRef.current) return;
+    const host = hostRef.current;
+
+    // #region agent log
+    const dbg = (window as unknown as { __hosakaDbg?: (loc: string, msg: string, data?: Record<string, unknown>) => void }).__hosakaDbg;
+    dbg?.("TerminalPanel.tsx:mount", "TerminalPanel useEffect entry", {
+      active,
+      hostW: host.offsetWidth,
+      hostH: host.offsetHeight,
+      parentW: host.parentElement?.offsetWidth,
+      parentH: host.parentElement?.offsetHeight,
+      grandparentHidden: host.parentElement?.parentElement?.hidden,
+      grandparentDisplay: host.parentElement?.parentElement
+        ? getComputedStyle(host.parentElement.parentElement).display
+        : null,
+    });
+    // #endregion
 
     // Determine font size from user preference; fall back to narrow-screen
     // auto-scaling so phones in portrait still fit the banner without wrapping.
@@ -62,19 +78,108 @@ export function TerminalPanel({ active }: Props) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon());
-    term.open(hostRef.current);
-    fit.fit();
-
-    const shell = new HosakaShell(term);
-    shell.start();
 
     termRef.current = term;
     fitRef.current = fit;
-    shellRef.current = shell;
+
+    // Defer term.open() until the host actually has non-zero dimensions.
+    // Otherwise xterm bakes in a 1×1-ish grid that fit() can't fully recover
+    // (the user just sees an unusable black square). This happens whenever
+    // TerminalPanel mounts while the panel is hidden (display:none) — for
+    // example when stale localStorage keeps activeAppId on a non-terminal
+    // surface across the new build's terminal-first boot.
+    let opened = false;
+    let shell: HosakaShell | null = null;
+
+    const ensureOpened = () => {
+      if (opened) return;
+      if (host.offsetWidth === 0 || host.offsetHeight === 0) return;
+      term.open(host);
+      let fitErr: string | null = null;
+      try { fit.fit(); } catch (err) { fitErr = err instanceof Error ? err.message : String(err); }
+      opened = true;
+      shell = new HosakaShell(term);
+      shellRef.current = shell;
+      shell.start();
+      // Defend against xterm capturing an intermediate small layout: re-fit
+      // on the next frame after the first open so any late layout work has
+      // settled before we lock in cols/rows.
+      requestAnimationFrame(() => {
+        try { fit.fit(); } catch { /* ignore */ }
+        // #region agent log
+        dbg?.("TerminalPanel.tsx:raf-refit", "post-open raf fit", {
+          hostW: host.offsetWidth,
+          hostH: host.offsetHeight,
+          cols: term.cols,
+          rows: term.rows,
+        });
+        // #endregion
+      });
+      // #region agent log
+      dbg?.("TerminalPanel.tsx:opened", "deferred xterm open completed", {
+        hostW: host.offsetWidth,
+        hostH: host.offsetHeight,
+        cols: term.cols,
+        rows: term.rows,
+        fitErr,
+      });
+      // #endregion
+    };
+
+    ensureOpened();
+
+    // Watch the host element so when it transitions from 0×0 (hidden panel)
+    // to real dimensions, we open xterm or refit without losing the
+    // already-mounted shell instance.
+    let roTickCount = 0;
+    const ro = new ResizeObserver(() => {
+      roTickCount += 1;
+      if (!opened) {
+        // #region agent log
+        dbg?.("TerminalPanel.tsx:ro-pre-open", "RO tick before xterm open", {
+          tick: roTickCount,
+          hostW: host.offsetWidth,
+          hostH: host.offsetHeight,
+        });
+        // #endregion
+        ensureOpened();
+        return;
+      }
+      try { fit.fit(); } catch { /* ignore layout-thrash */ }
+      // #region agent log
+      dbg?.("TerminalPanel.tsx:ro-post-open", "RO tick after xterm open", {
+        tick: roTickCount,
+        hostW: host.offsetWidth,
+        hostH: host.offsetHeight,
+        cols: term.cols,
+        rows: term.rows,
+      });
+      // #endregion
+    });
+    ro.observe(host);
+
+    // Delayed snapshot: tells us whether host dimensions actually grew past
+    // the initial small layout (vs xterm just capturing 22px and never
+    // reflowing). 1.5 s is well past Suspense + chunk-load + first paint.
+    const delayed = window.setTimeout(() => {
+      const xterm = host.querySelector(".xterm") as HTMLElement | null;
+      // #region agent log
+      dbg?.("TerminalPanel.tsx:delayed", "1.5s post-mount snapshot", {
+        opened,
+        hostW: host.offsetWidth,
+        hostH: host.offsetHeight,
+        xtermW: xterm?.offsetWidth ?? null,
+        xtermH: xterm?.offsetHeight ?? null,
+        cols: term.cols,
+        rows: term.rows,
+        hostCSS: getComputedStyle(host).cssText.slice(0, 280),
+      });
+      // #endregion
+    }, 1500);
 
     const onResize = () => {
       try {
-        fit.fit();
+        if (opened) fit.fit();
       } catch {
         // ignore layout-thrash errors
       }
@@ -83,15 +188,17 @@ export function TerminalPanel({ active }: Props) {
       const isNarrowNow = window.innerWidth < 500;
       const size = FONT_SIZE_TERMINAL[loadUiConfig().fontSize];
       term.options.fontSize = isNarrowNow ? Math.min(size, 12) : size;
-      try { fit.fit(); } catch { /* ignore */ }
+      try { if (opened) fit.fit(); } catch { /* ignore */ }
     };
     window.addEventListener("resize", onResize);
     window.addEventListener("hosaka:ui-changed", onUiChanged);
 
     return () => {
+      window.clearTimeout(delayed);
+      ro.disconnect();
       window.removeEventListener("resize", onResize);
       window.removeEventListener("hosaka:ui-changed", onUiChanged);
-      shell.dispose();
+      shell?.dispose();
       term.dispose();
     };
   }, []);
