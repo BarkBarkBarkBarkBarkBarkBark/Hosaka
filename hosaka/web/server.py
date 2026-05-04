@@ -173,7 +173,7 @@ def _picoclaw_readiness() -> tuple[bool, str]:
         )
     try:
         result = subprocess.run(
-            [PICOCLAW_BIN, "--no-color", "status"],
+            [PICOCLAW_BIN, "status"],
             env=_picoclaw_env(),
             capture_output=True,
             text=True,
@@ -186,11 +186,18 @@ def _picoclaw_readiness() -> tuple[bool, str]:
 
     status = result.stdout + result.stderr
     if result.returncode != 0:
+        detail = _strip_picoclaw_banner(status).strip()
+        if detail:
+            return False, f"picoclaw status failed: {detail}. Run `hosaka configure picoclaw --no-onboard`, then restart `hosaka dev -fresh`."
         return False, "picoclaw status failed. Run `hosaka configure picoclaw --no-onboard`, then restart `hosaka dev -fresh`."
     if "Config:" not in status or "✓" not in status:
         return False, "picoclaw config is missing. Run `/configure picoclaw` or `hosaka configure picoclaw`."
-    if not re.search(r"OpenAI API:\s*(✓|set)", status, re.IGNORECASE):
+    if not re.search(r"Model:\s*\S+", status, re.IGNORECASE):
+        return False, "picoclaw has no default model. Run `/configure picoclaw` or `hosaka configure picoclaw`."
+    if re.search(r"OpenAI API:\s*(missing|not set|✗)", status, re.IGNORECASE) and not os.environ.get("OPENAI_API_KEY"):
         return False, "picoclaw has no OpenAI key. Add it in `/settings`, then run `/configure picoclaw`."
+    if not os.environ.get("OPENAI_API_KEY") and "OpenAI API:" not in status:
+        return False, "Hosaka has no OpenAI key in its service env. Add it in `/settings`, then run `/configure picoclaw`."
     return True, ""
 
 
