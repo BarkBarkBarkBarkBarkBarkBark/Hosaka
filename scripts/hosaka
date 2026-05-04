@@ -805,6 +805,11 @@ cmd_deploy() {
         --exclude='__pycache__/' \
         "$REPO_ROOT/scripts/" "$DEPLOY_ROOT/scripts/"
     fi
+    if [[ -d "$REPO_ROOT/kiosk" ]]; then
+      sudo rsync -a --delete \
+        --exclude='node_modules/' \
+        "$REPO_ROOT/kiosk/" "$DEPLOY_ROOT/kiosk/"
+    fi
     if [[ -f "$REPO_ROOT/README.md" ]]; then
       sudo cp "$REPO_ROOT/README.md" "$DEPLOY_ROOT/README.md"
     fi
