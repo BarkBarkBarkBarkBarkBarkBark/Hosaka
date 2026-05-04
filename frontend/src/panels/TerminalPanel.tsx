@@ -11,11 +11,17 @@ import { loadUiConfig, FONT_SIZE_TERMINAL } from "../uiConfig";
 
 type Props = { active: boolean };
 
+const MIN_TERMINAL_OPEN_WIDTH = 160;
+const MIN_TERMINAL_OPEN_HEIGHT = 80;
+
 export function TerminalPanel({ active }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const shellRef = useRef<HosakaShell | null>(null);
+  const openOrFitRef = useRef<() => void>(() => undefined);
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -91,9 +97,31 @@ export function TerminalPanel({ active }: Props) {
     let opened = false;
     let shell: HosakaShell | null = null;
 
+    const fitAndFocus = () => {
+      try { fit.fit(); } catch { /* ignore layout-thrash */ }
+      if (activeRef.current) {
+        try { term.focus(); } catch { /* ignore focus errors */ }
+      }
+    };
+
     const ensureOpened = () => {
-      if (opened) return;
-      if (host.offsetWidth === 0 || host.offsetHeight === 0) return;
+      const hostW = host.offsetWidth;
+      const hostH = host.offsetHeight;
+      if (opened) {
+        fitAndFocus();
+        return;
+      }
+      if (hostW < MIN_TERMINAL_OPEN_WIDTH || hostH < MIN_TERMINAL_OPEN_HEIGHT) {
+        // #region agent log
+        dbg?.("TerminalPanel.tsx:open-deferred", "host too small for xterm open", {
+          hostW,
+          hostH,
+          minW: MIN_TERMINAL_OPEN_WIDTH,
+          minH: MIN_TERMINAL_OPEN_HEIGHT,
+        });
+        // #endregion
+        return;
+      }
       term.open(host);
       let fitErr: string | null = null;
       try { fit.fit(); } catch (err) { fitErr = err instanceof Error ? err.message : String(err); }
@@ -105,7 +133,7 @@ export function TerminalPanel({ active }: Props) {
       // on the next frame after the first open so any late layout work has
       // settled before we lock in cols/rows.
       requestAnimationFrame(() => {
-        try { fit.fit(); } catch { /* ignore */ }
+        fitAndFocus();
         // #region agent log
         dbg?.("TerminalPanel.tsx:raf-refit", "post-open raf fit", {
           hostW: host.offsetWidth,
@@ -126,6 +154,8 @@ export function TerminalPanel({ active }: Props) {
       // #endregion
     };
 
+    openOrFitRef.current = ensureOpened;
+
     ensureOpened();
 
     // Watch the host element so when it transitions from 0×0 (hidden panel)
@@ -145,7 +175,7 @@ export function TerminalPanel({ active }: Props) {
         ensureOpened();
         return;
       }
-      try { fit.fit(); } catch { /* ignore layout-thrash */ }
+      fitAndFocus();
       // #region agent log
       dbg?.("TerminalPanel.tsx:ro-post-open", "RO tick after xterm open", {
         tick: roTickCount,
@@ -178,17 +208,13 @@ export function TerminalPanel({ active }: Props) {
     }, 1500);
 
     const onResize = () => {
-      try {
-        if (opened) fit.fit();
-      } catch {
-        // ignore layout-thrash errors
-      }
+      ensureOpened();
     };
     const onUiChanged = () => {
       const isNarrowNow = window.innerWidth < 500;
       const size = FONT_SIZE_TERMINAL[loadUiConfig().fontSize];
       term.options.fontSize = isNarrowNow ? Math.min(size, 12) : size;
-      try { if (opened) fit.fit(); } catch { /* ignore */ }
+      ensureOpened();
     };
     window.addEventListener("resize", onResize);
     window.addEventListener("hosaka:ui-changed", onUiChanged);
@@ -198,22 +224,29 @@ export function TerminalPanel({ active }: Props) {
       ro.disconnect();
       window.removeEventListener("resize", onResize);
       window.removeEventListener("hosaka:ui-changed", onUiChanged);
+      openOrFitRef.current = () => undefined;
       shell?.dispose();
       term.dispose();
     };
   }, []);
 
   useEffect(() => {
-    if (active && fitRef.current) {
-      requestAnimationFrame(() => {
-        try {
-          fitRef.current?.fit();
-          termRef.current?.focus();
-        } catch {
-          // no-op
-        }
-      });
-    }
+    if (!active) return;
+    let cancelled = false;
+    let attempts = 0;
+    const retryOpenOrFit = () => {
+      if (cancelled) return;
+      openOrFitRef.current();
+      const host = hostRef.current;
+      const term = termRef.current;
+      const collapsed = !term || term.rows <= 1 || (host?.offsetHeight ?? 0) < MIN_TERMINAL_OPEN_HEIGHT;
+      attempts += 1;
+      if (collapsed && attempts < 16) {
+        window.setTimeout(() => requestAnimationFrame(retryOpenOrFit), 60);
+      }
+    };
+    requestAnimationFrame(retryOpenOrFit);
+    return () => { cancelled = true; };
   }, [active]);
 
   return (

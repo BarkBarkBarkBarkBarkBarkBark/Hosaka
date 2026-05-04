@@ -272,6 +272,18 @@ html, body, #root {
   overflow: auto;
 }
 
+.hosaka-panel.is-active {
+  visibility: visible;
+  pointer-events: auto;
+  z-index: 1;
+}
+
+.hosaka-panel.is-inactive {
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
 .hosaka-panel[hidden] {
   display: none;
 }
@@ -1523,6 +1535,10 @@ html, body, #root {
 
 .hosaka-shell--chrome-collapsed .hosaka-topbar {
   padding: 0 12px;
+}
+
+.hosaka-shell--chrome-collapsed {
+  grid-template-rows: var(--top-h) 1fr;
 }
 
 .hosaka-shell--chrome-collapsed .hosaka-launchbar {

@@ -592,11 +592,19 @@ export function App() {
 
       <main className="hosaka-stage">
         <Suspense fallback={null}>
-          {openAppIds.map((appId) => (
-            <div key={appId} className="hosaka-panel" hidden={activeAppId !== appId}>
-              {renderApp(appId)}
-            </div>
-          ))}
+          {openAppIds.map((appId) => {
+            const isActive = activeAppId === appId;
+            const keepMeasurableWhileInactive = appId === "terminal";
+            return (
+              <div
+                key={appId}
+                className={`hosaka-panel ${isActive ? "is-active" : "is-inactive"}`}
+                hidden={!keepMeasurableWhileInactive && !isActive}
+              >
+                {renderApp(appId)}
+              </div>
+            );
+          })}
         </Suspense>
       </main>
 
