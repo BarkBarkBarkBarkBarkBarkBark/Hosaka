@@ -819,7 +819,11 @@ cmd_deploy() {
   # The webserver serves the new hashed SPA assets, but Electron keeps the
   # already-loaded page alive until the kiosk process reloads. Restart it so
   # deploys actually reach the touchscreen without a manual reboot.
-  if systemctl is-enabled --quiet "$KIOSK_UNIT" 2>/dev/null; then
+  if pgrep -u "$(id -un)" -x openbox >/dev/null 2>&1; then
+    pkill -u "$(id -un)" -f "$DEPLOY_ROOT/kiosk/node_modules/.bin/electron" 2>/dev/null || true
+    pkill -u "$(id -un)" -f "$DEPLOY_ROOT/kiosk/node_modules/electron/dist/electron" 2>/dev/null || true
+    ok "restarted visible kiosk electron (openbox supervisor will relaunch)"
+  elif systemctl is-enabled --quiet "$KIOSK_UNIT" 2>/dev/null; then
     sudo systemctl restart "$KIOSK_UNIT"
     ok "restarted $KIOSK_UNIT"
   fi

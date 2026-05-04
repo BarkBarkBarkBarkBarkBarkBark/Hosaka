@@ -4037,6 +4037,9 @@ html, body, #root {
   .hosaka-shell--stage-immersive {
     grid-template-rows: var(--top-h) 0 1fr 0;
   }
+  .hosaka-shell--stage-immersive.hosaka-shell--chrome-collapsed {
+    grid-template-rows: var(--top-h) 1fr;
+  }
   .hosaka-shell--stage-immersive .hosaka-footer { display: none; }
 }
 
