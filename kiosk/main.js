@@ -650,6 +650,18 @@ function focusWindow(win) {
   win.focus();
 }
 
+function loadKioskUrl(win, url) {
+  // The Pi kiosk keeps Chromium's HTTP cache across Electron restarts. After a
+  // local deploy, that can leave the window pointed at an old index.html and
+  // stale hashed CSS/JS assets. Clear the default session cache before loading
+  // the SPA so every kiosk restart observes the current FastAPI-served build.
+  win.webContents.session.clearCache()
+    .catch((error) => console.warn("[kiosk] failed to clear cache before load", error))
+    .finally(() => {
+      if (!win.isDestroyed()) win.loadURL(url);
+    });
+}
+
 const gotLock = app.requestSingleInstanceLock({ hosakaKioskUrl: START_URL });
 if (!gotLock) {
   app.quit();
@@ -660,7 +672,7 @@ if (!gotLock) {
     if (win) {
       if (targetUrl && !sameUrl(targetUrl, currentStartUrl)) {
         currentStartUrl = targetUrl;
-        win.loadURL(targetUrl);
+        loadKioskUrl(win, targetUrl);
       }
       focusWindow(win);
     } else if (targetUrl) {
@@ -697,7 +709,7 @@ function createWindow(startUrl = currentStartUrl) {
   });
 
   win.once("ready-to-show", () => win.show());
-  win.loadURL(startUrl);
+  loadKioskUrl(win, startUrl);
   if (DEVTOOLS) win.webContents.openDevTools({ mode: "detach" });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
