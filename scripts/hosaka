@@ -809,6 +809,10 @@ cmd_deploy() {
       sudo rsync -a --delete \
         --exclude='node_modules/' \
         "$REPO_ROOT/kiosk/" "$DEPLOY_ROOT/kiosk/"
+      if [[ -f "$DEPLOY_ROOT/kiosk/package.json" ]]; then
+        note "refreshing kiosk npm deps in $(c_cyan "$DEPLOY_ROOT/kiosk")"
+        ( cd "$DEPLOY_ROOT/kiosk" && npm install --no-fund --no-audit )
+      fi
     fi
     if [[ -f "$REPO_ROOT/README.md" ]]; then
       sudo cp "$REPO_ROOT/README.md" "$DEPLOY_ROOT/README.md"
