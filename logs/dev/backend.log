@@ -1,3 +1,6 @@
 Hosaka web setup available at: http://192.168.1.213:8421Hosaka web setup available at: http://192.168.1.213:8421
 
 INFO hosaka.web: Hosaka web server starting. UI dir: /Users/marco/Cursor_Folder/Cursor_Codespace/hosaka_console/Hosaka/hosaka/web/ui (exists=True)
+INFO httpx: HTTP Request: POST https://api.openai.com/v1/realtime/client_secrets "HTTP/1.1 200 OK"
+INFO hosaka.web: agent ws message sid=a08d1d16-87a4-4bb0-a88f-bb8a44e951d7 chars=21
+INFO hosaka.web: agent ws reply sid=a08d1d16-87a4-4bb0-a88f-bb8a44e951d7 chars=54

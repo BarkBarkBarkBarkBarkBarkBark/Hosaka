@@ -65,6 +65,7 @@ BOOT_MARKER="/boot/firmware/hosaka-build-mode"
 KIOSK_AUTOSTART="${HOME:-/home/operator}/.config/openbox/autostart"
 
 WEB_UNIT="hosaka-webserver.service"
+KIOSK_UNIT="hosaka-kiosk.service"
 PICO_UNIT="picoclaw-gateway.service"
 
 # Default session key used by `hosaka chat` / `hosaka message`. Override with
@@ -814,6 +815,13 @@ cmd_deploy() {
   if systemctl is-enabled --quiet "$WEB_UNIT" 2>/dev/null; then
     sudo systemctl restart "$WEB_UNIT"
     ok "restarted $WEB_UNIT"
+  fi
+  # The webserver serves the new hashed SPA assets, but Electron keeps the
+  # already-loaded page alive until the kiosk process reloads. Restart it so
+  # deploys actually reach the touchscreen without a manual reboot.
+  if systemctl is-enabled --quiet "$KIOSK_UNIT" 2>/dev/null; then
+    sudo systemctl restart "$KIOSK_UNIT"
+    ok "restarted $KIOSK_UNIT"
   fi
   # Voice daemon picks up new voice_api.py / tools.py / realtime_client.py
   # too. Restart it when it's enabled so the daemon side stays in sync.
