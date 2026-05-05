@@ -18,7 +18,6 @@ export type DeviceCheckKind = "mic" | "cam" | "spk";
 
 export type HosakaUiCommand =
   | { id: "ui.open_panel"; target: string }
-  | { id: "ui.open_settings" }
   | { id: "ui.show_document"; slug: string }
   | { id: "ui.todo_add"; text: string; revealPanel?: boolean }
   | { id: "ui.todo_list" }
@@ -307,13 +306,6 @@ export function executeHosakaUiCommand(command: HosakaUiCommand): HosakaUiResult
         mode: "shipping",
       };
     }
-    case "ui.open_settings":
-      return {
-        ok: true,
-        command: command.id,
-        dispatched: [dispatch("hosaka:open-settings")],
-        mode: "compat",
-      };
     case "ui.show_document": {
       const slug = command.slug.trim();
       if (!slug) {

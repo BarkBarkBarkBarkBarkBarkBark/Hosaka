@@ -798,9 +798,6 @@ export class HosakaShell {
       case "/agent":
         await this.handleAgent(arg);
         break;
-      case "/settings":
-        this.openSettings();
-        break;
       case "/configure":
         await this.handleConfigure(arg);
         break;
@@ -983,15 +980,6 @@ export class HosakaShell {
     this.writeln(`  ${DARK_GRAY}${st("magic.slow")} ${VIOLET}${st("magic.slowly")}${R}${DARK_GRAY} ${st("magic.slowSuffix")}${R}`);
     this.writeln(`  ${DARK_GRAY}${st("magic.closeHint")}${R} ${CYAN}${st("magic.closeCmd")}${R}${DARK_GRAY}.${R}`);
     this.writeln("");
-  }
-
-  private openSettings(): void {
-    try {
-      executeHosakaUiCommand({ id: "ui.open_settings" });
-      this.writeln(`  ${GRAY}${st("settingsCmd.opened")}${R}`);
-    } catch {
-      this.writeln(`  ${GRAY}${st("settingsCmd.notAvailable")}${R}`);
-    }
   }
 
   private async askAgent(userPrompt: string, cfg: AgentConfig): Promise<void> {

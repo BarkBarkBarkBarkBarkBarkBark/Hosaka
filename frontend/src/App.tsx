@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react
 import { useTranslation } from "./i18n";
 import { PlantBadge } from "./components/PlantBadge";
 import { SignalBadge } from "./components/SignalBadge";
-import { SettingsDrawer } from "./components/SettingsDrawer";
 import { LangPicker } from "./components/LangPicker";
 import { ModeSwitch } from "./components/ModeSwitch";
 import { HosakaMenu } from "./components/HosakaMenu";
@@ -93,10 +92,6 @@ export function App() {
   const { t } = useTranslation("ui");
   useShortcuts();
   const [bootMessage, setBootMessage] = useState(t("boot.waking"));
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  // Server-driven via /api/health: local Python returns true; hosted Vercel edge
-  // returns false; missing endpoint fails closed (no gear, no web tab).
-  const [settingsEnabled, setSettingsEnabled] = useState(false);
   const [webPanelEnabled, setWebPanelEnabled] = useState(false);
   const [nodesEnabled, setNodesEnabled] = useState(false);
   const [syncEnabled, setSyncEnabled] = useState(false);
@@ -112,7 +107,6 @@ export function App() {
       .then((r) => r.json())
       .then(
         (d: {
-          settings_enabled?: boolean;
           web_panel_enabled?: boolean;
           nodes_enabled?: boolean;
           nodes_ui_enabled?: boolean;
@@ -120,7 +114,6 @@ export function App() {
           inbox_enabled?: boolean;
         }) => {
           const nextNodesEnabled = d.nodes_ui_enabled ?? d.nodes_enabled ?? false;
-          setSettingsEnabled(d.settings_enabled ?? false);
           setWebPanelEnabled(d.web_panel_enabled ?? false);
           setNodesEnabled(nextNodesEnabled);
           setSyncEnabled(d.sync_enabled ?? nextNodesEnabled);
@@ -128,7 +121,6 @@ export function App() {
         },
       )
       .catch(() => {
-        setSettingsEnabled(false);
         setWebPanelEnabled(false);
         setNodesEnabled(false);
         setSyncEnabled(false);
@@ -308,7 +300,6 @@ export function App() {
   }, [t]);
 
   useEffect(() => {
-    const onSettings = () => setSettingsOpen(true);
     const onTab = (e: Event) => {
       const detail = (e as CustomEvent<string | { appId?: string; target?: string }>).detail;
       const target = typeof detail === "string"
@@ -331,7 +322,6 @@ export function App() {
       openApp("terminal");
       window.dispatchEvent(new CustomEvent("hosaka:overlay-close-all", { detail: { keepPinned: true } }));
     };
-    window.addEventListener("hosaka:open-settings", onSettings);
     window.addEventListener("hosaka:open-tab", onTab as EventListener);
     window.addEventListener("hosaka:open-app", onTab as EventListener);
     window.addEventListener("hosaka:close-app", onClose as EventListener);
@@ -339,7 +329,6 @@ export function App() {
     window.addEventListener("hosaka:toggle-chrome", onToggleChrome);
     window.addEventListener("hosaka:focus-terminal", onFocusTerminal);
     return () => {
-      window.removeEventListener("hosaka:open-settings", onSettings);
       window.removeEventListener("hosaka:open-tab", onTab as EventListener);
       window.removeEventListener("hosaka:open-app", onTab as EventListener);
       window.removeEventListener("hosaka:close-app", onClose as EventListener);
@@ -514,16 +503,6 @@ export function App() {
           >
             {windowDoc.chromeCollapsed ? "⌄" : "⌃"}
           </button>
-          {settingsEnabled && (
-            <button
-              className="icon-btn"
-              aria-label={t("settings")}
-              title={t("settings")}
-              onClick={() => setSettingsOpen(true)}
-            >
-              ⚙
-            </button>
-          )}
         </div>
       </header>
 
@@ -534,10 +513,8 @@ export function App() {
         launcherApps={launcherApps}
         openAppIds={openAppIds}
         activeAppId={activeAppId}
-        settingsEnabled={settingsEnabled}
         onSetActive={setActiveApp}
         onCloseApp={closeApp}
-        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       <nav className="hosaka-dock">
@@ -621,10 +598,6 @@ export function App() {
       </main>
 
       <CmdLine />
-
-      {settingsEnabled && (
-        <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      )}
 
       <footer className="hosaka-footer">
         <span className="hosaka-footer-dim">{t("footer")} · {openAppIds.length} windows</span>

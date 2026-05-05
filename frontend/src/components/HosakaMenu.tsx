@@ -37,10 +37,8 @@ export interface HosakaMenuProps {
   launcherApps: AppDefinition[];
   openAppIds: AppId[];
   activeAppId: AppId;
-  settingsEnabled: boolean;
   onSetActive: (appId: AppId) => void;
   onCloseApp: (appId: AppId) => void;
-  onOpenSettings: () => void;
 }
 
 interface WifiNet {
@@ -77,10 +75,8 @@ export function HosakaMenu({
   launcherApps,
   openAppIds,
   activeAppId,
-  settingsEnabled,
   onSetActive,
   onCloseApp,
-  onOpenSettings,
 }: HosakaMenuProps) {
   const ref = useRef<HTMLDivElement | null>(null);
 
@@ -374,15 +370,6 @@ export function HosakaMenu({
           </div>
         </Disclosure>
 
-        {settingsEnabled && (
-          <div className="hosaka-menu-footer">
-            <button
-              type="button"
-              className="hosaka-menu-settings"
-              onClick={() => { onOpenSettings(); onClose(); }}
-            >⚙ advanced settings</button>
-          </div>
-        )}
       </div>
     </div>
   );
