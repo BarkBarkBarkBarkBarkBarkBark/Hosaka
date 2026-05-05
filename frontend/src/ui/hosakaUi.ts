@@ -29,6 +29,7 @@ export type HosakaUiCommand =
   | { id: "ui.open_surface"; target: string; preferredContainer?: "auto" | "tab" | "window" | "overlay" }
   | { id: "ui.close_surface"; target: string }
   | { id: "ui.stage_terminal_command"; command: string; autoSubmit?: boolean }
+  | { id: "ui.prefill_cmdline"; text: string; submit?: boolean; focus?: boolean }
   | { id: "ui.toggle_menu" }
   | { id: "ui.toggle_orb" }
   | { id: "ui.toggle_chrome" }
@@ -108,10 +109,6 @@ const OVERLAY_ALIASES: Record<string, OverlaySurfaceId> = {
 
 function resolveOverlayId(target: string): OverlaySurfaceId | null {
   return OVERLAY_ALIASES[normalizeTarget(target)] ?? null;
-}
-
-function overlayIdForKind(kind: DeviceCheckKind): OverlaySurfaceId {
-  return kind === "mic" ? "mic_check" : kind === "cam" ? "cam_check" : "spk_check";
 }
 
 const DEVICE_STORAGE: Record<"mic" | "cam" | "spk", string> = {
@@ -246,12 +243,14 @@ export function executeHosakaUiCommand(command: HosakaUiCommand): HosakaUiResult
         mode: "shipping",
       };
     case "ui.device_check": {
-      const overlay = overlayIdForKind(command.kind);
+      const appId: AppId = command.kind === "mic"
+        ? "device_mic"
+        : command.kind === "cam" ? "device_cam" : "device_spk";
       return {
         ok: true,
         command: command.id,
-        surface: overlay,
-        dispatched: [dispatch(OVERLAY_OPEN_EVENT, { id: overlay })],
+        surface: appId,
+        dispatched: [dispatch("hosaka:open-app", { appId })],
         mode: "shipping",
       };
     }
@@ -286,6 +285,24 @@ export function executeHosakaUiCommand(command: HosakaUiCommand): HosakaUiResult
         dispatched: [
           dispatch("hosaka:open-app", { appId: "terminal" }),
           dispatch("hosaka:terminal-stage-command", { command: text, autoSubmit: Boolean(command.autoSubmit) }),
+        ],
+        mode: "shipping",
+      };
+    }
+    case "ui.prefill_cmdline": {
+      const text = String(command.text ?? "");
+      if (!text) {
+        return { ok: false, command: command.id, reason: "missing prefill text", status: "invalid" };
+      }
+      return {
+        ok: true,
+        command: command.id,
+        dispatched: [
+          dispatch("hosaka:cmdline-prefill", {
+            text,
+            submit: Boolean(command.submit),
+            focus: command.focus !== false,
+          }),
         ],
         mode: "shipping",
       };

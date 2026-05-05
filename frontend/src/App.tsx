@@ -79,9 +79,19 @@ const AppStorePanel = lazy(() =>
 const MusicPanel = lazy(() =>
   import("./panels/MusicPanel").then((m) => ({ default: m.MusicPanel })),
 );
+const HelpPanel = lazy(() =>
+  import("./panels/HelpPanel").then((m) => ({ default: m.HelpPanel })),
+);
+const DeviceCheckPanel = lazy(() =>
+  import("./panels/DeviceCheckPanel").then((m) => ({ default: m.DeviceCheckPanel })),
+);
+import { CmdLine } from "./components/CmdLine";
+import { HintLayer } from "./components/HintLayer";
+import { useShortcuts } from "./ui/useShortcuts";
 
 export function App() {
   const { t } = useTranslation("ui");
+  useShortcuts();
   const [bootMessage, setBootMessage] = useState(t("boot.waking"));
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Server-driven via /api/health: local Python returns true; hosted Vercel edge
@@ -427,6 +437,14 @@ export function App() {
         return <VoicePanel active={activeAppId === "voice"} />;
       case "nodes":
         return <NodesPanel />;
+      case "help":
+        return <HelpPanel />;
+      case "device_mic":
+        return <DeviceCheckPanel kind="mic" onClose={() => closeApp("device_mic")} />;
+      case "device_cam":
+        return <DeviceCheckPanel kind="cam" onClose={() => closeApp("device_cam")} />;
+      case "device_spk":
+        return <DeviceCheckPanel kind="spk" onClose={() => closeApp("device_spk")} />;
       default:
         return (
           <div className="desktop-panel desktop-panel--directory">
@@ -456,6 +474,7 @@ export function App() {
             className="hosaka-menu-trigger"
             aria-label="open menu"
             aria-expanded={navOpen}
+            title="menu — apps · wifi · volume · appearance (Ctrl+M)"
             onClick={() => setNavOpen((v) => !v)}
           >☰</button>
           <span className="hosaka-brand-logo">{t("brand")}</span>
@@ -466,7 +485,7 @@ export function App() {
             type="button"
             className={`icon-btn hosaka-quick-btn ${activeAppId === "terminal" ? "is-active" : ""}`}
             aria-label="focus terminal"
-            title="terminal"
+            title="terminal (Ctrl+T)"
             onClick={() => {
               setActiveApp("terminal");
               window.dispatchEvent(new CustomEvent("hosaka:overlay-close-all", { detail: { keepPinned: true } }));
@@ -475,15 +494,8 @@ export function App() {
           <button
             type="button"
             className="icon-btn hosaka-quick-btn"
-            aria-label="open devices overlay"
-            title="device mode"
-            onClick={() => window.dispatchEvent(new CustomEvent("hosaka:overlay-open", { detail: { id: "diag" } }))}
-          >⚇</button>
-          <button
-            type="button"
-            className="icon-btn hosaka-quick-btn"
             aria-label="open voice orb"
-            title="orb"
+            title="orb (Ctrl+O)"
             onClick={() => setActiveApp("voice")}
           >◎</button>
         </div>
@@ -608,6 +620,8 @@ export function App() {
         </Suspense>
       </main>
 
+      <CmdLine />
+
       {settingsEnabled && (
         <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       )}
@@ -619,6 +633,7 @@ export function App() {
       <FloatingOrb voiceActive={activeAppId === "voice"} />
 
       <OverlayStack />
+      <HintLayer />
 
       {docToast && (
         <div className="doc-toast" role="status" aria-live="polite">

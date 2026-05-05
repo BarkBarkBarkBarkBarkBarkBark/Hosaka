@@ -2,7 +2,26 @@ import React, { Component, Suspense, type ErrorInfo, type ReactNode } from "reac
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
 import "./ui/hosakaUi";
+import { bootTheme } from "./ui/theme";
+import { executeHosakaUiCommand } from "./ui/hosakaUi";
 import "./styles/app.css";
+
+// Apply persisted theme before React mounts so we never flash the default.
+bootTheme();
+
+// Expose a tiny global so any agent (picoclaw, devtools, e2e) can suggest
+// commands into the always-on cmdline. The human still presses Enter unless
+// `submit: true` is passed. Keep the surface small on purpose.
+(window as unknown as {
+  hosakaSuggest?: (text: string, opts?: { submit?: boolean; focus?: boolean }) => void;
+}).hosakaSuggest = (text, opts = {}) => {
+  executeHosakaUiCommand({
+    id: "ui.prefill_cmdline",
+    text,
+    submit: Boolean(opts.submit),
+    focus: opts.focus !== false,
+  });
+};
 
 // #region agent log
 function dbg(location: string, message: string, data: Record<string, unknown> = {}) {

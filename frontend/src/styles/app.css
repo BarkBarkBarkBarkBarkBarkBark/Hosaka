@@ -36,6 +36,7 @@
   --dock-h: 58px;
   --top-h: 52px;
   --foot-h: 28px;
+  --cmd-h: 36px;
 
   color-scheme: dark;
 }
@@ -59,7 +60,7 @@ html, body, #root {
 
 .hosaka-shell {
   display: grid;
-  grid-template-rows: var(--top-h) auto 1fr var(--foot-h);
+  grid-template-rows: var(--top-h) auto 1fr var(--cmd-h) var(--foot-h);
   height: 100dvh;
   background:
     radial-gradient(1200px 600px at 10% -10%, rgba(199, 121, 255, 0.08), transparent 70%),
@@ -160,15 +161,20 @@ html, body, #root {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 32px;
+  height: 32px;
+  margin: -4px -2px -4px 4px;
+  font-size: 18px;
   border: 1px solid transparent;
   color: var(--fg-2);
+  border-radius: var(--radius-sm);
 }
 
-.hosaka-window-close:hover {
+.hosaka-window-close:hover,
+.hosaka-window-close:focus-visible {
   color: var(--red);
   border-color: var(--border);
+  background: var(--bg-2);
 }
 
 .hosaka-dock-picker {
@@ -269,7 +275,10 @@ html, body, #root {
 .hosaka-panel {
   position: absolute;
   inset: 0;
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .hosaka-panel.is-active {
@@ -1119,8 +1128,10 @@ html, body, #root {
   display: grid;
   grid-template-columns: 160px 1fr;
   height: 100%;
+  min-height: 0;
   gap: 0;
   background: var(--bg-0);
+  overflow: hidden;
 }
 
 .games-side {
@@ -1512,9 +1523,13 @@ html, body, #root {
    browsed page gets ~100% of the viewport. */
 
 .hosaka-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 34px;
+  width: 34px;
   height: 30px;
-  padding: 0 8px;
+  padding: 0;
   background: var(--bg-0);
   color: var(--fg-1);
   border: 1px solid var(--border-strong);
@@ -1975,6 +1990,7 @@ html, body, #root {
     --top-h: 40px;
     --dock-h: 44px;
     --foot-h: 20px;
+    --cmd-h: 32px;
   }
   .hosaka-brand-sub { display: none; }
   .hosaka-footer    { display: none; }
@@ -1987,14 +2003,17 @@ html, body, #root {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
+  min-width: 36px;
   height: 36px;
+  padding: 0 8px;
   border-radius: 0;
   background: var(--bg-2);
   border: 1px solid var(--border);
   color: var(--amber);
   font-size: 16px;
+  line-height: 1;
   cursor: pointer;
+  white-space: nowrap;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
@@ -2123,6 +2142,7 @@ html, body, #root {
     --top-h: 40px;
     --dock-h: 44px;
     --foot-h: 0px;
+    --cmd-h: 32px;
   }
 
   .hosaka-brand-sub { display: none; }
@@ -2859,9 +2879,26 @@ html, body, #root {
 .voice-camera-panel,
 .voice-transcript-card {
   border: 1px solid var(--border);
-  background: rgba(17, 20, 24, 0.88);
+  background: var(--bg-1);
   backdrop-filter: blur(10px);
   border-radius: 10px;
+}
+:root.theme-amber .voice-status-card,
+:root.theme-amber .voice-controls-card,
+:root.theme-amber .voice-hint-card,
+:root.theme-amber .voice-camera-panel,
+:root.theme-amber .voice-transcript-card,
+:root.theme-amber-mono .voice-status-card,
+:root.theme-amber-mono .voice-controls-card,
+:root.theme-amber-mono .voice-hint-card,
+:root.theme-amber-mono .voice-camera-panel,
+:root.theme-amber-mono .voice-transcript-card,
+:root.theme-matrix .voice-status-card,
+:root.theme-matrix .voice-controls-card,
+:root.theme-matrix .voice-hint-card,
+:root.theme-matrix .voice-camera-panel,
+:root.theme-matrix .voice-transcript-card {
+  background: rgba(17, 20, 24, 0.88);
 }
 
 .voice-status-card {
@@ -3396,6 +3433,26 @@ html, body, #root {
 @keyframes floatingOrbBreath {
   0%, 100% { box-shadow: 0 0 12px var(--voice-haze-strong); }
   50%       { box-shadow: 0 0 22px var(--voice-haze-strong); }
+}
+
+/* low-quality mode: kills the always-on box-shadow breath, the spinning
+   orbit, and the per-state dot pulses. On the Pi this dropped the
+   compositor work from a constant ~25% CPU to barely measurable. The orb
+   stays visible and recoloured by state — just no animation work. */
+.floating-orb--q-low {
+  animation: none !important;
+  box-shadow: 0 0 8px var(--voice-haze-strong) !important;
+  transition: none;
+}
+.floating-orb--q-low:hover { transform: none; }
+.floating-orb--q-low .floating-orb-orbit { display: none; }
+.floating-orb--q-low .floating-orb-dot,
+.floating-orb--q-low.floating-orb--listening .floating-orb-dot,
+.floating-orb--q-low.floating-orb--live .floating-orb-dot,
+.floating-orb--q-low.floating-orb--thinking .floating-orb-dot,
+.floating-orb--q-low.floating-orb--speaking .floating-orb-dot {
+  animation: none !important;
+  box-shadow: none;
 }
 
 .voice-orb--muted {
@@ -4018,6 +4075,125 @@ html, body, #root {
 }
 .hosaka-menu-settings:hover { border-color: var(--amber-dim); }
 
+/* ── HosakaMenu sectioned hub bits ────────────────────────── */
+.hosaka-menu-pad {
+  padding: 10px 14px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.hosaka-menu-hint {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-3);
+  letter-spacing: 0.04em;
+}
+.hosaka-menu-hint--warn { color: var(--red); }
+.hosaka-menu-hint code {
+  background: var(--bg-2);
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  color: var(--amber);
+}
+.hosaka-menu-chip-row {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.hosaka-menu-chip {
+  background: var(--bg-2); color: var(--fg-1);
+  border: 1px solid var(--border-strong);
+  padding: 6px 10px;
+  font-family: var(--font-mono); font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+.hosaka-menu-chip:hover {
+  color: var(--amber);
+  border-color: var(--amber-dim);
+}
+.hosaka-menu-key {
+  display: flex; gap: 6px; align-items: stretch;
+}
+.hosaka-menu-key input {
+  flex: 1;
+  padding: 8px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  color: var(--fg-0);
+  font-family: var(--font-mono); font-size: 12px;
+  border-radius: var(--radius-sm);
+}
+.hosaka-menu-key input:focus {
+  outline: none;
+  border-color: var(--amber);
+}
+
+/* theme swatches */
+.hosaka-theme-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 6px;
+}
+.hosaka-theme-swatch {
+  position: relative;
+  height: 44px;
+  border: 1px solid var(--border-strong);
+  cursor: pointer;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.06em; text-transform: lowercase;
+  color: #fff;
+  display: flex; align-items: flex-end; justify-content: flex-start;
+  padding: 4px 6px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+.hosaka-theme-swatch:hover { transform: translateY(-1px); }
+.hosaka-theme-swatch.is-active {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+.hosaka-theme-swatch-name {
+  background: rgba(0,0,0,0.55);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+.theme-swatch--amber       { background: linear-gradient(135deg, #0a0a0a 0%, #ffbf46 100%); }
+.theme-swatch--pink        { background: linear-gradient(135deg, #fffafd 0%, #ff4f9d 100%); color: #2a0b4a; }
+.theme-swatch--pink .hosaka-theme-swatch-name { background: rgba(255,255,255,0.6); color: #2a0b4a; }
+.theme-swatch--rainbow     { background: linear-gradient(135deg, #ff0080, #ff8c00, #ffd700, #00d4ff, #b300ff); }
+.theme-swatch--amber-mono  { background: #000; color: #ffbf46; }
+.theme-swatch--amber-mono .hosaka-theme-swatch-name { background: rgba(255,191,70,0.15); color: #ffbf46; }
+.theme-swatch--matrix      { background: linear-gradient(135deg, #001a00 0%, #00ff66 100%); color: #00ff66; }
+
+/* wifi list */
+.hosaka-wifi-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  max-height: 240px; overflow-y: auto;
+}
+.hosaka-wifi-item + .hosaka-wifi-item { border-top: 1px solid var(--border); }
+.hosaka-wifi-item button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px; align-items: center;
+  background: transparent; border: none;
+  padding: 8px 10px;
+  font-family: var(--font-mono); font-size: 12px;
+  color: var(--fg-1);
+  text-align: left; cursor: pointer;
+}
+.hosaka-wifi-item:hover { background: var(--bg-2); }
+.hosaka-wifi-item.is-active button { color: var(--amber); }
+.hosaka-wifi-bars { color: var(--amber); letter-spacing: 0.05em; font-size: 11px; }
+.hosaka-wifi-ssid {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hosaka-wifi-meta { color: var(--fg-3); font-size: 10px; }
+.hosaka-wifi-item.is-active .hosaka-wifi-meta { color: var(--green); }
+
 /* ── stage mode: immersive ────────────────────────────────────
    When the active panel is one that benefits from full-bleed (orb,
    terminal, video, games, web, books, reading) AND the viewport is
@@ -4035,10 +4211,10 @@ html, body, #root {
     min-height: 0;
   }
   .hosaka-shell--stage-immersive {
-    grid-template-rows: var(--top-h) 0 1fr 0;
+    grid-template-rows: var(--top-h) 0 1fr var(--cmd-h) 0;
   }
   .hosaka-shell--stage-immersive.hosaka-shell--chrome-collapsed {
-    grid-template-rows: var(--top-h) 1fr;
+    grid-template-rows: var(--top-h) 1fr var(--cmd-h);
   }
   .hosaka-shell--stage-immersive .hosaka-footer { display: none; }
 }
@@ -4051,11 +4227,9 @@ html, body, #root {
   .hosaka-shell--stage-immersive .hosaka-topbar-right .plant-badge { display: none; }
 }
 
-/* On larger screens the menu is still available (single chevron) but the
-   classic dock + launchbar remains visible as before. */
-@media (min-width: 901px) {
-  .hosaka-menu-trigger { display: none; }
-}
+/* The ☰ menu is the canonical sectioned hub (apps · voice · wifi · volume ·
+   appearance · quality · diagnostics · easter eggs). Always visible — the
+   classic dock + launchbar stay visible alongside it on larger viewports. */
 
 /* ── tighten panel padding globally ───────────────────────── */
 @media (max-width: 600px) {
@@ -4653,12 +4827,13 @@ html, body, #root {
   color: var(--fg-2);
   border: 1px solid transparent;
   font-family: inherit;
-  font-size: 11px;
-  width: 22px;
-  height: 18px;
+  font-size: 14px;
+  width: 32px;
+  height: 32px;
   line-height: 1;
   padding: 0;
   cursor: pointer;
+  border-radius: var(--radius-sm);
 }
 .surface-window-btn:hover { color: var(--cyan); border-color: var(--cyan-dim); }
 .surface-window-btn.is-on { color: var(--amber); border-color: var(--amber-dim); }
@@ -4792,3 +4967,313 @@ html, body, #root {
 .instrument-dot.is-ok { background: var(--green); }
 .instrument-dot.is-warn { background: var(--amber); }
 .instrument-dot.is-err { background: var(--red); }
+
+/* ── always-on command line strip ─────────────────────────── */
+
+.hosaka-cmdline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border);
+  background: linear-gradient(to bottom, var(--bg-1), var(--bg-0));
+  font-family: var(--font-mono);
+}
+
+.hosaka-cmdline-prompt {
+  color: var(--amber);
+  font-weight: 700;
+  font-size: 14px;
+  min-width: 14px;
+}
+
+.hosaka-cmdline-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-0);
+  color: var(--fg-0);
+  border: 1px solid var(--border-strong);
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.hosaka-cmdline-input:focus {
+  border-color: var(--amber-dim);
+  box-shadow: 0 0 0 1px var(--amber-dim);
+}
+.hosaka-cmdline-input::placeholder { color: var(--fg-3); }
+
+.hosaka-cmdline-go {
+  min-width: 36px;
+  min-height: 32px;
+  background: var(--bg-2);
+  color: var(--amber);
+  border: 1px solid var(--border-strong);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.hosaka-cmdline-go:hover { background: var(--bg-3); }
+
+/* ── hint layer ──────────────────────────────────────────── */
+
+.hint-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  pointer-events: none;
+}
+
+.hint-badge {
+  position: absolute;
+  transform: translate(-4px, -4px);
+  padding: 2px 6px;
+  background: var(--amber);
+  color: #1a1106;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  border-radius: 3px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.6);
+  border: 1px solid #6b4900;
+}
+.hint-badge .hint-typed { color: rgba(26,17,6,0.4); }
+
+/* ── help panel ──────────────────────────────────────────── */
+
+.help-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px 24px;
+  font-family: var(--font-mono);
+  color: var(--fg-1);
+}
+.help-panel .panel-header { margin-bottom: 12px; }
+.help-section { margin-top: 18px; }
+.help-section h3 {
+  margin: 0 0 8px;
+  color: var(--amber);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: lowercase;
+}
+.help-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.help-row {
+  display: grid;
+  grid-template-columns: 140px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 6px;
+  border-bottom: 1px dashed var(--border);
+}
+.help-chord {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--amber);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.help-chord.help-slash { color: var(--cyan); }
+.help-chord.help-inline { padding: 1px 6px; margin: 0 4px; font-size: 11px; }
+.help-label { color: var(--fg-1); font-size: 13px; }
+.help-cmd { font-size: 11px; }
+.help-foot { margin-top: 12px; font-size: 12px; }
+
+/* ── device check panel (mic / cam / spk as tabs) ──────── */
+
+.device-check-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px;
+  overflow: hidden;
+}
+.device-check-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-top: 8px;
+}
+
+/* ── Themes ─────────────────────────────────────────────────
+   Each theme is a single class on <html> that overrides the
+   accent palette. The base :root values above are the "amber"
+   defaults; we only redefine what changes per theme. Bg
+   gradients in .hosaka-shell read these vars too.
+   ───────────────────────────────────────────────────────── */
+
+/* amber (default) — explicit class for completeness */
+:root.theme-amber { /* uses base palette */ }
+
+/* pink — white background, dark plum text, hot pink accent */
+:root.theme-pink {
+  --bg-0: #fffafd;
+  --bg-1: #fff0f6;
+  --bg-2: #ffe4ef;
+  --bg-3: #fbd0e0;
+  --fg-0: #2a0b4a;
+  --fg-1: #4a1d75;
+  --fg-2: #7a4ea4;
+  --fg-3: #b08ad0;
+  --amber: #ff4f9d;
+  --amber-dim: #b13670;
+  --cyan: #ff8fc4;
+  --violet: #8a39c7;
+  --blue: #6f7dff;
+  --green: #4eb878;
+  --red: #d6324d;
+  --border: #f0c4d8;
+  --border-strong: #d68fb0;
+  color-scheme: light;
+}
+:root.theme-pink .hosaka-shell {
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(255, 79, 157, 0.18), transparent 70%),
+    radial-gradient(1000px 500px at 110% 110%, rgba(170, 100, 220, 0.18), transparent 70%),
+    var(--bg-0);
+}
+
+/* rainbow — chromatic, hue-rotates the accents over time */
+:root.theme-rainbow {
+  --amber: hsl(var(--rainbow-h, 45) 95% 60%);
+  --amber-dim: hsl(var(--rainbow-h, 45) 60% 40%);
+  --cyan: hsl(calc(var(--rainbow-h, 45) + 120) 90% 65%);
+  --violet: hsl(calc(var(--rainbow-h, 45) + 240) 85% 70%);
+  --blue: hsl(calc(var(--rainbow-h, 45) + 200) 90% 65%);
+  --green: hsl(calc(var(--rainbow-h, 45) + 90) 70% 60%);
+  --red: hsl(calc(var(--rainbow-h, 45) + 350) 85% 65%);
+  animation: rainbowShift 24s linear infinite;
+}
+@property --rainbow-h {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 45;
+}
+@keyframes rainbowShift {
+  to { --rainbow-h: 405; }
+}
+/* low-quality / reduced motion: hold a fixed hue */
+@media (prefers-reduced-motion: reduce) {
+  :root.theme-rainbow { animation: none; }
+}
+
+/* amber-mono — pure black + amber text */
+:root.theme-amber-mono {
+  --bg-0: #000000;
+  --bg-1: #050403;
+  --bg-2: #0a0807;
+  --bg-3: #14100c;
+  --fg-0: #ffbf46;
+  --fg-1: #d49932;
+  --fg-2: #8a6a2c;
+  --fg-3: #5a451c;
+  --amber: #ffbf46;
+  --cyan: #ffbf46;
+  --violet: #ffbf46;
+  --blue: #ffbf46;
+  --green: #ffbf46;
+  --border: #3a2c14;
+  --border-strong: #6a4f24;
+}
+:root.theme-amber-mono .hosaka-shell {
+  background: var(--bg-0);
+}
+:root.theme-amber-mono html,
+:root.theme-amber-mono body { font-family: var(--font-mono); }
+
+/* matrix — phosphor green on black, faint scanline backdrop */
+:root.theme-matrix {
+  --bg-0: #000604;
+  --bg-1: #02100a;
+  --bg-2: #04190f;
+  --bg-3: #082416;
+  --fg-0: #6dffa4;
+  --fg-1: #4ed086;
+  --fg-2: #2f8a58;
+  --fg-3: #1a5535;
+  --amber: #6dffa4;
+  --cyan: #6dffa4;
+  --violet: #6dffa4;
+  --blue: #6dffa4;
+  --green: #6dffa4;
+  --red: #ff5b6f;
+  --border: #1a4d30;
+  --border-strong: #2c7a4f;
+}
+:root.theme-matrix .hosaka-shell {
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(109, 255, 164, 0.04) 0px,
+      rgba(109, 255, 164, 0.04) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    radial-gradient(1200px 600px at 50% -10%, rgba(109, 255, 164, 0.12), transparent 70%),
+    var(--bg-0);
+}
+:root.theme-matrix html,
+:root.theme-matrix body { font-family: var(--font-mono); }
+
+/* ── Orb orbit-text mode ────────────────────────────────── */
+.floating-orb-orbit--text {
+  inset: -14px;
+  position: absolute;
+  pointer-events: none;
+}
+.floating-orb-glyph {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  display: inline-block;
+  color: var(--voice-accent-strong);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  transform-origin: 0 0;
+}
+
+/* ── Voice ON/OFF (single-button refactor) ─────────────── */
+.voice-onoff {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  font-size: 18px;
+  padding: 14px 38px;
+  min-width: 140px;
+  border: 1px solid var(--amber);
+  background: transparent;
+  color: var(--amber);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, transform 80ms ease;
+}
+.voice-onoff:hover { background: rgba(255, 191, 70, 0.08); }
+.voice-onoff:active { transform: scale(0.98); }
+.voice-onoff[data-on="true"] {
+  background: var(--amber);
+  color: var(--bg-0);
+  box-shadow: 0 0 18px rgba(255, 191, 70, 0.32);
+}
+.voice-onoff:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.voice-controls-hint {
+  margin-top: 8px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-2);
+  letter-spacing: 0.04em;
+}

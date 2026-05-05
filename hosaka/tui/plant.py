@@ -31,18 +31,29 @@ from hosaka.tui.style import (
 _PLANT_PATH = Path.home() / ".hosaka" / "plant.json"
 
 # ── vitality constants ───────────────────────────────────────────────────
+#
+# Tuned so casual use keeps the bonsai alive:
+#
+#   1 visit/day  →  +20 - 12 = +8 vitality/day  →  reaches "growing"
+#   2 visits/day →  +28/day                       →  blooms in a week
+#   0 visits/wk  →  -84/wk → still bloom from full
+#   0 visits/2wk →  -168/2wk → dry but alive
+#
+# Pre-rewrite was 5 pts/hour drain (= 120/day) with +3/visit. Even daily
+# use bottomed out instantly. The bonsai is meant to be a companion, not a
+# performance evaluation.
 
-VITALITY_PER_COMMAND = 3        # points gained per console interaction
-VITALITY_DRAIN_PER_HOUR = 5     # points lost per hour of inactivity
+VITALITY_PER_COMMAND = 20       # points gained per console interaction
+VITALITY_DRAIN_PER_HOUR = 0.5   # points lost per hour of inactivity (~12/day)
 VITALITY_MAX = 200              # ceiling
 VITALITY_THRESHOLDS = [         # (min_vitality, state_index)
     (0,   0),   # dead
-    (1,   1),   # wilted
-    (15,  2),   # dry
-    (40,  3),   # stable
-    (80,  4),   # growing
-    (130, 5),   # bloom
-    (170, 6),   # colony
+    (1,   1),   # wilted (any pulse keeps it alive)
+    (10,  2),   # dry
+    (30,  3),   # stable  — starting state
+    (60,  4),   # growing — reachable from a single visit/day
+    (110, 5),   # bloom
+    (160, 6),   # colony
 ]
 STATE_NAMES = ["dead", "wilted", "dry", "stable", "growing", "bloom", "colony"]
 
@@ -125,75 +136,78 @@ def get_plant_status() -> tuple[int, PlantState]:
 # Each state is a list of strings.  Colors applied at render time.
 
 _PLANT_ART: list[list[str]] = [
-    # 0: dead
+    # Each frame is exactly 7 rows. Char roles in render():
+    #   ()-   leaf      @ *   flower      [ ]   pot
+    #   |/\   stalk     .     dim ground  _     stalk (or pot rim)
+    # 0: dead — bare leaning trunk
     [
         "          ",
-        "     .    ",
-        "     |    ",
-        "     |    ",
-        "    .|.   ",
-        "   _|||_  ",
-        "  [_____] ",
+        "          ",
+        "     \\_   ",
+        "      \\   ",
+        "      /   ",
+        "     /    ",
+        "   [___]  ",
     ],
-    # 1: wilted
+    # 1: wilted — one stubborn drooping leaf
     [
         "          ",
-        "    ,     ",
-        "    |\\    ",
-        "    | )   ",
-        "    |/    ",
-        "   _|_    ",
-        "  [_____] ",
-    ],
-    # 2: dry
-    [
-        "          ",
-        "    \\ |   ",
-        "     \\|   ",
-        "     |    ",
-        "     |    ",
-        "   __|__  ",
-        "  [_____] ",
-    ],
-    # 3: stable
-    [
         "     _    ",
         "    ( )   ",
+        "     \\    ",
+        "     /    ",
+        "     |    ",
+        "   [___]  ",
+    ],
+    # 2: dry — sparse twigs, no leaves yet
+    [
+        "    \\ /   ",
+        "     V    ",
+        "     |    ",
+        "     /    ",
+        "    /     ",
+        "    |     ",
+        "   [___]  ",
+    ],
+    # 3: stable — small bonsai canopy
+    [
+        "    ___   ",
+        "   ( . )  ",
         "    \\|/   ",
+        "     /    ",
+        "    /     ",
+        "    |     ",
+        "   [___]  ",
+    ],
+    # 4: growing — fuller cloud canopy
+    [
+        "   _ _ _  ",
+        "  ( . . ) ",
+        "   \\\\|//  ",
+        "    \\|    ",
+        "    /     ",
+        "    |     ",
+        "   [___]  ",
+    ],
+    # 5: bloom — flowers in the canopy
+    [
+        "  *_ _ _* ",
+        " (@ . . @)",
+        "  \\\\@|//  ",
+        "    *|*   ",
         "     |    ",
         "     |    ",
-        "   __|__  ",
-        "  [_____] ",
+        "   [___]  ",
     ],
-    # 4: growing
+    # 6: colony — twin trunks, moss along the rim
     [
-        "   \\ _ /  ",
-        "   -( )-  ",
-        "  / \\|    ",
-        " (_) |/\\  ",
-        "     |/   ",
-        "   __|__  ",
-        "  [_____] ",
-    ],
-    # 5: bloom
-    [
-        "  * \\ _ / ",
-        "   @( )@  ",
-        "  */\\|/\\* ",
-        " (@)|  /\\ ",
-        "  \\ | /(_)",
-        "   _|_/_  ",
-        "  [_____] ",
-    ],
-    # 6: colony
-    [
-        " *@* _ *@*",
-        " \\@(*)@/ *",
-        "*/\\\\|//\\@*",
-        "(@)|  /\\(@",
-        " *\\|*/(_)*",
-        " __|_/__|_",
-        " [___][__]",
+        " *_ _* _ *",
+        "(@ . )( @)",
+        " \\\\|//\\|/",
+        "   *|  /  ",
+        "    | /   ",
+        "    \\/    ",
+        "  [.___.] ",
     ],
 ]
 
@@ -293,45 +307,45 @@ def _flavor_text(idx: int) -> str:
     texts = [
         # dead
         [
-            "A dry stalk. Whatever was here is gone.",
-            "Nothing grows in silence forever.",
-            "Perhaps it will return. Perhaps not.",
+            "the bonsai has gone to ash. start a new one with /plant reset.",
+            "silence in the pot. nothing answers the cursor.",
+            "a dry stick. memory of leaves.",
         ],
         # wilted
         [
-            "It droops. It remembers better days.",
-            "Still alive — barely. It could use attention.",
-            "The roots hold, but the leaves have given up.",
+            "one stubborn leaf. it remembers you.",
+            "a pulse, barely. a visit a day will bring it back.",
+            "the roots hold. the canopy waits.",
         ],
         # dry
         [
-            "Alive, but thirsty. Each command is water.",
-            "It leans toward the cursor, hoping.",
-            "Not thriving, but not surrendering either.",
+            "twigs. dry but ready — each command is rain.",
+            "the trunk leans toward the prompt.",
+            "not thriving, not surrendering. patient.",
         ],
         # stable
         [
-            "A modest, healthy specimen.",
-            "It seems content. For now.",
-            "Growing at its own ancient pace.",
+            "a small canopy. a steady companion.",
+            "trimmed by use, balanced by neglect.",
+            "the bonsai listens to your typing.",
         ],
         # growing
         [
-            "Buds forming. Something is about to happen.",
-            "It responds to your presence. Curious thing.",
-            "The leaves track your keystrokes.",
+            "two cloud-leaves form. shape begins.",
+            "the canopy thickens with attention.",
+            "good rhythm. it grows when you grow.",
         ],
         # bloom
         [
-            "In full flower. Alien petals catch no sunlight here.",
-            "It blooms in radio waves and terminal glow.",
-            "Beautiful, in a way that shouldn't exist.",
+            "in flower. small alien petals on a small ancient tree.",
+            "the pot hums faintly. blossoms catch the terminal glow.",
+            "steady tending, full bloom.",
         ],
         # colony
         [
-            "It has reproduced. A second growth emerges from the pot.",
-            "Life finds a way, even in a terminal.",
-            "The colony spreads. The signal is strong here.",
+            "twin trunks. moss along the rim.",
+            "life finds a way, even in a terminal pot.",
+            "the colony holds. signal steady.",
         ],
     ]
     return random.choice(texts[idx])  # noqa: S311

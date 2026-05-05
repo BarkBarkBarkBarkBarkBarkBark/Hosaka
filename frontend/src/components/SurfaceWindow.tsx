@@ -68,9 +68,6 @@ export function SurfaceWindow({
   }, [x, y]);
 
   const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    // #region agent log H4
-    fetch('http://localhost:7689/ingest/1a43a65d-59a9-4e4d-b675-be2f9e8f84bd',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'eac2ea'},body:JSON.stringify({sessionId:'eac2ea',runId:'r1',hypothesisId:'H4',location:'SurfaceWindow:pointerdown',message:'pointer down on surface titlebar reached handler',data:{button:event.button,target:(event.target as HTMLElement)?.tagName,pointerType:event.pointerType},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
     if (target.closest("[data-surface-noclick='true']")) return;

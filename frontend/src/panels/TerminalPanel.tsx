@@ -8,6 +8,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { HosakaShell } from "../shell/HosakaShell";
 import { loadUiConfig, FONT_SIZE_TERMINAL } from "../uiConfig";
+import { isRegisteredChord, chordFromEvent } from "../ui/shortcuts";
 
 type Props = { active: boolean };
 
@@ -87,6 +88,14 @@ export function TerminalPanel({ active }: Props) {
 
     termRef.current = term;
     fitRef.current = fit;
+
+    // Let global shortcuts (Ctrl+T, Ctrl+O, Ctrl+M, ...) reach the window
+    // listener instead of being swallowed by xterm. Returning false tells
+    // xterm to skip its own handling for that key event.
+    term.attachCustomKeyEventHandler((ev) => {
+      if (ev.type !== "keydown") return true;
+      try { return !isRegisteredChord(chordFromEvent(ev)); } catch { return true; }
+    });
 
     // Defer term.open() until the host actually has non-zero dimensions.
     // Otherwise xterm bakes in a 1×1-ish grid that fit() can't fully recover
@@ -216,14 +225,50 @@ export function TerminalPanel({ active }: Props) {
       term.options.fontSize = isNarrowNow ? Math.min(size, 12) : size;
       ensureOpened();
     };
+    // Recolor xterm when the global theme changes — read CSS variables off
+    // <html> so themes only need to define the palette once in app.css.
+    const onThemeChanged = () => {
+      try {
+        const cs = getComputedStyle(document.documentElement);
+        const pick = (name: string, fallback: string) =>
+          (cs.getPropertyValue(name).trim() || fallback);
+        term.options.theme = {
+          background: pick("--bg-0", "#0b0d10"),
+          foreground: pick("--fg-0", "#d8dee4"),
+          cursor: pick("--amber", "#ffbf46"),
+          cursorAccent: pick("--bg-0", "#0b0d10"),
+          selectionBackground: pick("--bg-3", "#3a2f1a"),
+          black: pick("--bg-0", "#0b0d10"),
+          red: pick("--red", "#ff6b6b"),
+          green: pick("--green", "#7ee787"),
+          yellow: pick("--amber", "#ffbf46"),
+          blue: pick("--blue", "#58a6ff"),
+          magenta: pick("--violet", "#c779ff"),
+          cyan: pick("--cyan", "#79ffe1"),
+          white: pick("--fg-0", "#d8dee4"),
+          brightBlack: pick("--fg-3", "#5b626b"),
+          brightRed: pick("--red", "#ff8787"),
+          brightGreen: pick("--green", "#9cf3a4"),
+          brightYellow: pick("--amber", "#ffd479"),
+          brightBlue: pick("--blue", "#79b8ff"),
+          brightMagenta: pick("--violet", "#d8a7ff"),
+          brightCyan: pick("--cyan", "#a8fff0"),
+          brightWhite: pick("--fg-0", "#f2f4f8"),
+        };
+      } catch { /* ignore */ }
+    };
+    // Apply once on mount in case a theme was applied before xterm spun up.
+    onThemeChanged();
     window.addEventListener("resize", onResize);
     window.addEventListener("hosaka:ui-changed", onUiChanged);
+    window.addEventListener("hosaka:theme-changed", onThemeChanged);
 
     return () => {
       window.clearTimeout(delayed);
       ro.disconnect();
       window.removeEventListener("resize", onResize);
       window.removeEventListener("hosaka:ui-changed", onUiChanged);
+      window.removeEventListener("hosaka:theme-changed", onThemeChanged);
       openOrFitRef.current = () => undefined;
       shell?.dispose();
       term.dispose();

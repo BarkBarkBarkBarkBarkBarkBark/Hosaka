@@ -220,6 +220,17 @@ class ActionResult(BaseModel):
     message: str = ""
 
 
+class AudioVolume(BaseModel):
+    level: int = Field(..., ge=0, le=100, description="0-100 system output volume")
+    muted: bool = False
+    backend: str = Field(..., description="pactl | osascript | unsupported")
+
+
+class AudioVolumeSet(BaseModel):
+    level: Optional[int] = Field(None, ge=0, le=100)
+    muted: Optional[bool] = None
+
+
 class ChannelMessageOut(BaseModel):
     id: str
     at: int
@@ -687,6 +698,92 @@ def v1_wifi_forget(ssid: str) -> ActionResult:
     if rc != 0:
         return ActionResult(ok=False, message=(err or out).strip()[:400])
     return ActionResult(ok=True, message=f"forgot {ssid}")
+
+
+# ── audio (system output volume) ──────────────────────────────────────────────
+#
+# Two backends, picked in order:
+#   pactl     — Linux/PulseAudio/PipeWire (kiosk, Pi, most desktop linuxes)
+#   osascript — macOS (`output volume of (get volume settings)`)
+# When neither is available we return 501 so the UI can degrade gracefully.
+
+
+def _audio_backend() -> str:
+    if shutil.which("pactl"):
+        return "pactl"
+    if shutil.which("osascript"):
+        return "osascript"
+    return "unsupported"
+
+
+def _audio_get() -> AudioVolume:
+    be = _audio_backend()
+    if be == "pactl":
+        rc, out, _ = _run(["pactl", "get-sink-volume", "@DEFAULT_SINK@"], timeout=4)
+        level = 0
+        if rc == 0:
+            m = re.search(r"(\d+)%", out)
+            if m:
+                level = max(0, min(100, int(m.group(1))))
+        rc, out, _ = _run(["pactl", "get-sink-mute", "@DEFAULT_SINK@"], timeout=4)
+        muted = "yes" in (out or "").lower()
+        return AudioVolume(level=level, muted=muted, backend=be)
+    if be == "osascript":
+        rc, out, _ = _run(
+            ["osascript", "-e", "output volume of (get volume settings)"], timeout=4
+        )
+        try:
+            level = int((out or "0").strip())
+        except ValueError:
+            level = 0
+        rc, out, _ = _run(
+            ["osascript", "-e", "output muted of (get volume settings)"], timeout=4
+        )
+        muted = (out or "").strip().lower() == "true"
+        return AudioVolume(level=max(0, min(100, level)), muted=muted, backend=be)
+    raise HTTPException(501, "no audio backend (need pactl or osascript)")
+
+
+@router.get(
+    "/audio/volume",
+    response_model=AudioVolume,
+    summary="Current system output volume + mute state",
+    dependencies=[Depends(require_auth)],
+)
+def v1_audio_get() -> AudioVolume:
+    return _audio_get()
+
+
+@router.put(
+    "/audio/volume",
+    response_model=AudioVolume,
+    summary="Set system output volume and/or mute",
+    dependencies=[Depends(require_write)],
+)
+def v1_audio_set(body: AudioVolumeSet) -> AudioVolume:
+    be = _audio_backend()
+    if be == "unsupported":
+        raise HTTPException(501, "no audio backend (need pactl or osascript)")
+    if body.level is None and body.muted is None:
+        raise HTTPException(400, "provide level and/or muted")
+    if be == "pactl":
+        if body.level is not None:
+            _run(
+                ["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{body.level}%"],
+                timeout=4,
+            )
+        if body.muted is not None:
+            _run(
+                ["pactl", "set-sink-mute", "@DEFAULT_SINK@", "1" if body.muted else "0"],
+                timeout=4,
+            )
+    elif be == "osascript":
+        if body.level is not None:
+            _run(["osascript", "-e", f"set volume output volume {body.level}"], timeout=4)
+        if body.muted is not None:
+            flag = "true" if body.muted else "false"
+            _run(["osascript", "-e", f"set volume output muted {flag}"], timeout=4)
+    return _audio_get()
 
 
 # ── services ──────────────────────────────────────────────────────────────────

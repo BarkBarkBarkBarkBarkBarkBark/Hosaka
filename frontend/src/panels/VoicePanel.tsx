@@ -566,7 +566,7 @@ export function VoicePanel({ active }: { active: boolean }) {
   const [agentRecording, setAgentRecording] = useState(false);
   const [agentBusy, setAgentBusy] = useState(false);
   const [agentPhase, setAgentPhase] = useState<"idle" | "recording" | "uploading" | "transcribing" | "thinking">("idle");
-  const [publicMode, setPublicMode] = useState(false);
+  const [, setPublicMode] = useState(false);
   // Orb-first mode: orb fills the screen, drawer slides up for transcript + controls.
   // Default to orb-first on narrow viewports.
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -1121,35 +1121,23 @@ export function VoicePanel({ active }: { active: boolean }) {
               >✕</button>
             </div>
 
-            {/* Mode switch + action */}
+            {/* Single ON/OFF — mode is auto-picked (agent if available,
+                openai realtime if public build). Power users flip via
+                `/voice mode agent|demo` in the cmdline. */}
             <div className="voice-controls-card">
-              {!publicMode && (
-                <div className="voice-mode-switch" role="tablist" aria-label="voice mode">
-                  <button
-                    className={`pill ${mode === "agent" ? "is-active" : ""}`}
-                    onClick={() => setMode("agent")}
-                    aria-pressed={mode === "agent"}
-                  >local agent</button>
-                  <button
-                    className={`pill ${mode === "demo" ? "is-active" : ""}`}
-                    onClick={() => setMode("demo")}
-                    aria-pressed={mode === "demo"}
-                  >openai realtime</button>
-                </div>
-              )}
-              {publicMode && (
-                <div className="voice-build-note">public build: realtime demo only</div>
-              )}
               <div className="voice-controls-row">
                 <button
-                  className="btn"
+                  className="btn voice-onoff"
                   onClick={toggleVoiceTurn}
                   disabled={mode === "agent" && agentBusy}
+                  data-on={(sessionOpen || agentRecording) ? "true" : "false"}
                 >
-                  {mode === "agent"
-                    ? agentRecording ? "stop + send" : agentBusy ? "working…" : "start turn"
-                    : sessionOpen ? "stop realtime" : "start realtime"}
+                  {(sessionOpen || agentRecording) ? "OFF" : agentBusy ? "…" : "ON"}
                 </button>
+              </div>
+              <div className="voice-controls-hint">
+                {mode === "agent" ? "local agent" : "openai realtime"}
+                {" • /voice for options"}
               </div>
               {error && <div className="voice-error">{error}</div>}
             </div>
@@ -1234,57 +1222,23 @@ export function VoicePanel({ active }: { active: boolean }) {
 
       {/* ── Drawer — slides up on small screens, always visible on large ── */}
       <div className={`voice-drawer${drawerOpen ? " voice-drawer--open" : ""}`}>
-        {/* Controls strip */}
+        {/* Single ON/OFF — mode is auto-picked. Use `/voice mode agent|demo`
+            from the cmdline to flip backends; `/voice cam` for the camera. */}
         <div className="voice-controls-card">
-          {!publicMode && (
-            <div className="voice-mode-switch" role="tablist" aria-label="voice mode">
-              <button
-                className={`pill ${mode === "agent" ? "is-active" : ""}`}
-                onClick={() => setMode("agent")}
-                aria-pressed={mode === "agent"}
-              >
-                local agent
-              </button>
-              <button
-                className={`pill ${mode === "demo" ? "is-active" : ""}`}
-                onClick={() => setMode("demo")}
-                aria-pressed={mode === "demo"}
-              >
-                openai realtime
-              </button>
-            </div>
-          )}
-
-          {publicMode && (
-            <div className="voice-build-note">
-              public build: realtime demo only
-            </div>
-          )}
-
           <div className="voice-controls-row">
             <button
-              className="btn"
+              className="btn voice-onoff"
               onClick={toggleVoiceTurn}
               disabled={mode === "agent" && agentBusy}
+              data-on={(sessionOpen || agentRecording) ? "true" : "false"}
             >
-              {mode === "agent"
-                ? agentRecording
-                    ? "listening…"
-                    : agentBusy
-                      ? "working…"
-                      : "start turn"
-                : sessionOpen
-                  ? "stop realtime"
-                  : "start realtime"}
-            </button>
-            <button
-              className="btn btn-ghost"
-              onClick={() => setCameraExpanded((v) => !v)}
-            >
-              {cameraExpanded ? "hide cam" : "camera"}
+              {(sessionOpen || agentRecording) ? "OFF" : agentBusy ? "…" : "ON"}
             </button>
           </div>
-
+          <div className="voice-controls-hint">
+            {mode === "agent" ? "local agent" : "openai realtime"}
+            {" • /voice for options"}
+          </div>
           {error && <div className="voice-error">{error}</div>}
         </div>
 
@@ -1362,9 +1316,8 @@ export function VoicePanel({ active }: { active: boolean }) {
           >
             {transcript.length === 0 && (
               <p className="voice-empty">
-                {mode === "agent"
-                  ? "press start turn, speak, then press stop to send. try 'what files are in my home dir' or 'show disk usage'."
-                  : "press start realtime to open a session; press stop realtime to close it and stop billing."}
+                press the orb to talk. it stays local until you ask for the
+                cloud. try "what files are in my home dir" or "show disk usage".
               </p>
             )}
             {transcript.map((item) => (

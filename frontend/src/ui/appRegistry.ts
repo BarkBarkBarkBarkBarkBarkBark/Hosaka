@@ -27,7 +27,11 @@ export type AppId =
   | "kcc"
   | "discord"
   | "foliate"
-  | "simulcast";
+  | "simulcast"
+  | "device_mic"
+  | "device_cam"
+  | "device_spk"
+  | "help";
 
 export type AppFlags = {
   inboxEnabled: boolean;
@@ -452,6 +456,63 @@ export const APP_REGISTRY: AppDefinition[] = [
     embedPolicy: "no_embed",
     maintainerNote: "Simulcast requires actual capture and output plumbing; simply listing web apps does not implement it.",
     agentNote: "Use registry metadata to choose launch targets and allowed containers.",
+  },
+  {
+    id: "device_mic",
+    title: "mic check",
+    description: "live microphone preview, levels, and device picker.",
+    glyph: "🎙",
+    aliases: ["device-mic", "mic-check", "check-mic"],
+    family: "core",
+    showInLauncher: false,
+    preferredHost: "electron",
+    fallbackHosts: ["web"],
+    installStrategy: "builtin",
+    hostScope: "any",
+    embedPolicy: "prefer_embed",
+    agentNote: "Open this when the user wants to test or pick a microphone.",
+  },
+  {
+    id: "device_cam",
+    title: "cam check",
+    description: "live camera preview and device picker.",
+    glyph: "📷",
+    aliases: ["device-cam", "cam-check", "check-cam"],
+    family: "core",
+    showInLauncher: false,
+    preferredHost: "electron",
+    fallbackHosts: ["web"],
+    installStrategy: "builtin",
+    hostScope: "any",
+    embedPolicy: "prefer_embed",
+  },
+  {
+    id: "device_spk",
+    title: "spk check",
+    description: "speaker tone test and output device picker.",
+    glyph: "🔊",
+    aliases: ["device-spk", "spk-check", "check-spk"],
+    family: "core",
+    showInLauncher: false,
+    preferredHost: "electron",
+    fallbackHosts: ["web"],
+    installStrategy: "builtin",
+    hostScope: "any",
+    embedPolicy: "prefer_embed",
+  },
+  {
+    id: "help",
+    title: "help",
+    description: "keyboard shortcuts and slash command reference.",
+    glyph: "?",
+    aliases: ["help", "shortcuts", "keys", "cheatsheet"],
+    family: "core",
+    showInLauncher: true,
+    preferredHost: "electron",
+    fallbackHosts: ["web"],
+    installStrategy: "builtin",
+    hostScope: "any",
+    embedPolicy: "prefer_embed",
   },
 ];
 

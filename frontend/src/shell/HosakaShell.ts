@@ -39,6 +39,7 @@ import {
   trackPacket,
 } from "./netscan";
 import { executeHosakaUiCommand } from "../ui/hosakaUi";
+import { THEMES, applyTheme, setOrbColor, setOrbOrbit, type ThemeId } from "../ui/theme";
 import { appendConversationEntry } from "../chat/conversationLog";
 import { APP_REGISTRY, resolveAppId } from "../ui/appRegistry";
 import {
@@ -577,10 +578,127 @@ export class HosakaShell {
       case "/orb":
         this.handleOrb(arg);
         break;
+      case "/voice": {
+        // Under-the-hood toggles for the (now ON/OFF-only) voice panel.
+        const sub = arg.trim().toLowerCase();
+        if (!sub || sub === "open") {
+          executeHosakaUiCommand({ id: "ui.open_panel", target: "voice" });
+          this.writeln(`  ${GRAY}opened voice.${R}`);
+        } else if (sub.startsWith("mode")) {
+          const v = sub.slice(4).trim();
+          if (v === "agent" || v === "demo") {
+            try { localStorage.setItem("hosaka.voiceMode", v); } catch { /* ignore */ }
+            this.writeln(`  ${GRAY}voice mode \u2192${R} ${AMBER}${v}${R} ${GRAY}(reload voice panel to apply)${R}`);
+          } else {
+            this.writeln(`  ${GRAY}usage:${R} ${CYAN}/voice mode agent|demo${R}`);
+          }
+        } else if (sub === "cam" || sub === "camera") {
+          executeHosakaUiCommand({ id: "ui.device_check", kind: "cam" });
+        } else if (sub === "mic") {
+          executeHosakaUiCommand({ id: "ui.device_check", kind: "mic" });
+        } else if (sub === "spk" || sub === "speaker") {
+          executeHosakaUiCommand({ id: "ui.device_check", kind: "spk" });
+        } else if (sub === "help" || sub === "?") {
+          this.writeln(`  ${AMBER}/voice${R}            ${GRAY}\u2014 open the voice panel${R}`);
+          this.writeln(`  ${AMBER}/voice mode${R}       ${GRAY}\u2014 ${CYAN}agent${GRAY} (local picoclaw) or ${CYAN}demo${GRAY} (openai realtime)${R}`);
+          this.writeln(`  ${AMBER}/voice cam${R}        ${GRAY}\u2014 open camera check${R}`);
+          this.writeln(`  ${AMBER}/voice mic${R}        ${GRAY}\u2014 open mic check${R}`);
+          this.writeln(`  ${AMBER}/voice spk${R}        ${GRAY}\u2014 open speaker check${R}`);
+        } else {
+          this.writeln(`  ${GRAY}unknown \u2192 try${R} ${CYAN}/voice help${R}`);
+        }
+        break;
+      }
       case "/menu":
         executeHosakaUiCommand({ id: "ui.toggle_menu" });
         this.writeln(`  ${GRAY}toggled menu.${R}`);
         break;
+      case "/volume": {
+        // /volume                → show current
+        // /volume mute|unmute    → toggle mute
+        // /volume up|down        → ±5
+        // /volume <0..100>       → set
+        const sub = arg.trim().toLowerCase();
+        const showState = (v: { level: number; muted: boolean; backend: string }) => {
+          const meter = "▰".repeat(Math.round(v.level / 10)) + "▱".repeat(10 - Math.round(v.level / 10));
+          const muteTag = v.muted ? ` ${AMBER}[muted]${R}` : "";
+          this.writeln(`  ${CYAN}${meter}${R} ${AMBER}${v.level}%${R}${muteTag} ${GRAY}(${v.backend})${R}`);
+        };
+        const fail = (e: unknown) => {
+          this.writeln(`  ${GRAY}volume api unavailable:${R} ${AMBER}${String(e)}${R}`);
+          this.writeln(`  ${GRAY}backend needs pactl (linux) or osascript (mac).${R}`);
+        };
+        const get = () => fetch("/api/v1/audio/volume").then((r) => r.ok ? r.json() : Promise.reject(new Error(`http ${r.status}`)));
+        const put = (body: Record<string, unknown>) =>
+          fetch("/api/v1/audio/volume", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+          }).then((r) => r.ok ? r.json() : Promise.reject(new Error(`http ${r.status}`)));
+
+        if (!sub) {
+          get().then(showState).catch(fail);
+        } else if (sub === "mute") {
+          put({ muted: true }).then(showState).catch(fail);
+        } else if (sub === "unmute") {
+          put({ muted: false }).then(showState).catch(fail);
+        } else if (sub === "toggle") {
+          get().then((v) => put({ muted: !v.muted })).then(showState).catch(fail);
+        } else if (sub === "up" || sub === "down") {
+          const delta = sub === "up" ? 5 : -5;
+          get().then((v) => put({ level: Math.max(0, Math.min(100, v.level + delta)), muted: false })).then(showState).catch(fail);
+        } else if (/^\d{1,3}$/.test(sub)) {
+          const lvl = Math.max(0, Math.min(100, parseInt(sub, 10)));
+          put({ level: lvl, muted: false }).then(showState).catch(fail);
+        } else {
+          this.writeln(`  ${GRAY}usage:${R} ${CYAN}/volume [mute|unmute|toggle|up|down|0..100]${R}`);
+        }
+        break;
+      }
+      case "/quality": {
+        const sub = arg.trim().toLowerCase();
+        if (sub === "high" || sub === "low") {
+          window.dispatchEvent(new CustomEvent("hosaka:orb-quality", { detail: sub }));
+          this.writeln(`  ${GRAY}orb quality set to${R} ${AMBER}${sub}${R}${GRAY}.${R}`);
+        } else if (sub === "auto" || sub === "") {
+          try { localStorage.removeItem("hosaka.orb.quality"); } catch { /* ignore */ }
+          window.dispatchEvent(new CustomEvent("hosaka:orb-quality", { detail: "auto" }));
+          this.writeln(`  ${GRAY}orb quality reset to auto-detect.${R}`);
+        } else {
+          this.writeln(`  ${GRAY}usage:${R} ${CYAN}/quality high|low|auto${R}`);
+        }
+        break;
+      }
+      case "/theme": {
+        const sub = arg.trim().toLowerCase();
+        if (!sub) {
+          this.writeln(`  ${AMBER}themes:${R}`);
+          for (const t of THEMES) {
+            this.writeln(`    ${CYAN}${t.id.padEnd(12)}${R} ${GRAY}${t.hint}${R}`);
+          }
+          this.writeln(`  ${GRAY}usage:${R} ${CYAN}/theme <name>${R}`);
+        } else if (THEMES.some((t) => t.id === sub)) {
+          applyTheme(sub as ThemeId);
+          this.writeln(`  ${GRAY}theme set to${R} ${AMBER}${sub}${R}${GRAY}.${R}`);
+        } else {
+          this.writeln(`  ${GRAY}unknown theme${R} ${AMBER}${sub}${R}${GRAY}. try${R} ${CYAN}/theme${R}`);
+        }
+        break;
+      }
+      case "/suggest": {
+        // Prefill the always-on cmdline with a proposed command. The
+        // operator still has to press Enter — this is the channel for
+        // "agent-proposed next step" or "did you mean …" corrections.
+        const text = arg.trim();
+        if (!text) {
+          this.writeln(`  ${GRAY}usage:${R} ${CYAN}/suggest <command to prefill>${R}`);
+          this.writeln(`  ${GRAY}prefills the strip below; user presses enter to run.${R}`);
+        } else {
+          executeHosakaUiCommand({ id: "ui.prefill_cmdline", text, submit: false, focus: true });
+          this.writeln(`  ${GRAY}staged \u2192${R} ${AMBER}${text}${R} ${GRAY}(press enter to run)${R}`);
+        }
+        break;
+      }
       case "/lore":
         this.lore();
         break;
@@ -1805,13 +1923,45 @@ export class HosakaShell {
   }
 
   private handleOrb(arg: string): void {
-    const sub = arg.trim().toLowerCase();
+    const trimmed = arg.trim();
+    const sub = trimmed.toLowerCase();
     if (sub === "art" || sub === "show") {
       this.orb();
       return;
     }
+    // /orb color <css-color>  → recolor the orb ("reset" or empty to clear)
+    if (sub.startsWith("color")) {
+      const value = trimmed.slice("color".length).trim();
+      if (!value || value === "reset" || value === "clear") {
+        setOrbColor(null);
+        this.writeln(`  ${GRAY}orb color reset to theme accent.${R}`);
+      } else {
+        setOrbColor(value);
+        this.writeln(`  ${GRAY}orb color →${R} ${AMBER}${value}${R}`);
+      }
+      return;
+    }
+    // /orb orbit <text>  → text/glyph spinning around the orb
+    if (sub.startsWith("orbit")) {
+      const value = trimmed.slice("orbit".length).trim();
+      if (!value || value === "reset" || value === "clear") {
+        setOrbOrbit(null);
+        this.writeln(`  ${GRAY}orbit reset to ${CYAN}+${GRAY}.${R}`);
+      } else {
+        setOrbOrbit(value);
+        this.writeln(`  ${GRAY}orbit →${R} ${AMBER}${value.slice(0, 24)}${R}`);
+      }
+      return;
+    }
+    if (sub === "help" || sub === "?") {
+      this.writeln(`  ${AMBER}/orb${R} ${GRAY}— open voice panel${R}`);
+      this.writeln(`  ${AMBER}/orb art${R} ${GRAY}— print lore glyph${R}`);
+      this.writeln(`  ${AMBER}/orb color <css>${R} ${GRAY}— e.g. ${CYAN}#ff6fa3${GRAY}, ${CYAN}gold${GRAY}, ${CYAN}reset${R}`);
+      this.writeln(`  ${AMBER}/orb orbit <text>${R} ${GRAY}— glyphs around the ring${R}`);
+      return;
+    }
     executeHosakaUiCommand({ id: "ui.toggle_orb" });
-    this.writeln(`  ${GRAY}opened voice orb.${R} ${DARK_GRAY}try ${CYAN}/orb art${DARK_GRAY} for the lore glyph.${R}`);
+    this.writeln(`  ${GRAY}opened voice orb.${R} ${DARK_GRAY}try ${CYAN}/orb help${DARK_GRAY} for tricks.${R}`);
   }
 
   private lore(): void {
