@@ -322,12 +322,24 @@ export function App() {
       openApp("terminal");
       window.dispatchEvent(new CustomEvent("hosaka:overlay-close-all", { detail: { keepPinned: true } }));
     };
+    // Global Esc panic: if Esc reaches the window without anything
+    // claiming it (no input focused), close the menu + all overlays so a
+    // user is never trapped behind a transient surface.
+    const onEscPanic = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable) return;
+      setNavOpen(false);
+      window.dispatchEvent(new CustomEvent("hosaka:overlay-close-all", { detail: { keepPinned: false } }));
+    };
     window.addEventListener("hosaka:open-tab", onTab as EventListener);
     window.addEventListener("hosaka:open-app", onTab as EventListener);
     window.addEventListener("hosaka:close-app", onClose as EventListener);
     window.addEventListener("hosaka:toggle-menu", onToggleMenu);
     window.addEventListener("hosaka:toggle-chrome", onToggleChrome);
     window.addEventListener("hosaka:focus-terminal", onFocusTerminal);
+    window.addEventListener("keydown", onEscPanic);
     return () => {
       window.removeEventListener("hosaka:open-tab", onTab as EventListener);
       window.removeEventListener("hosaka:open-app", onTab as EventListener);
@@ -335,6 +347,7 @@ export function App() {
       window.removeEventListener("hosaka:toggle-menu", onToggleMenu);
       window.removeEventListener("hosaka:toggle-chrome", onToggleChrome);
       window.removeEventListener("hosaka:focus-terminal", onFocusTerminal);
+      window.removeEventListener("keydown", onEscPanic);
     };
   }, [closeApp, openApp, updateWindows]);
 

@@ -77,7 +77,7 @@ export function CamCheckWindow({ onClose: _onClose }: { onClose: () => void }) {
 
       {camera.error && (
         <div className="instrument-note instrument-note--err">
-          {camera.error.includes("HTTPS") || camera.error.includes("secure origin") ? (
+          {/^camera blocked:.*secure/i.test(camera.error) || /api unavailable/i.test(camera.error) ? (
             <>
               <strong>⚠ secure context required</strong><br />
               browsers block camera/mic on plain HTTP outside localhost.<br />

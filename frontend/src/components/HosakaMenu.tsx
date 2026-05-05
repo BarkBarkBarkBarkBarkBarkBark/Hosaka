@@ -90,16 +90,18 @@ export function HosakaMenu({
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    const onClick = (e: MouseEvent) => {
-      if (!ref.current) return;
-      if (!ref.current.contains(e.target as Node)) onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
     };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("mousedown", onClick);
+    // capture phase + immediate close so Esc always wins, even if some
+    // other component (terminal, dialog) tries to intercept it.
+    window.addEventListener("keydown", onKey, { capture: true });
     return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("mousedown", onClick);
+      window.removeEventListener("keydown", onKey, { capture: true } as EventListenerOptions);
     };
   }, [open, onClose]);
 
@@ -144,8 +146,17 @@ export function HosakaMenu({
   };
 
   return (
-    <div className="hosaka-menu-scrim" role="dialog" aria-label="navigation">
-      <div ref={ref} className="hosaka-menu">
+    <div
+      className="hosaka-menu-scrim"
+      role="dialog"
+      aria-label="navigation"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        ref={ref}
+        className="hosaka-menu"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="hosaka-menu-head">
           <span className="hosaka-menu-title">menu</span>
           <button

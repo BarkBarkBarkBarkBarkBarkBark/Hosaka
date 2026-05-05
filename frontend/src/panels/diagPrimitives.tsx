@@ -69,6 +69,33 @@ export function useBrowserDevices(active: boolean) {
   return { devices, permission, refresh, requestLabels };
 }
 
+/* ── friendly media error mapper ─────────────────────────────────────────
+ * getUserMedia errors are not super readable. Map the common DOMException
+ * names to short human strings tailored to the device kind. */
+export function friendlyMediaError(exc: unknown, kind: "mic" | "cam"): string {
+  const dev = kind === "mic" ? "microphone" : "camera";
+  const e = exc as { name?: string; message?: string } | null | undefined;
+  const name = e?.name ?? "";
+  const msg = e?.message ?? String(exc);
+  switch (name) {
+    case "NotReadableError":
+      return `${dev} busy: another app (zoom, browser tab, voice agent) is holding it. close that and retry.`;
+    case "NotAllowedError":
+      return `${dev} blocked: browser permission denied. open site settings → allow ${dev} → retry.`;
+    case "NotFoundError":
+    case "OverconstrainedError":
+      return `no ${dev} matched the requested device. unplug/replug, or pick a different device.`;
+    case "AbortError":
+      return `${dev} aborted: hardware glitch or session interrupted. retry usually works.`;
+    case "SecurityError":
+      return `${dev} blocked: page is not a secure origin. use https:// or localhost.`;
+    case "TypeError":
+      return `${dev} api unavailable in this browser context (likely insecure http on a non-localhost ip).`;
+    default:
+      return `${dev} error: ${name || "unknown"} — ${msg}`;
+  }
+}
+
 /* ── useAudioMeter ──────────────────────────────────────────────────────── */
 
 export type AudioMeterSample = {
@@ -152,7 +179,7 @@ export function useAudioMeter(active: boolean, deviceIdOverride?: string) {
         tick();
       } catch (exc) {
         if (cancelled) return;
-        setSample({ level: 0, rms: 0, peak: 0, state: "error", error: String(exc) });
+        setSample({ level: 0, rms: 0, peak: 0, state: "error", error: friendlyMediaError(exc, "mic") });
       }
     })();
 
@@ -218,7 +245,7 @@ export function useWebcamPreview(active: boolean, deviceIdOverride?: string) {
         setState("on");
       } catch (exc) {
         if (!cancelled) {
-          setError(String(exc));
+          setError(friendlyMediaError(exc, "cam"));
           setState("error");
         }
       }

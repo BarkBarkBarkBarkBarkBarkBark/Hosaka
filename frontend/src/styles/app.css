@@ -3332,7 +3332,9 @@ html, body, #root {
   position: fixed;
   bottom: 72px;
   right: 16px;
-  z-index: 200;
+  /* below HosakaMenu (z 60) and surface windows (z 80+) so transient ui
+     can always cover the orb. raise help/hints stay above orb anyway. */
+  z-index: 40;
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -3996,7 +3998,9 @@ html, body, #root {
 
 /* ── HosakaMenu overlay ───────────────────────────────────── */
 .hosaka-menu-scrim {
-  position: fixed; inset: 0; z-index: 60;
+  /* must sit above floating-orb (40), overlay surface windows (80+),
+     and doc-toast (70) so the menu is never visually trapped under them. */
+  position: fixed; inset: 0; z-index: 250;
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(2px);
   display: flex; align-items: stretch; justify-content: flex-start;
