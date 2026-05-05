@@ -128,6 +128,11 @@ export function HosakaMenu({
     return () => { cancelled = true; };
   }, [open]);
 
+  // NB: keep all hooks above any early return — `useMemo` after `if (!open)
+  // return null` would violate the rules-of-hooks and crash with
+  // "Rendered more hooks than during the previous render".
+  const orderedApps = useMemo(() => apps, [apps]);
+
   if (!open) return null;
 
   const pickApp = (appId: AppId) => { onSetActive(appId); onClose(); };
@@ -141,8 +146,6 @@ export function HosakaMenu({
     setOrbOrbitState(v);
     setOrbOrbit(v.trim() ? v.trim() : null);
   };
-
-  const orderedApps = useMemo(() => apps, [apps]);
 
   return (
     <div className="hosaka-menu-scrim" role="dialog" aria-label="navigation">
