@@ -78,11 +78,13 @@ function useDevices() {
   const [permissionGranted, setPermissionGranted] = useState(false);
 
   const refresh = async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
     const raw = await navigator.mediaDevices.enumerateDevices();
     setDevices(dedupeDevices(raw));
   };
 
   const requestPermissions = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) return;
     try {
       // Requesting getUserMedia populates device labels.
       const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
@@ -101,8 +103,8 @@ function useDevices() {
 
   useEffect(() => {
     void refresh();
-    navigator.mediaDevices.addEventListener("devicechange", refresh);
-    return () => navigator.mediaDevices.removeEventListener("devicechange", refresh);
+    navigator.mediaDevices?.addEventListener("devicechange", refresh);
+    return () => navigator.mediaDevices?.removeEventListener("devicechange", refresh);
   }, []);
 
   return { devices, permissionGranted, requestPermissions, refresh };

@@ -118,19 +118,18 @@ export function SurfaceWindow({
           <button
             type="button"
             className={`surface-window-btn ${pinned ? "is-on" : ""}`}
-            data-surface-noclick="true"
             aria-label={pinned ? "unpin" : "pin"}
             title={pinned ? "unpin" : "pin"}
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={onTogglePin}
           >◉</button>
         )}
         <button
           type="button"
           className="surface-window-btn surface-window-close"
-          data-surface-noclick="true"
           aria-label="close"
           title="close"
-          onClick={onClose}
+          onPointerDown={(e) => { e.stopPropagation(); onClose(); }}
         >✕</button>
       </div>
       <div className="surface-window-body">

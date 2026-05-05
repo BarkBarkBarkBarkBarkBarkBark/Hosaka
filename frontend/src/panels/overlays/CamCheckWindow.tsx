@@ -76,7 +76,15 @@ export function CamCheckWindow({ onClose: _onClose }: { onClose: () => void }) {
       />
 
       {camera.error && (
-        <div className="instrument-note instrument-note--err">{camera.error}</div>
+        <div className="instrument-note instrument-note--err">
+          {camera.error.includes("HTTPS") || camera.error.includes("secure origin") ? (
+            <>
+              <strong>⚠ secure context required</strong><br />
+              browsers block camera/mic on plain HTTP outside localhost.<br />
+              access hosaka via <code>http://localhost</code> or enable HTTPS on the host.
+            </>
+          ) : camera.error}
+        </div>
       )}
 
       <div className="instrument-actions">

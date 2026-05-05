@@ -104,6 +104,17 @@ export function useAudioMeter(active: boolean, deviceIdOverride?: string) {
     let ctx: AudioContext | null = null;
     setSample((prev) => ({ ...prev, state: "starting", error: null }));
 
+    if (!navigator.mediaDevices?.getUserMedia) {
+      const isInsecure = location.protocol !== "https:" && location.hostname !== "localhost";
+      setSample((prev) => ({
+        ...prev,
+        state: "error",
+        error: isInsecure
+          ? "Mic blocked: browser requires HTTPS (or localhost) for media access."
+          : "navigator.mediaDevices unavailable.",
+      }));
+      return;
+    }
     (async () => {
       try {
         const AudioCtx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -169,6 +180,17 @@ export function useWebcamPreview(active: boolean, deviceIdOverride?: string) {
   useEffect(() => {
     if (!active) {
       setState("off");
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      const isInsecure = location.protocol !== "https:" && location.hostname !== "localhost";
+      setError(
+        isInsecure
+          ? "Camera blocked: browser requires HTTPS (or localhost) for media access. " +
+            "On the Pi, enable HTTPS or access via localhost."
+          : "navigator.mediaDevices unavailable in this browser context."
+      );
+      setState("error");
       return;
     }
     let cancelled = false;
