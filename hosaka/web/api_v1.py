@@ -1365,6 +1365,24 @@ def v1_apps_launch(app_id: str) -> dict[str, Any]:
         return _mock_app_response(app, "launch")
     cmd = list(app["launch"]["command"])
     env, seat_user, note = _resolve_kiosk_seat_env()
+    # Expand $HOME / ~/ / $USER in argv against the SEAT user's pw entry
+    # (not the webserver's, which is root in production). This lets
+    # manifests use portable paths like "$HOME/Vault" without getting
+    # passed literally to the spawned process.
+    if seat_user:
+        try:
+            import pwd
+            pw = pwd.getpwnam(seat_user)
+            home = pw.pw_dir
+            uname = pw.pw_name
+            cmd = [
+                a.replace("$HOME", home).replace("${HOME}", home)
+                 .replace("$USER", uname).replace("${USER}", uname)
+                 .replace("~/", f"{home}/")
+                for a in cmd
+            ]
+        except (KeyError, ImportError):
+            pass
     # If the webserver runs as root (the kiosk case) and we found a seat,
     # drop privs so the launched window joins the operator's wayland/X11
     # session. Without this the process spawns headless and never paints.
@@ -1392,20 +1410,26 @@ def _resolve_kiosk_seat_env() -> tuple[dict[str, str], Optional[str], Optional[s
     Returns (env-overrides, user-to-runuser-as, optional human note).
     Strategy:
       1. Honor explicit overrides via HOSAKA_KIOSK_USER / HOSAKA_KIOSK_DISPLAY
-         / HOSAKA_KIOSK_WAYLAND_DISPLAY / HOSAKA_KIOSK_XDG_RUNTIME_DIR.
+         / HOSAKA_KIOSK_WAYLAND_DISPLAY / HOSAKA_KIOSK_XDG_RUNTIME_DIR
+         / HOSAKA_KIOSK_XAUTHORITY.
       2. Otherwise, scan /run/user/<uid>/ for wayland-* sockets; take the
          lowest-uid match >= 1000 as the kiosk seat.
-      3. Fall back to no overrides — the launch will still happen, but may
+      3. If no Wayland seat: probe a running Xorg process for its DISPLAY
+         and -auth file (this is the path the Pi 3B+ kiosk takes — startx
+         from tty1 produces an X server with a per-session auth cookie at
+         /tmp/serverauth.* that flatpak apps need or they exit silently).
+      4. Fall back to no overrides — the launch will still happen, but may
          appear headless if there is no display attached yet.
     """
     user = os.getenv("HOSAKA_KIOSK_USER")
     xdg = os.getenv("HOSAKA_KIOSK_XDG_RUNTIME_DIR")
     wayland = os.getenv("HOSAKA_KIOSK_WAYLAND_DISPLAY")
     display = os.getenv("HOSAKA_KIOSK_DISPLAY")
+    xauthority = os.getenv("HOSAKA_KIOSK_XAUTHORITY")
     note: Optional[str] = None
 
     if not (user and xdg and (wayland or display)):
-        # auto-detect from /run/user/<uid>
+        # auto-detect from /run/user/<uid> first (Wayland path).
         try:
             run_user = Path("/run/user")
             candidates = sorted(
@@ -1417,20 +1441,64 @@ def _resolve_kiosk_seat_env() -> tuple[dict[str, str], Optional[str], Optional[s
             seat = run_user / str(uid)
             wls = sorted(seat.glob("wayland-*"))
             wls = [p for p in wls if not p.name.endswith(".lock")]
-            if not wls and not (seat / "X11-unix").exists():
-                continue
+            if not wls:
+                # No wayland here, but XDG_RUNTIME_DIR is still useful for
+                # PulseAudio / pipewire even when we end up on X11 below.
+                pass
             try:
                 import pwd
                 pw = pwd.getpwuid(uid)
             except (KeyError, ImportError):
                 continue
-            user = user or pw.pw_name
-            xdg = xdg or str(seat)
+            if user is None:
+                user = pw.pw_name
+            if xdg is None:
+                xdg = str(seat)
             if wls and not wayland:
                 wayland = wls[0].name
             break
-        if not user:
-            note = "no kiosk seat found — app spawned headless."
+
+    # X11 fallback: find a running Xorg process and read its argv. This
+    # handles the Pi 3B+ kiosk (startx from tty1) where the auth cookie
+    # path is randomized per-session as /tmp/serverauth.<id>. Without
+    # XAUTHORITY pointed at it, flatpak apps fail "cannot open display"
+    # and exit immediately — which the operator sees as "the app flashed
+    # for one second and disappeared".
+    if not wayland and not (display and xauthority):
+        try:
+            for pid_dir in Path("/proc").iterdir():
+                if not pid_dir.name.isdigit():
+                    continue
+                comm_path = pid_dir / "comm"
+                try:
+                    comm = comm_path.read_text().strip()
+                except OSError:
+                    continue
+                if comm not in ("Xorg", "Xwayland", "X"):
+                    continue
+                try:
+                    cmdline = (pid_dir / "cmdline").read_bytes().split(b"\0")
+                except OSError:
+                    continue
+                argv = [a.decode("utf-8", "ignore") for a in cmdline if a]
+                # argv[1..] looks like: [':4', 'vt1', '-keeptty', '-auth', '/tmp/serverauth.X']
+                disp_arg = next((a for a in argv[1:] if re.fullmatch(r":\d+", a)), None)
+                auth_arg = None
+                for i, a in enumerate(argv):
+                    if a == "-auth" and i + 1 < len(argv):
+                        auth_arg = argv[i + 1]
+                        break
+                if disp_arg and not display:
+                    display = disp_arg
+                if auth_arg and not xauthority:
+                    xauthority = auth_arg
+                if display and xauthority:
+                    break
+        except OSError:
+            pass
+
+    if not (user and (wayland or display)):
+        note = "no kiosk seat found — app spawned headless."
 
     env: dict[str, str] = {}
     if xdg:
@@ -1441,6 +1509,8 @@ def _resolve_kiosk_seat_env() -> tuple[dict[str, str], Optional[str], Optional[s
         env["DISPLAY"] = display
     elif not wayland:
         env["DISPLAY"] = ":0"
+    if xauthority:
+        env["XAUTHORITY"] = xauthority
     return env, user, note
 
 
