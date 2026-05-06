@@ -1,0 +1,36 @@
+id: apostrophe
+name: Apostrophe
+category: writing
+# aarch64 + x86_64 — clean GTK markdown editor, the Pi-friendly answer
+# to Obsidian. Agent's docs panel is still the canonical write target;
+# apostrophe is for human-only longform.
+description: >-
+  Apostrophe is a distraction-free markdown editor for GNOME. On aarch64
+  hosts (where Obsidian's flathub build is unavailable) it covers the
+  same role: write notes, see live preview, export to PDF/HTML.
+provider: Manuel Genovés
+backend: flatpak
+flatpak_id: org.gnome.gitlab.somas.Apostrophe
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - org.gnome.gitlab.somas.Apostrophe
+launch:
+  command:
+    - flatpak
+    - run
+    - org.gnome.gitlab.somas.Apostrophe
+aliases:
+  - apostrophe
+  - markdown-editor
+memory:
+  profile: light
+permissions_notes:
+  - Reads and writes user-selected files; no Hosaka-managed account.
+account_login_required: false
+hosaka_manages_credentials: false
+notes:
+  - Convention&colon; keep markdown in ~/Documents/notes so the docs panel can index it later.

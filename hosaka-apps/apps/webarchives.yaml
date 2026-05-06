@@ -1,0 +1,37 @@
+id: webarchives
+name: Web Archives
+category: reference
+# aarch64 + x86_64 — GTK app, broadly available.
+description: >-
+  Web Archives is an offline web content reader (Wikipedia, Wiktionary,
+  Wikivoyage, Project Gutenberg snapshots). Doomsday-prep gold: download
+  the .zim files, browse them with no network.
+provider: birros
+backend: flatpak
+flatpak_id: com.github.birros.WebArchives
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - com.github.birros.WebArchives
+launch:
+  command:
+    - flatpak
+    - run
+    - com.github.birros.WebArchives
+aliases:
+  - webarchives
+  - web-archives
+  - kiwix
+  - zim
+memory:
+  profile: medium
+permissions_notes:
+  - Reads .zim archive files from local disk; no network needed once seeded.
+account_login_required: false
+hosaka_manages_credentials: false
+notes:
+  - Seed archives by dropping .zim files into ~/WebArchives.
+  - kiwix.org publishes ready-made dumps of wikipedia, stackoverflow, gutenberg.

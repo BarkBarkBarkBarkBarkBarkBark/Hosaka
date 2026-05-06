@@ -1,0 +1,37 @@
+id: keepassxc
+name: KeePassXC
+category: security
+# aarch64 + x86_64 — first-class for prepper / decentralized stories.
+description: >-
+  KeePassXC is a local-first, encrypted password vault. Single .kdbx
+  file on disk, no cloud, no account. Drops cleanly into the
+  doomsday-prep / private-decentralized angle.
+provider: KeePassXC Team
+backend: flatpak
+flatpak_id: org.keepassxc.KeePassXC
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - org.keepassxc.KeePassXC
+launch:
+  command:
+    - flatpak
+    - run
+    - org.keepassxc.KeePassXC
+aliases:
+  - keepass
+  - keepassxc
+  - vault
+  - passwords
+memory:
+  profile: light
+permissions_notes:
+  - Vault file lives where the user picks; ~/Vaults is the Hosaka convention.
+  - Hosaka never reads or relays the vault.
+account_login_required: false
+hosaka_manages_credentials: false
+notes:
+  - Pairs well with a YubiKey or local key file.

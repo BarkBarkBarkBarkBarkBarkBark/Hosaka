@@ -1,0 +1,34 @@
+id: wike
+name: Wike
+category: reference
+# aarch64 + x86_64 — no arch constraint needed.
+description: >-
+  Wike is a Wikipedia reader for GNOME. Lightweight, offline-capable
+  with article archiving, fits the doomsday-prep / decentralized-reading
+  story.
+provider: Hugo Olabera
+backend: flatpak
+flatpak_id: com.github.hugolabe.Wike
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - com.github.hugolabe.Wike
+launch:
+  command:
+    - flatpak
+    - run
+    - com.github.hugolabe.Wike
+aliases:
+  - wike
+  - wikipedia-reader
+memory:
+  profile: light
+permissions_notes:
+  - Network access for live Wikipedia fetches; saved articles live on disk.
+account_login_required: false
+hosaka_manages_credentials: false
+notes:
+  - Pairs with webarchives for full offline encyclopedia access.

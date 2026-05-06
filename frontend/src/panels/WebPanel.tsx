@@ -13,11 +13,26 @@
  * The same bundle loads in both. The only branch is on `getBrowserMode()`.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "../i18n";
 import { getBrowserMode } from "./browserAdapter";
 // electronWebview.d.ts is an ambient .d.ts — TS picks it up from tsconfig's
 // include glob, no runtime import needed (and rollup can't resolve .d.ts).
+
+// ── Tab model ────────────────────────────────────────────────────────────
+// The web panel is now a tabbed mini-browser. We render only the *active*
+// tab's <webview>/<iframe> so the Pi isn't decoding N pages in the
+// background; inactive tabs are remembered as URL state and re-mount when
+// selected. A dropdown switcher is the primary navigation (no horizontal
+// strip — saves vertical real estate, plays well with the kiosk topbar).
+
+type Tab = {
+  id: string;
+  url: string;          // the currently-loaded URL (drives <webview src>)
+  urlInput: string;     // the address-bar value, may differ until "go"
+  presetId: string;     // last preset selected for this tab
+  title: string;        // best-effort, derived from URL host
+};
 
 type Preset = {
   id: string;
@@ -62,16 +77,44 @@ function normalizeUrl(raw: string): string | null {
   }
 }
 
+function titleFromUrl(url: string, fallback = "new tab"): string {
+  try {
+    const u = new URL(url);
+    return u.hostname.replace(/^www\./, "");
+  } catch {
+    return fallback;
+  }
+}
+
+let tabSeq = 0;
+const newTabId = () => `tab-${Date.now().toString(36)}-${(tabSeq += 1).toString(36)}`;
+
+function makeTab(url: string, presetId = "custom"): Tab {
+  return {
+    id: newTabId(),
+    url,
+    urlInput: url,
+    presetId,
+    title: titleFromUrl(url),
+  };
+}
+
 type Props = { active: boolean };
 
 export function WebPanel({ active }: Props) {
   const { t } = useTranslation("ui");
-  // cyberspace.online is the canonical "front door" for Hosaka — opening the
-  // web panel should funnel users into the community, not a random encyclopedia
-  // article. Operators can always pick a preset or type a URL.
-  const [presetId, setPresetId] = useState("cyberspace");
-  const [urlInput, setUrlInput] = useState("https://cyberspace.online");
-  const [src, setSrc] = useState<string | null>("https://cyberspace.online");
+
+  // cyberspace.online is the canonical "front door" — the first tab seeds
+  // there. Operators can always pick a preset, type a URL, or open a new tab.
+  const [tabs, setTabs] = useState<Tab[]>(() => [
+    makeTab("https://cyberspace.online", "cyberspace"),
+  ]);
+  const [activeId, setActiveId] = useState<string>(() => tabs[0]?.id ?? "");
+
+  const active_ = useMemo(
+    () => tabs.find((tab) => tab.id === activeId) ?? tabs[0],
+    [tabs, activeId],
+  );
 
   // We only evaluate once per mount — the kiosk host can't hot-swap the
   // preload bridge in. Plain browsers never get it. Either way the value
@@ -79,27 +122,62 @@ export function WebPanel({ active }: Props) {
   const [mode] = useState(() => getBrowserMode());
   const useWebview = mode === "native-webview";
 
-  const load = useCallback((url: string) => {
-    const normalized = normalizeUrl(url);
-    if (!normalized) return;
-    setSrc(normalized);
-    setUrlInput(normalized);
-  }, []);
+  const updateActive = useCallback(
+    (patch: Partial<Tab>) => {
+      setTabs((prev) =>
+        prev.map((tab) => (tab.id === activeId ? { ...tab, ...patch } : tab)),
+      );
+    },
+    [activeId],
+  );
+
+  const load = useCallback(
+    (url: string) => {
+      const normalized = normalizeUrl(url);
+      if (!normalized) return;
+      updateActive({
+        url: normalized,
+        urlInput: normalized,
+        title: titleFromUrl(normalized),
+      });
+    },
+    [updateActive],
+  );
 
   // The URL bar is the source of truth on Go — real-browser behaviour. If the
   // user edits the bar (even while a preset is selected), Enter/Go renders
   // exactly what they typed. Preset dropdown just seeds the bar and loads.
-  const onGo = () => load(urlInput);
+  const onGo = () => {
+    if (!active_) return;
+    load(active_.urlInput);
+  };
 
   const onPresetChange = (id: string) => {
-    setPresetId(id);
+    if (!active_) return;
+    updateActive({ presetId: id });
     const p = PRESETS.find((x) => x.id === id);
-    if (!p) return;
-    if (p.id === "custom") {
-      setSrc(null);
-      return;
-    }
+    if (!p || p.id === "custom") return;
     load(p.url);
+  };
+
+  const onNewTab = () => {
+    const tab = makeTab("https://cyberspace.online", "cyberspace");
+    setTabs((prev) => [...prev, tab]);
+    setActiveId(tab.id);
+  };
+
+  const onCloseTab = (id: string) => {
+    setTabs((prev) => {
+      if (prev.length <= 1) return prev; // never close the last tab
+      const filtered = prev.filter((tab) => tab.id !== id);
+      if (id === activeId) {
+        // pick the neighbor to the left, or the new first tab
+        const idx = prev.findIndex((tab) => tab.id === id);
+        const next = filtered[Math.max(0, idx - 1)] ?? filtered[0];
+        if (next) setActiveId(next.id);
+      }
+      return filtered;
+    });
   };
 
   // Pause the heavy <webview>/<iframe> when the panel is hidden so we're not
@@ -109,15 +187,49 @@ export function WebPanel({ active }: Props) {
   }, [active]);
 
   if (!active) return null;
+  if (!active_) return null;
 
   return (
     <div className="web-panel">
       <div className="web-toolbar">
         <label className="web-label">
+          <span className="dim">{t("web.tabsLabel", "tab")}</span>
+          <select
+            className="web-select"
+            value={active_.id}
+            onChange={(e) => setActiveId(e.target.value)}
+            title={t("web.tabsHint", "switch open tabs")}
+          >
+            {tabs.map((tab, i) => (
+              <option key={tab.id} value={tab.id}>
+                {`${i + 1}. ${tab.title}`}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="btn btn-ghost web-tab-new"
+            onClick={onNewTab}
+            title={t("web.newTab", "new tab")}
+          >
+            +
+          </button>
+          {tabs.length > 1 && (
+            <button
+              type="button"
+              className="btn btn-ghost web-tab-close"
+              onClick={() => onCloseTab(active_.id)}
+              title={t("web.closeTab", "close tab")}
+            >
+              ×
+            </button>
+          )}
+        </label>
+        <label className="web-label">
           <span className="dim">{t("web.presetLabel", "app")}</span>
           <select
             className="web-select"
-            value={presetId}
+            value={active_.presetId}
             onChange={(e) => onPresetChange(e.target.value)}
           >
             {PRESETS.map((p) => (
@@ -133,18 +245,20 @@ export function WebPanel({ active }: Props) {
             className="web-url-input"
             spellCheck={false}
             placeholder={t("web.urlPlaceholder", "https://…")}
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
+            value={active_.urlInput}
+            onChange={(e) => updateActive({ urlInput: e.target.value })}
             onKeyDown={(e) => e.key === "Enter" && onGo()}
           />
           <button type="button" className="btn btn-primary web-go" onClick={onGo}>
             {t("web.go", "go")}
           </button>
-          {src && !useWebview && (
+          {active_.url && !useWebview && (
             <button
               type="button"
               className="btn btn-ghost"
-              onClick={() => window.open(src, "_blank", "noopener,noreferrer")}
+              onClick={() =>
+                window.open(active_.url, "_blank", "noopener,noreferrer")
+              }
             >
               {t("web.openTab", "↗ tab")}
             </button>
@@ -157,22 +271,25 @@ export function WebPanel({ active }: Props) {
           : t("web.hint", "sites that block embedding open in a new tab. custom URL loads here when possible.")}
       </p>
       <div className="web-frame-wrap">
-        {src ? (
+        {active_.url ? (
           useWebview ? (
             // Electron <webview>. partition keeps cookies/storage for browsed
             // sites off the SPA's own origin. allowpopups is handled by
             // main.js's setWindowOpenHandler → shell.openExternal.
+            // key={active_.id} forces remount per tab so the partition lines up.
             <webview
+              key={active_.id}
               className="web-frame"
-              src={src}
+              src={active_.url}
               partition="persist:hosaka-browser"
               allowpopups={true}
             />
           ) : (
             <iframe
+              key={active_.id}
               className="web-frame"
               title={t("web.frameTitle", "web")}
-              src={src}
+              src={active_.url}
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
               referrerPolicy="no-referrer-when-downgrade"
             />
