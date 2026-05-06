@@ -1,0 +1,441 @@
+# plausible optimizations
+# ─────────────────────────────────────────────────────────────────────
+# Audit target: Hosaka kiosk on Raspberry Pi 3B+ (1 GB RAM, SD card,
+# Electron+Chromium, FastAPI backend). Goal is to tighten what exists,
+# not add features. Sorted by (impact desc, effort asc, risk asc).
+#
+# Reality floor (don't chase these — the hardware is what it is):
+#   - First-time install of Spotify/Discord/Steam will always be
+#     several minutes. ~250–800 MB of small writes on a class-10 SD.
+#     Move /var/lib/flatpak to a USB SSD if you ever need to fix it.
+#   - Cold Chromium/Electron start ≈ 6–12 s on a Pi 3B+. Floor.
+#   - First load of the SPA touches a 3.7 MB JS chunk (Automerge WASM
+#     inlined as base64). Splitting the WASM out as a separate file
+#     needs vite-plugin-wasm + top-level-await and changes the load
+#     graph — listed as a medium-effort item below.
+#   - 1 GB RAM + Chromium + xterm + Automerge + uvicorn lives at the
+#     edge of OOM. Budget for occasional kills, don't fight it.
+#   - python subprocess spawn ≈ 120–300 ms each on the Pi. Cache the
+#     result, don't try to make `flatpak` faster.
+# ─────────────────────────────────────────────────────────────────────
+
+baseline_measurements:
+  curl_wifi_networks_p1: "0.281 s"        # /api/v1/wifi/networks
+  curl_apps_capabilities: "0.449 s"       # /api/v1/apps/capabilities
+  spa_largest_chunk_kb: 3705               # repo-*.js (Automerge fullfat_base64)
+
+optimizations:
+
+  - id: pause-bg-polls-when-inactive
+    title: Pause Inbox/Nodes/PlantBadge while their tab is not active
+    impact: high
+    effort: trivial
+    risk: none
+    category: frontend
+    problem: |
+      InboxPanel polls every 10 s, NodesPanel every 15 s, PlantBadge
+      every 4.2 s — all unconditional. App.tsx keeps panels mounted
+      with the `hidden` attribute, so timers keep firing forever even
+      when the user is on Terminal. The poll handlers fetch JSON,
+      reconcile React, and (for PlantBadge) trigger a layout-shifting
+      glyph swap. Most likely contributor to the "screen jumps every
+      8 s" + general feel of churn on the Pi.
+    fix: |
+      Thread an `active` prop into InboxPanel/NodesPanel from
+      App.tsx the same way DiagnosticsPanel/DocsPanel already do, and
+      gate the setInterval on it. Wrap PlantBadge's setInterval in a
+      document.visibilityState === 'visible' guard.
+    evidence:
+      - frontend/src/panels/InboxPanel.tsx:60-63
+      - frontend/src/panels/NodesPanel.tsx:90-93
+      - frontend/src/components/PlantBadge.tsx:8-15
+
+  - id: stretch-active-poll-intervals
+    title: Lengthen the diagnostics/docs/diag-overlay poll intervals
+    impact: high
+    effort: trivial
+    risk: none
+    category: frontend
+    problem: |
+      DiagnosticsPanel re-fetches /diag/snapshot every 8 s while
+      visible; DiagOverlay every 6 s while open; DocsPanel every 10 s.
+      The snapshot endpoint shells out to nmcli/free/df and its
+      response includes ints whose width changes (256/940 → 1024/940
+      MB), so the meter cards re-flow on every refresh — visible as
+      a "jump" exactly every 8 s.
+    fix: |
+      Bump DiagnosticsPanel + DiagOverlay to 30 s, DocsPanel to 30 s,
+      and round mem/disk numbers so identical values don't trigger a
+      reflow.
+    evidence:
+      - frontend/src/panels/DiagnosticsPanel.tsx:52-57
+      - frontend/src/panels/overlays/DiagOverlay.tsx:39-43
+      - frontend/src/panels/DocsPanel.tsx:78-82
+
+  - id: strip-render-debug
+    title: Strip __hosakaDbg telemetry + post-paint setTimeouts in production
+    impact: high
+    effort: trivial
+    risk: none
+    category: frontend
+    problem: |
+      App.tsx logs render+layout snapshots on every render and runs
+      DOM querySelector + getComputedStyle sweeps at 500 ms and
+      2000 ms after every mount. Cheap on x86, real cost on a Pi with
+      no spare cycles. The dbg sink also retains references to the
+      logged objects.
+    fix: |
+      Wrap the dbg blocks + the two post-paint setTimeouts in
+      `if (import.meta.env.DEV)` so esbuild dead-code-eliminates them
+      from production builds.
+    evidence: frontend/src/App.tsx:215-249
+
+  - id: keep-electron-code-cache
+    title: Stop wiping Electron's V8 + GPU cache on every kiosk start
+    impact: high
+    effort: trivial
+    risk: low
+    category: chromium
+    problem: |
+      kiosk-electron.sh blows away Cache, Code Cache, GPUCache,
+      Service Worker, CacheStorage, and Network on every restart.
+      Code Cache is V8 bytecode — wiping it forces a full re-parse of
+      the 3.7 MB Automerge chunk on every cold start. GPUCache wipes
+      the shader cache. Both are big perf cliffs on a Pi.
+    fix: |
+      Only evict the HTTP Cache (so updated index.html is fetched
+      fresh). Keep Code Cache + GPUCache. Better still: use Electron
+      session.defaultSession.clearCache() conditioned on a build-id
+      file in userData so the wipe only happens when the SPA bundle
+      actually changed.
+    evidence: scripts/kiosk-electron.sh:78-92
+
+  - id: cache-flatpak-shellouts
+    title: TTL-cache flatpak info / remotes / which on the kiosk + backend
+    impact: high
+    effort: small
+    risk: low
+    category: backend
+    problem: |
+      Both kiosk/main.js (Electron IPC path used by the Pi) and
+      hosaka/web/api_v1.py (HTTP fallback) shell out to `flatpak info
+      <id>` on every status query and `flatpak remotes` on every
+      capabilities probe. Each call is 150–500 ms on the Pi. Opening
+      multiple external apps fans out into a serial chain of these.
+    fix: |
+      Add an in-process map keyed by call signature with a short TTL:
+      flatpakInstalled() → 30 s, flathubConfigured() / capabilities()
+      → 5 min, shutil.which() → process-lifetime. Invalidate the
+      install cache on a successful install. Apply the same in
+      api_v1.py (_run wrapper) and main.js (runCommand wrapper).
+    evidence:
+      - kiosk/main.js:245-252,469-491
+      - hosaka/web/api_v1.py:1162-1213
+
+  - id: chromium-pi-flags
+    title: Add Pi-tuned Chromium flags via app.commandLine in Electron main
+    impact: high
+    effort: small
+    risk: low
+    category: chromium
+    problem: |
+      kiosk/main.js never calls app.commandLine.appendSwitch, so
+      Electron picks default GPU/compositor paths that aren't great
+      on the Pi 3B+ VC4 GLES2 stack. Default Translate, occlusion
+      calculation, and smooth scrolling all eat cycles for nothing.
+    fix: |
+      Before app.whenReady() in kiosk/main.js, append:
+        --use-gl=egl
+        --enable-gpu-rasterization
+        --enable-zero-copy
+        --ignore-gpu-blocklist
+        --disable-smooth-scrolling
+        --disable-features=Translate,InterestFeedContentSuggestions,CalculateNativeWinOcclusion
+        --disk-cache-dir=/run/user/1000/electron-cache (tmpfs)
+      Verify with chrome://gpu after restart.
+    evidence: kiosk/main.js:687-708 (no commandLine calls anywhere)
+
+  - id: pi-zram-swap
+    title: Replace SD swap with zram on the Pi
+    impact: high
+    effort: trivial
+    risk: low
+    category: systemd
+    problem: |
+      Default Pi OS uses dphys-swapfile on the SD card. With Chromium +
+      xterm + Automerge + uvicorn + voice the Pi WILL hit memory
+      pressure, and SD swap = multi-second stalls.
+    fix: |
+      `sudo apt install zram-tools`; in /etc/default/zramswap set
+      PERCENT=50, ALGO=zstd; `sudo systemctl disable --now
+      dphys-swapfile`. Net ≈ 400 MB more effective RAM at a small CPU
+      cost — exactly the right trade.
+    evidence: ssh operator@hosaka 'swapon --show; free -h'
+
+  - id: pi-journald-volatile
+    title: Move journald to RAM (Storage=volatile)
+    impact: medium
+    effort: trivial
+    risk: low
+    category: systemd
+    problem: |
+      Stock Pi OS persists systemd-journald to /var/log/journal on
+      the SD. With hosaka-webserver, hosaka-kiosk, picoclaw, voice,
+      and beacon all logging, this is constant small-write churn.
+    fix: |
+      In /etc/systemd/journald.conf set Storage=volatile + 
+      SystemMaxUse=64M, then restart systemd-journald. Add a one-shot
+      step to install_hosaka.sh + a doctor check.
+    evidence: ssh operator@hosaka 'cat /etc/systemd/journald.conf'
+
+  - id: stable-app-arrays
+    title: Stop spreading APP_REGISTRY into a fresh array per render
+    impact: medium
+    effort: trivial
+    risk: none
+    category: frontend
+    problem: |
+      App.tsx passes `apps={[...APP_REGISTRY]}` to children. Fresh
+      array identity per render defeats React.memo on directory cards
+      and forces ~30-card reconciliation on every state tick (which
+      currently fires every 4–10 s thanks to the polling loops above).
+    fix: |
+      Hoist a module-level `APP_REGISTRY_FROZEN = APP_REGISTRY` and
+      pass it directly. Memoize `enabledApps` / `launcherApps` with
+      useMemo on a stable input. Wrap DesktopPanel cards in
+      React.memo with a shallow comparator.
+    evidence:
+      - frontend/src/App.tsx:401-412
+      - frontend/src/panels/DesktopPanel.tsx:64-113
+
+  - id: external-app-esc-scope
+    title: Scope ExternalAppPanel's Esc listener to its own DOM
+    impact: medium
+    effort: trivial
+    risk: low
+    category: frontend
+    problem: |
+      ExternalAppPanel attaches a window-level keydown listener per
+      mounted external panel. Once the user has visited several
+      external apps, N listeners run on every keystroke. The listener
+      uses `host.closest(".hosaka-panel.is-active")` to filter, which
+      both costs DOM work per key and is fragile under tab-switch
+      races (briefly two panels marked active → double-fire of the
+      Esc-confirm modal).
+    fix: |
+      Either (a) attach the keydown listener to the panel's own
+      container ref with capture, gated on isActive prop, or
+      (b) centralise Esc-confirm dispatch in App.tsx so there is one
+      listener that knows which app is active.
+    evidence:
+      - frontend/src/panels/ExternalAppPanel.tsx:67-83
+      - frontend/src/App.tsx:341-351
+      - frontend/src/components/HosakaMenu.tsx:91-104
+
+  - id: external-app-modal-portal
+    title: Portal the Esc-confirm modal out of the panel container
+    impact: medium
+    effort: trivial
+    risk: low
+    category: frontend
+    problem: |
+      The Esc-confirm modal is `position:absolute; inset:0` inside
+      the panel container. App.tsx flips `hidden` on the wrapper when
+      tabs change. If the user switches tabs mid-confirm, the modal
+      gets `display:none` but its open state survives → reappears in
+      a stale focus location next time the tab is active.
+    fix: |
+      Render the confirm via a portal into document.body. Add a focus
+      trap; restore focus to the panel's main button on close.
+    evidence: frontend/src/panels/ExternalAppPanel.tsx:202-251
+
+  - id: expose-overlay-portal
+    title: Extract Ctrl+` expose overlay; portal it; replace ref-callback focus
+    impact: medium
+    effort: trivial
+    risk: low
+    category: frontend
+    problem: |
+      The expose overlay is inline JSX in App.tsx with
+      `ref={el => el?.focus()}`. The ref callback fires on every
+      render → focus thrash whenever the parent re-renders (which the
+      polling loops above guarantee). It also inherits ancestor CSS
+      contexts because there is no portal boundary.
+    fix: |
+      Extract `<ExposeOverlay open onClose />` as its own component,
+      portal into document.body, focus on mount via useEffect with an
+      empty dependency array.
+    evidence: frontend/src/App.tsx:660-720
+
+  - id: defer-wifi-scan-in-menu
+    title: Don't fire wifi scan when the menu opens; gate behind disclosure
+    impact: low
+    effort: trivial
+    risk: none
+    category: frontend
+    problem: |
+      Menu open fetches /api/v1/wifi/networks immediately. On the Pi
+      this came back in 280 ms (already cached on the kernel side),
+      so it's not the bottleneck I thought — but lazy-loading it on
+      disclosure expand is still nicer and avoids hitting the wifi
+      stack at all when the operator is just reaching for `/restart`.
+    fix: |
+      Default the wifi disclosure collapsed; fetch on expand; cache
+      result for 60 s.
+    evidence: frontend/src/components/HosakaMenu.tsx:106-122,236-275
+
+  - id: async-flatpak-install
+    title: Make flatpak install non-blocking with a job-id polling endpoint
+    impact: medium
+    effort: small
+    risk: low
+    category: backend
+    problem: |
+      Both Electron IPC (kiosk/main.js installApp) and the FastAPI
+      v1_apps_install await the install subprocess synchronously. On
+      the Pi a first-time Spotify install is 3–5 minutes; while the
+      promise/handler is pending, the renderer's IPC channel is busy
+      and other apps can't ask their own status. uvicorn is single-
+      worker so the entire backend is unresponsive.
+    fix: |
+      Spawn install with Popen + start_new_session, store a job
+      record keyed by uuid, expose GET /apps/<id>/install/jobs/<id>
+      that returns {state: pending|done|failed, returncode, tail}.
+      ExternalAppPanel polls the job until terminal. Apply the same
+      pattern in Electron IPC by streaming progress events back to
+      the renderer.
+    evidence:
+      - hosaka/web/api_v1.py:1218-1247
+      - kiosk/main.js:294-355
+
+  - id: virtualize-app-directory
+    title: Lazy-render below-the-fold cards in the tool directory
+    impact: medium
+    effort: small
+    risk: low
+    category: frontend
+    problem: |
+      DesktopPanel mode="directory" renders every APP_REGISTRY entry
+      (30+ today, more later) with description + 4 badges + notes.
+      This is the heaviest panel layout in the app; the user reported
+      "bubbles in a banner taking 30 s – 1 m to load" which matches.
+    fix: |
+      Pure CSS: add `content-visibility: auto;
+      contain-intrinsic-size: 1px 220px;` to each card. No JS deps.
+      Optional: split by family (`core` shown first, `integration`
+      collapsed under a chevron).
+    evidence: frontend/src/panels/DesktopPanel.tsx:64-113
+
+  - id: split-vendor-chunks
+    title: Bucket xterm + Automerge into stable vendor chunks
+    impact: medium
+    effort: trivial
+    risk: low
+    category: build
+    problem: |
+      vite.config.ts only splits react/react-dom/scheduler into a
+      vendor chunk. xterm (~500 KB) and Automerge end up inside
+      panel-specific dynamic chunks, so they invalidate on any
+      panel-source change → no Chromium cache reuse across hosaka
+      updates.
+    fix: |
+      Extend the manualChunks function to bucket
+        node_modules/@xterm/* → "xterm-vendor"
+        node_modules/@automerge/* → "automerge-vendor"
+        node_modules/idb-keyval → "idb-vendor"
+      Cuts cold start after every Hosaka update.
+    evidence: frontend/vite.config.ts:74-87
+
+  - id: split-automerge-wasm
+    title: Stop inlining the 1.2 MB Automerge WASM as base64
+    impact: high
+    effort: medium
+    risk: medium
+    category: build
+    problem: |
+      vite.config.ts hard-aliases @automerge/automerge to
+      fullfat_base64.js, inlining ~1.2 MB of WASM as base64 (≈1.6 MB
+      of JS). Combined with sync code this is the 3.7 MB repo-*.js
+      chunk on cold load. On a Pi that's multi-second parse + a real
+      RAM spike. Highest single bundle win available, but switching
+      requires vite-plugin-wasm + vite-plugin-top-level-await and
+      verifying both Electron and the hosted Vercel build.
+    fix: |
+      Add vite-plugin-wasm + vite-plugin-top-level-await. Drop the
+      fullfat_base64 alias; use the standard browser entry. The WASM
+      becomes a separate ~700 KB binary (gzipped on disk) loaded
+      lazily by sync/repo.ts. Verify on hosted (Vercel) and Electron
+      kiosk before merging.
+    evidence:
+      - frontend/vite.config.ts:23-39
+      - frontend/src/sync/repo.ts:1-30
+
+  - id: terminal-fit-debounce
+    title: Coalesce xterm fit() calls behind a single rAF
+    impact: low
+    effort: small
+    risk: low
+    category: frontend
+    problem: |
+      TerminalPanel schedules fit retries via setTimeout +
+      requestAnimationFrame on activation and chrome-collapse changes.
+      xterm.fit() triggers font-metric reflow which is expensive on
+      the Pi GPU path; firing it more than once per layout change is
+      wasted work.
+    fix: |
+      Coalesce calls behind a single requestAnimationFrame guarded
+      by a "dirty" flag; only refit when geometry actually changed.
+    evidence: frontend/src/panels/TerminalPanel.tsx:200-295
+
+  - id: prebuild-flatpak-warmup
+    title: Pre-warm flatpak runtimes at install time, not first launch
+    impact: low
+    effort: small
+    risk: low
+    category: systemd
+    problem: |
+      First launch of an app expands its runtime + extension tree onto
+      the SD card. Doing this once at provisioning time turns "first
+      Spotify launch is 4 minutes black screen" into "kiosk install
+      is 5 minutes longer once".
+    fix: |
+      One-shot systemd unit that, on first boot after install, runs
+      `flatpak install -y --no-deps <runtime>` for each runtime
+      referenced in hosaka-apps/apps/*.yaml. Idempotent; doesn't
+      install the apps themselves.
+    evidence: hosaka-apps/apps/*.yaml
+
+  - id: disable-unneeded-services
+    title: Audit + mask unused systemd units on the Pi
+    impact: low
+    effort: small
+    risk: low
+    category: systemd
+    problem: |
+      Stock Pi OS runs services Hosaka does not need — ModemManager,
+      avahi-daemon (if not using mDNS), cups, bluetooth (no BT
+      peripherals), triggerhappy, rpi-eeprom-update timer. Each one
+      steals a few MB of RAM and wakes the CPU.
+    fix: |
+      `systemd-analyze blame | head -25` then mask anything Hosaka
+      doesn't depend on. Add as opt-in step in install_hosaka.sh.
+    evidence:
+      - ssh operator@hosaka 'systemctl list-units --state=running --type=service --no-pager'
+      - ssh operator@hosaka 'systemd-analyze blame | head -25'
+
+  - id: bg-image-audit
+    title: Confirm flathub icons are lazy-loaded and capped
+    impact: low
+    effort: trivial
+    risk: none
+    category: frontend
+    problem: |
+      flathubBackend returns icon URLs pointing at flathub.org.
+      Eagerly loading 30 of these per dock open = network round-trip
+      per app, which is hostile to flaky wifi.
+    fix: |
+      Audit usage of `app.icon` / `hits[].icon`; ensure
+      `loading="lazy" decoding="async"` and a max-width of 64 px.
+    evidence:
+      - frontend/src/apps/flatpakBackend.ts:198-218
+      - frontend/src/panels/AppStorePanel.tsx (review)

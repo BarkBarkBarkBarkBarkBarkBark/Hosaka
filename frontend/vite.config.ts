@@ -73,12 +73,18 @@ export default defineConfig({
     rollupOptions: {
       output: {
         // Keep the entry chunk small. React + ReactDOM go in their own
-        // long-cacheable vendor chunk; everything else (panels, locales)
-        // ends up in lazy chunks via dynamic imports in App.tsx.
+        // long-cacheable vendor chunk; xterm and Automerge get their own
+        // buckets so panel-source edits don't invalidate them on every
+        // hosaka update (huge cold-start win on the Pi where re-parse of
+        // the Automerge fullfat_base64 chunk is multi-second). Everything
+        // else lands in lazy chunks via dynamic imports in App.tsx.
         manualChunks: (id) => {
           if (id.includes("node_modules/react-dom/")) return "react-vendor";
           if (id.includes("node_modules/react/")) return "react-vendor";
           if (id.includes("node_modules/scheduler/")) return "react-vendor";
+          if (id.includes("node_modules/@xterm/")) return "xterm-vendor";
+          if (id.includes("node_modules/@automerge/")) return "automerge-vendor";
+          if (id.includes("node_modules/idb-keyval")) return "idb-vendor";
           return undefined;
         },
       },

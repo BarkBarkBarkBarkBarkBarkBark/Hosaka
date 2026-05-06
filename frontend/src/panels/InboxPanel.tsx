@@ -33,7 +33,11 @@ const INITIAL_FORM = {
   tags: "",
 };
 
-export function InboxPanel() {
+type InboxPanelProps = {
+  active?: boolean;
+};
+
+export function InboxPanel({ active = true }: InboxPanelProps) {
   const { t } = useTranslation("ui");
   const [feed, setFeed] = useState<InboxFeed | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,9 +63,16 @@ export function InboxPanel() {
 
   useEffect(() => {
     void refresh();
-    const id = setInterval(() => void refresh(), 10000);
-    return () => clearInterval(id);
   }, [refresh]);
+
+  useEffect(() => {
+    // Only poll while the inbox tab is the active surface. App.tsx keeps
+    // panels mounted (hidden) so an unconditional 10 s timer used to keep
+    // hammering /api/v1/inbox/events forever — hostile on a Pi 3B+ SD.
+    if (!active) return;
+    const id = setInterval(() => void refresh(), 30000);
+    return () => clearInterval(id);
+  }, [active, refresh]);
 
   const notifications = useMemo(() => feed?.notifications ?? [], [feed]);
 

@@ -53,7 +53,11 @@ export function DiagnosticsPanel({ active = true }: DiagnosticsPanelProps) {
   useEffect(() => {
     if (!active) return;
     void fetchSnapshot();
-    const id = window.setInterval(() => void fetchSnapshot(), 8000);
+    // 30 s while the panel is the active tab; the diag snapshot endpoint
+    // shells out to nmcli/free/df which costs real CPU on a Pi 3B+, and
+    // the meter cards re-flow on every refresh. The previous 8 s cadence
+    // was the dominant source of the "screen jumps every 8 s" symptom.
+    const id = window.setInterval(() => void fetchSnapshot(), 30000);
     return () => window.clearInterval(id);
   }, [active, fetchSnapshot]);
 

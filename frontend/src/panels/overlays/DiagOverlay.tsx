@@ -38,8 +38,31 @@ export function DiagOverlay({ onClose: _onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     void refresh();
-    const id = window.setInterval(() => void refresh(), 6000);
-    return () => window.clearInterval(id);
+    // 30 s cadence + visibilitychange gating. The overlay used to refresh
+    // every 6 s which (a) churned the CPU on the Pi 3B+ and (b) re-flowed
+    // the meter row whenever a number's digit-count changed.
+    let id: number | null = null;
+    const start = () => {
+      if (id != null) return;
+      id = window.setInterval(() => void refresh(), 30000);
+    };
+    const stop = () => {
+      if (id != null) { window.clearInterval(id); id = null; }
+    };
+    if (document.visibilityState === "visible") start();
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        void refresh();
+        start();
+      } else {
+        stop();
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, [refresh]);
 
   const per = (snap?.peripherals ?? {}) as Record<string, any>;

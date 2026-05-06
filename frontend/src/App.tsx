@@ -211,8 +211,12 @@ export function App() {
     return openAppIds[openAppIds.length - 1] ?? "terminal";
   }, [activeOverride, enabledIds, openAppIds, windowDoc.activeAppId]);
 
-  // #region agent log
+  // #region agent log (DEV only — guard with import.meta.env.DEV so esbuild
+  // dead-code-eliminates the body in production. On the Pi the layout
+  // sweep alone burned a non-trivial amount of CPU because querySelector +
+  // getComputedStyle on every render is not free.)
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     const dbg = (window as unknown as { __hosakaDbg?: (loc: string, msg: string, data?: Record<string, unknown>) => void }).__hosakaDbg;
     dbg?.("App.tsx:render", "active state computed", {
       activeAppId,
@@ -227,6 +231,7 @@ export function App() {
   }, [activeAppId, windowDoc.activeAppId, windowDoc.chromeCollapsed, windowDoc.openAppIds, openAppIds, activeOverride, openOverride, enabledIds]);
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     const dbg = (window as unknown as { __hosakaDbg?: (loc: string, msg: string, data?: Record<string, unknown>) => void }).__hosakaDbg;
     const tick = () => {
       const stage = document.querySelector(".hosaka-stage") as HTMLElement | null;
@@ -416,7 +421,7 @@ export function App() {
         return (
           <DesktopPanel
             mode="directory"
-            apps={[...APP_REGISTRY]}
+            apps={APP_REGISTRY}
             openAppIds={openAppIds}
             activeAppId={activeAppId}
             conversation={conversationDoc.entries}
@@ -437,7 +442,7 @@ export function App() {
       case "terminal":
         return <TerminalPanel active={activeAppId === "terminal"} />;
       case "inbox":
-        return <InboxPanel />;
+        return <InboxPanel active={activeAppId === "inbox"} />;
       case "messages":
         return <MessagesPanel />;
       case "reading":
@@ -465,7 +470,7 @@ export function App() {
       case "voice":
         return <VoicePanel active={activeAppId === "voice"} />;
       case "nodes":
-        return <NodesPanel />;
+        return <NodesPanel active={activeAppId === "nodes"} />;
       case "help":
         return <HelpPanel />;
       case "device_mic":

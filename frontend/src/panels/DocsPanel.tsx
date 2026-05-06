@@ -77,7 +77,10 @@ export function DocsPanel({ active = true }: DocsPanelProps) {
 
   useEffect(() => {
     if (!active) return;
-    const id = window.setInterval(() => { void refetch(); }, 10000);
+    // Doc writes already fire `hosaka:doc-written` for instant refresh;
+    // the timer is just a safety net. 30 s is plenty and keeps the Pi's
+    // SD card from being walked every 10 s while the panel is open.
+    const id = window.setInterval(() => { void refetch(); }, 30000);
     return () => window.clearInterval(id);
   }, [active, refetch]);
 

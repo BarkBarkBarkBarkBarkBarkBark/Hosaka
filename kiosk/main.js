@@ -31,6 +31,23 @@ const path = require("path");
 const fs = require("fs");
 const YAML = require("yaml");
 
+// ── Pi 3B+ tuned Chromium switches ──
+// Set HOSAKA_KIOSK_PI_FLAGS=0 to opt out (e.g. on a developer x86 box where
+// these flags would actually hurt). On the Pi the VC4 GLES2 stack is on
+// Chromium's GPU blocklist by default, smooth scrolling reflows the whole
+// SPA on every gesture, and Translate/InterestFeed eat memory we don't have.
+if (String(process.env.HOSAKA_KIOSK_PI_FLAGS ?? "1") !== "0") {
+  app.commandLine.appendSwitch("use-gl", "egl");
+  app.commandLine.appendSwitch("enable-gpu-rasterization");
+  app.commandLine.appendSwitch("enable-zero-copy");
+  app.commandLine.appendSwitch("ignore-gpu-blocklist");
+  app.commandLine.appendSwitch("disable-smooth-scrolling");
+  app.commandLine.appendSwitch(
+    "disable-features",
+    "Translate,InterestFeedContentSuggestions,CalculateNativeWinOcclusion,HardwareMediaKeyHandling",
+  );
+}
+
 const APPS_ROOT = path.resolve(__dirname, "..", "hosaka-apps");
 const APPS_REGISTRY_PATH = path.join(APPS_ROOT, "registry.yaml");
 const APPS_DIR = path.join(APPS_ROOT, "apps");
@@ -242,13 +259,46 @@ async function ensureFlathubRemote() {
   };
 }
 
+// ── in-process TTL cache for the slowest flatpak shellouts ──
+// `flatpak info <id>` and `flatpak remote-info` each cost 150–500 ms on a
+// Pi 3B+. Status panels query them on every mount; without caching, opening
+// several external apps in a row queued seconds of subprocess work behind
+// uvicorn / the Electron main thread.
+const FLATPAK_INSTALLED_TTL_MS = 30 * 1000;
+const FLATPAK_REMOTE_TTL_MS = 5 * 60 * 1000;
+const FLATPAK_CACHE = new Map(); // key → { value, expiresAt }
+
+function cacheGet(key) {
+  const hit = FLATPAK_CACHE.get(key);
+  if (!hit) return undefined;
+  if (hit.expiresAt < Date.now()) {
+    FLATPAK_CACHE.delete(key);
+    return undefined;
+  }
+  return hit.value;
+}
+
+function cacheSet(key, value, ttlMs) {
+  FLATPAK_CACHE.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+
+function cacheBust(prefix) {
+  for (const k of FLATPAK_CACHE.keys()) {
+    if (k.startsWith(prefix)) FLATPAK_CACHE.delete(k);
+  }
+}
+
 async function flatpakInstalled(flatpakId) {
   if (fakeFlatpakEnabled()) {
     const installed = MOCK_INSTALLED.has(flatpakId);
     return { installed, result: { ok: installed, code: installed ? 0 : 1, stdout: installed ? `Ref: app/${flatpakId}/x86_64/stable\n` : "", stderr: installed ? "" : `error: ${flatpakId} not installed\n` } };
   }
+  const cached = cacheGet(`installed:${flatpakId}`);
+  if (cached) return cached;
   const result = await runCommand("flatpak", ["info", flatpakId]);
-  return { installed: result.ok, result };
+  const value = { installed: result.ok, result };
+  cacheSet(`installed:${flatpakId}`, value, FLATPAK_INSTALLED_TTL_MS);
+  return value;
 }
 
 async function getAppStatus(appId) {
@@ -348,6 +398,8 @@ async function installApp(appId) {
   const result = fakeFlatpakEnabled()
     ? (MOCK_INSTALLED.add(manifest.flatpakId), { ok: true, code: 0, stdout: `[mock] installed ${manifest.flatpakId}\n`, stderr: "" })
     : await runCommand(file, args, { timeoutMs: FLATPAK_INSTALL_TIMEOUT_MS });
+  // Whatever the outcome, the cached `installed?` answer is now stale.
+  cacheBust(`installed:${manifest.flatpakId}`);
   if (!result.ok) {
     return {
       ok: false,

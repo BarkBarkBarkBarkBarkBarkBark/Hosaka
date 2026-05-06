@@ -1074,6 +1074,68 @@ _APPS_DIR = _APPS_ROOT / "apps"
 _APPS_HTTP_MODE = os.getenv("HOSAKA_APPS_HTTP", "mock").strip().lower()
 
 
+# ── flatpak shellout cache ───────────────────────────────────────────────────
+# `flatpak info <id>` and `flatpak remotes` cost 150–500 ms each on a Pi 3B+;
+# the status endpoints get hit on every panel mount. We keep a tiny in-process
+# TTL cache (no external deps) keyed by call signature. Invalidated by
+# install/launch handlers when state actually changes.
+_FLATPAK_CACHE: dict[str, tuple[float, Any]] = {}
+_FLATPAK_INSTALLED_TTL = 30.0
+_FLATPAK_REMOTE_TTL = 300.0
+
+
+def _flatpak_cache_get(key: str) -> Optional[Any]:
+    hit = _FLATPAK_CACHE.get(key)
+    if hit is None:
+        return None
+    expires_at, value = hit
+    if expires_at < time.time():
+        _FLATPAK_CACHE.pop(key, None)
+        return None
+    return value
+
+
+def _flatpak_cache_set(key: str, value: Any, ttl: float) -> None:
+    _FLATPAK_CACHE[key] = (time.time() + ttl, value)
+
+
+def _flatpak_cache_bust(prefix: str) -> None:
+    for k in list(_FLATPAK_CACHE.keys()):
+        if k.startswith(prefix):
+            _FLATPAK_CACHE.pop(k, None)
+
+
+def _flatpak_which() -> Optional[str]:
+    """Cached shutil.which('flatpak'). Process-lifetime — flatpak does not
+    grow legs and walk to a different directory."""
+    cached = _flatpak_cache_get("which:flatpak")
+    if cached is not None:
+        return cached or None
+    found = shutil.which("flatpak")
+    _flatpak_cache_set("which:flatpak", found or "", 24 * 3600.0)
+    return found
+
+
+def _flathub_remote_ready() -> bool:
+    cached = _flatpak_cache_get("remote:flathub")
+    if cached is not None:
+        return bool(cached)
+    code, out, _err = _run(["flatpak", "remotes", "--columns=name"], timeout=5)
+    ready = code == 0 and any(line.strip() == "flathub" for line in out.splitlines())
+    _flatpak_cache_set("remote:flathub", ready, _FLATPAK_REMOTE_TTL)
+    return ready
+
+
+def _flatpak_app_installed(flatpak_id: str) -> bool:
+    cached = _flatpak_cache_get(f"installed:{flatpak_id}")
+    if cached is not None:
+        return bool(cached)
+    code, _out, _err = _run(["flatpak", "info", flatpak_id], timeout=8)
+    installed = code == 0
+    _flatpak_cache_set(f"installed:{flatpak_id}", installed, _FLATPAK_INSTALLED_TTL)
+    return installed
+
+
 def _require_yaml() -> Any:
     if _yaml is None:
         raise HTTPException(503, "pyyaml is not installed in this environment")
@@ -1161,14 +1223,11 @@ def v1_apps_list() -> dict[str, Any]:
 @router.get("/apps/capabilities", summary="Apps subsystem capability probe")
 def v1_apps_capabilities() -> dict[str, Any]:
     real_mode = _APPS_HTTP_MODE == "real"
-    flatpak_bin = shutil.which("flatpak") if real_mode else None
+    flatpak_bin = _flatpak_which() if real_mode else None
     flathub_ready = False
     note: Optional[str] = None
     if real_mode and flatpak_bin:
-        code, out, _err = _run(["flatpak", "remotes", "--columns=name"], timeout=5)
-        flathub_ready = code == 0 and any(
-            line.strip() == "flathub" for line in out.splitlines()
-        )
+        flathub_ready = _flathub_remote_ready()
         if not flathub_ready:
             note = "flatpak is installed but the `flathub` remote is not configured. run: flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo"
     elif real_mode:
@@ -1198,18 +1257,18 @@ def v1_apps_status(app_id: str) -> dict[str, Any]:
         return {"ok": False, "manifestFound": False, "message": f"app not found: {app_id}"}
     if _APPS_HTTP_MODE != "real":
         return _mock_app_response(app, "status")
-    if not shutil.which("flatpak"):
+    if not _flatpak_which():
         return {
             "ok": False, "appId": app["id"], "manifestFound": True,
             "installed": False, "flatpakAvailable": False, "host": "web",
             "message": "flatpak is not installed on this host.",
             "actionableCommand": "sudo apt-get install -y flatpak",
         }
-    code, _out, _err = _run(["flatpak", "info", app["flatpak_id"]], timeout=8)
+    installed = _flatpak_app_installed(app["flatpak_id"])
     return {
         "ok": True, "appId": app["id"], "manifestFound": True,
-        "installed": code == 0, "flatpakAvailable": True, "host": "web",
-        "message": f"{app['name']} is {'installed' if code == 0 else 'not installed'}.",
+        "installed": installed, "flatpakAvailable": True, "host": "web",
+        "message": f"{app['name']} is {'installed' if installed else 'not installed'}.",
     }
 
 
@@ -1220,7 +1279,7 @@ def v1_apps_install(app_id: str) -> dict[str, Any]:
         return {"ok": False, "manifestFound": False, "message": f"app not found: {app_id}"}
     if _APPS_HTTP_MODE != "real":
         return _mock_app_response(app, "install")
-    if not shutil.which("flatpak"):
+    if not _flatpak_which():
         return {
             "ok": False, "appId": app["id"], "manifestFound": True,
             "installed": False, "flatpakAvailable": False, "host": "web",
@@ -1229,6 +1288,8 @@ def v1_apps_install(app_id: str) -> dict[str, Any]:
         }
     cmd = list(app["install"]["command"])
     code, _out, err = _run(cmd, timeout=600)
+    # Whatever the outcome, the cached `installed?` answer is now stale.
+    _flatpak_cache_bust(f"installed:{app['flatpak_id']}")
     if code == 0:
         return {
             "ok": True, "appId": app["id"], "manifestFound": True,

@@ -65,7 +65,11 @@ type JoinState =
   | { kind: "done" }
   | { kind: "error"; msg: string };
 
-export function NodesPanel() {
+type NodesPanelProps = {
+  active?: boolean;
+};
+
+export function NodesPanel({ active = true }: NodesPanelProps) {
   const { t } = useTranslation("ui");
   const [resp, setResp] = useState<NodesResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -87,11 +91,15 @@ export function NodesPanel() {
 
   useEffect(() => {
     void refresh();
-    // Light polling: every 15s we re-probe peers so online/offline status
-    // drifts in with real-time-ish feel. Cheap — most Hosaka nets are <10 nodes.
-    const id = setInterval(() => void refresh(), 15000);
-    return () => clearInterval(id);
   }, [refresh]);
+
+  useEffect(() => {
+    // Only re-probe peers while the nodes tab is the active surface.
+    // 45 s cadence is plenty for online/offline drift.
+    if (!active) return;
+    const id = setInterval(() => void refresh(), 45000);
+    return () => clearInterval(id);
+  }, [active, refresh]);
 
   useEffect(() => {
     return () => {
