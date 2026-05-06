@@ -40,6 +40,9 @@ export type AppId =
   | "wike"
   | "webarchives"
   | "keepassxc"
+  | "readetexts"
+  | "tonearm"
+  | "isoimagewriter"
   | "device_mic"
   | "device_cam"
   | "device_spk"
@@ -690,6 +693,55 @@ export const APP_REGISTRY: AppDefinition[] = [
     hostScope: "linux",
     embedPolicy: "no_embed",
     maintainerNote: "Flatpak: org.keepassxc.KeePassXC (aarch64 + x86_64). Hosaka never reads the vault.",
+  },
+  {
+    id: "readetexts",
+    title: "read etexts",
+    description: "sugar-labs reader for plain-text and minimal-html books with text-to-speech.",
+    glyph: "✐",
+    aliases: ["readetexts", "read-etexts", "sugar-read"],
+    family: "integration",
+    showInLauncher: true,
+    status: "shipping",
+    preferredHost: "external-app",
+    fallbackHosts: ["web"],
+    installStrategy: "catalog",
+    hostScope: "linux",
+    embedPolicy: "no_embed",
+    maintainerNote: "Flatpak: org.sugarlabs.ReadETexts (aarch64 + x86_64). Pairs with foliate.",
+  },
+  {
+    id: "tonearm",
+    title: "tonearm",
+    description: "local music library player; album-art-first browsing of ~/Music.",
+    glyph: "♪",
+    aliases: ["tonearm", "music-player"],
+    family: "integration",
+    backgroundCapable: true,
+    showInLauncher: true,
+    status: "shipping",
+    preferredHost: "external-app",
+    fallbackHosts: ["web"],
+    installStrategy: "catalog",
+    hostScope: "linux",
+    embedPolicy: "no_embed",
+    maintainerNote: "Flatpak: dev.dergs.Tonearm (aarch64 + x86_64). Library at ~/Music; seeded by scripts/seed-music.sh.",
+  },
+  {
+    id: "isoimagewriter",
+    title: "iso writer",
+    description: "flash bootable usb drives from .iso files. recovery-image friendly.",
+    glyph: "☸",
+    aliases: ["isoimagewriter", "iso-writer", "flash-iso", "usb-writer"],
+    family: "integration",
+    showInLauncher: true,
+    status: "shipping",
+    preferredHost: "external-app",
+    fallbackHosts: ["web"],
+    installStrategy: "catalog",
+    hostScope: "linux",
+    embedPolicy: "no_embed",
+    maintainerNote: "Flatpak: org.kde.isoimagewriter (aarch64 + x86_64). Needs portal-granted device access at run time.",
   },
   {
     id: "device_mic",

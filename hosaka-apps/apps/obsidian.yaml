@@ -22,10 +22,14 @@ install:
     - flathub
     - md.obsidian.Obsidian
 launch:
+  # Always open onto the canonical vault directory so the operator sees
+  # something the moment Obsidian launches. seed-vault.sh creates it.
   command:
     - flatpak
     - run
     - md.obsidian.Obsidian
+    - --
+    - $HOME/Vault
 aliases:
   - obsidian
   - vault

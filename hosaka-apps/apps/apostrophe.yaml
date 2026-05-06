@@ -19,10 +19,13 @@ install:
     - flathub
     - org.gnome.gitlab.somas.Apostrophe
 launch:
+  # Open the vault welcome page so a fresh Pi has somewhere to start
+  # writing. Falls back to a blank doc if seed-vault.sh hasn't run.
   command:
     - flatpak
     - run
     - org.gnome.gitlab.somas.Apostrophe
+    - $HOME/Vault/welcome.md
 aliases:
   - apostrophe
   - markdown-editor

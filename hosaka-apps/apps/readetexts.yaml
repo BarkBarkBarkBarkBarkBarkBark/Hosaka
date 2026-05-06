@@ -1,0 +1,34 @@
+id: readetexts
+name: Read Etexts
+category: reading
+description: >-
+  Sugar Labs' Read Etexts — a focused reader for plain-text and minimal
+  HTML books with text-to-speech support. Pairs with Foliate as the
+  lightweight side of the reading stack (epub vs txt/html).
+provider: Sugar Labs
+backend: flatpak
+flatpak_id: org.sugarlabs.ReadETexts
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - org.sugarlabs.ReadETexts
+launch:
+  command:
+    - flatpak
+    - run
+    - org.sugarlabs.ReadETexts
+aliases:
+  - readetexts
+  - read-etexts
+  - sugar-read
+memory:
+  profile: light
+permissions_notes:
+  - Reads user-selected files; no Hosaka-managed account.
+account_login_required: false
+hosaka_manages_credentials: false
+notes:
+  - Books seeded by scripts/seed-books.sh land in ~/Books and open here too.

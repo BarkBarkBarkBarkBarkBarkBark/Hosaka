@@ -1,0 +1,37 @@
+id: isoimagewriter
+name: ISO Image Writer
+category: utility
+description: >-
+  KDE ISO Image Writer — flash bootable USB drives from .iso files.
+  High-value for the doomsday-prep / decentralized-computing story&colon;
+  burn a Hosaka recovery image, a Tails stick, a Debian installer
+  without leaving the kiosk.
+provider: KDE
+backend: flatpak
+flatpak_id: org.kde.isoimagewriter
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - org.kde.isoimagewriter
+launch:
+  command:
+    - flatpak
+    - run
+    - org.kde.isoimagewriter
+aliases:
+  - isoimagewriter
+  - iso-writer
+  - usb-writer
+  - flash-iso
+memory:
+  profile: light
+permissions_notes:
+  - Needs read access to .iso files and write access to a target USB device.
+  - Flatpak prompts via portal; Hosaka does not pre-grant device access.
+account_login_required: false
+hosaka_manages_credentials: false
+notes:
+  - Pairs with WebArchives + Hosaka recovery image distribution.

@@ -1,0 +1,34 @@
+id: tonearm
+name: Tonearm
+category: music
+description: >-
+  Tonearm — local music library player with album-art-first browsing.
+  The "press play" target for the public-domain jazz/classical seeded
+  by scripts/seed-music.sh.
+provider: dergs
+backend: flatpak
+flatpak_id: dev.dergs.Tonearm
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - dev.dergs.Tonearm
+launch:
+  command:
+    - flatpak
+    - run
+    - dev.dergs.Tonearm
+aliases:
+  - tonearm
+  - music-player
+memory:
+  profile: medium
+permissions_notes:
+  - Indexes audio files from user-selected folders (~/Music by convention).
+account_login_required: false
+hosaka_manages_credentials: false
+notes:
+  - Convention&colon; library lives at ~/Music with subfolders per genre.
+  - Seeded by scripts/seed-music.sh.
