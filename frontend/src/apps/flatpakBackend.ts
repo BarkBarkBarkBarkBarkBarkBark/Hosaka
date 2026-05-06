@@ -16,11 +16,17 @@ export type HosakaAppHostResponse = {
   message: string;
   details?: string[];
   actionableCommand?: string | null;
+  /** Set when the manifest declares supportedArches and host arch isn't in it. */
+  archIncompatible?: boolean;
+  hostArch?: string;
+  supportedArches?: string[];
 };
 
 export type HosakaAppCapabilities = {
   host: "electron" | "web";
   platform: string;
+  /** CPU arch in flatpak vocabulary: x86_64, aarch64, arm, i386, unknown. */
+  arch?: string;
   flatpakAvailable: boolean;
   flathubConfigured?: boolean;
   manifestsRoot?: string;

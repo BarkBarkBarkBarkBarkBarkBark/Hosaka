@@ -70,6 +70,13 @@ export type AppDefinition = {
   installStrategy?: InstallStrategy;
   hostScope?: HostScope;
   embedPolicy?: EmbedPolicy;
+  /**
+   * Flatpak architectures Flathub actually publishes for this app.
+   * Used to gate the install button on hosts whose arch is not in the
+   * list (e.g. spotify/steam are x86_64-only and will never install on
+   * a Pi 3B+ which is aarch64). Empty/undefined = no constraint.
+   */
+  flatpakArches?: Array<"x86_64" | "aarch64" | "i386" | "arm">;
   maintainerNote?: string;
   agentNote?: string;
 };
@@ -409,6 +416,7 @@ export const APP_REGISTRY: AppDefinition[] = [
     installStrategy: "catalog",
     hostScope: "linux",
     embedPolicy: "no_embed",
+    flatpakArches: ["x86_64"],
     maintainerNote: "Flatpak: com.spotify.Client — x86_64-only on Flathub; install fails gracefully on aarch64.",
     agentNote: "Prefer external-app launch via /api/v1/apps/spotify; surface install state in the panel.",
   },
@@ -443,6 +451,7 @@ export const APP_REGISTRY: AppDefinition[] = [
     installStrategy: "catalog",
     hostScope: "linux",
     embedPolicy: "no_embed",
+    flatpakArches: ["x86_64"],
     maintainerNote: "Flatpak: com.discordapp.Discord (x86_64-only on Flathub).",
     agentNote: "Launch via /api/v1/apps/discord; show install state if missing.",
   },
@@ -556,6 +565,7 @@ export const APP_REGISTRY: AppDefinition[] = [
     installStrategy: "catalog",
     hostScope: "linux",
     embedPolicy: "no_embed",
+    flatpakArches: ["x86_64"],
     maintainerNote: "Flatpak: com.slack.Slack — install will fail on aarch64 (Pi); panel surfaces the error.",
   },
   {
@@ -572,6 +582,7 @@ export const APP_REGISTRY: AppDefinition[] = [
     installStrategy: "catalog",
     hostScope: "linux",
     embedPolicy: "no_embed",
+    flatpakArches: ["x86_64"],
     maintainerNote: "Flatpak: com.valvesoftware.Steam — install will fail on aarch64 (Pi); panel surfaces the error.",
   },
   {

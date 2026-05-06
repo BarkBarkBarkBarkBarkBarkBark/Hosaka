@@ -1,6 +1,10 @@
 id: spotify
 name: Spotify
 category: music
+# Flathub publishes com.spotify.Client for x86_64 only; install on aarch64
+# (Pi 3B+/4) returns "No remote refs found". Hosaka's install handler
+# refuses early when host arch isn't in this list.
+arches: [x86_64]
 description: >-
   Spotify desktop client wrapped as a Hosaka App. The user signs in with their
   own Spotify account inside the launched app.

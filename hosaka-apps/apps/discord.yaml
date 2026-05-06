@@ -7,6 +7,8 @@ description: >-
 provider: Discord
 backend: flatpak
 flatpak_id: com.discordapp.Discord
+# x86_64 only on Flathub.
+arches: [x86_64]
 install:
   command:
     - flatpak

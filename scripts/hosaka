@@ -947,12 +947,99 @@ USAGE
 # ── logs / reboot ─────────────────────────────────────────────────────────────
 
 cmd_logs() {
-  local unit="${1:-$WEB_UNIT}"
+  local first="${1:-}"
+  if [[ "$first" == "dump" ]]; then
+    shift || true
+    cmd_logs_dump "$@"
+    return
+  fi
+  local unit="${first:-$WEB_UNIT}"
   case "$unit" in
     web|webserver|www) unit="$WEB_UNIT" ;;
     pico|picoclaw|gateway) unit="$PICO_UNIT" ;;
   esac
   exec journalctl -u "$unit" -f --no-pager
+}
+
+# `hosaka logs dump` — single-screen diagnostic snapshot.
+#
+# Use case: SSH into a misbehaving Pi, run one command, paste the output
+# into a chat. No tail-f, no jumping between units. Read-only; safe to
+# pipe into a file or share. Sections are clearly delimited so an LLM
+# can parse them without confusion.
+cmd_logs_dump() {
+  local lines="${1:-80}"
+  printf '\n=== hosaka logs dump · %s · host=%s ===\n' \
+    "$(date -Iseconds 2>/dev/null || date)" "$(hostname 2>/dev/null || echo ?)"
+
+  printf '\n[runtime mode]\n'
+  if [[ -r /var/lib/hosaka/mode ]]; then cat /var/lib/hosaka/mode; else echo "(unknown)"; fi
+
+  printf '\n[deployed bundle]\n'
+  local ui_dir="${HOSAKA_UI_DIR:-/opt/hosaka-field-terminal/hosaka/web/ui}"
+  if [[ -d "$ui_dir" ]]; then
+    ls -1t "$ui_dir/assets/" 2>/dev/null | head -5
+    if [[ -f "$ui_dir/build-stamp.json" ]]; then
+      printf '  build-stamp: '; cat "$ui_dir/build-stamp.json"; echo
+    fi
+  else
+    echo "(no UI dir at $ui_dir)"
+  fi
+
+  printf '\n[systemd units]\n'
+  systemctl --no-pager --no-legend list-units \
+    'hosaka-*' 'picoclaw-*' 2>/dev/null | head -20 || echo "(no units found)"
+
+  printf '\n[memory + load]\n'
+  free -h 2>/dev/null | head -3
+  uptime 2>/dev/null
+  if [[ -r /proc/pressure/memory ]]; then printf 'pressure-mem: '; head -1 /proc/pressure/memory; fi
+
+  printf '\n[disk]\n'
+  df -h / /var/log 2>/dev/null | head -4
+
+  printf '\n[journald usage]\n'
+  journalctl --disk-usage 2>/dev/null || echo "(no journald)"
+
+  printf '\n[webserver journal · last %s]\n' "$lines"
+  sudo -n journalctl -u "$WEB_UNIT" -n "$lines" --no-pager 2>/dev/null \
+    || journalctl --user -u "$WEB_UNIT" -n "$lines" --no-pager 2>/dev/null \
+    || echo "(no access to webserver journal)"
+
+  printf '\n[kiosk journal · last %s]\n' "$lines"
+  sudo -n journalctl -u hosaka-kiosk.service -n "$lines" --no-pager 2>/dev/null \
+    || echo "(no kiosk journal — not running in kiosk mode?)"
+
+  printf '\n[picoclaw journal · last 30]\n'
+  sudo -n journalctl -u "$PICO_UNIT" -n 30 --no-pager 2>/dev/null \
+    || echo "(no picoclaw journal)"
+
+  printf '\n[flatpak install attempts (search journal for `flatpak install`)]\n'
+  sudo -n journalctl --since '1 hour ago' --no-pager 2>/dev/null \
+    | grep -E 'flatpak|spotify|steam|foliate|firefox|vscode' \
+    | tail -20 || echo "(none)"
+
+  printf '\n[health probe]\n'
+  if curl -sf -m 2 http://127.0.0.1:8421/api/health -o /tmp/.hosaka-health.$$ 2>/dev/null; then
+    cat /tmp/.hosaka-health.$$ ; rm -f /tmp/.hosaka-health.$$
+    printf '\n'
+  else
+    echo "(no answer on http://127.0.0.1:8421/api/health)"
+  fi
+
+  printf '\n[apps capabilities]\n'
+  curl -sf -m 3 http://127.0.0.1:8421/api/v1/apps/capabilities 2>/dev/null \
+    || echo "(no answer on /api/v1/apps/capabilities)"
+  printf '\n'
+
+  printf '\n[git HEAD on this checkout]\n'
+  if [[ -d "$REPO_ROOT/.git" ]]; then
+    git -C "$REPO_ROOT" log -1 --pretty=format:'%h %ad %s%n' --date=iso
+  else
+    echo "(not a git checkout)"
+  fi
+
+  printf '\n=== end hosaka logs dump ===\n'
 }
 
 cmd_reboot() {
@@ -1358,6 +1445,7 @@ hosaka — operator CLI for the Hosaka Field Terminal Pi
                                     `hosaka update help` for more
   hosaka deploy [--check]           build + rsync into $DEPLOY_ROOT + restart web
   hosaka logs [unit]                follow journalctl for web/pico/<custom>
+  hosaka logs dump [LINES]          one-shot diagnostic dump (default 80 lines per unit)
   hosaka reboot                     sync + reboot
   hosaka install picoclaw [--onboard]
                                     install Picoclaw into ~/.local/bin and bootstrap Hosaka runtime

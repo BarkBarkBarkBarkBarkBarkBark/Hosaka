@@ -101,6 +101,16 @@ export function ExternalAppPanel({ appId, onClose }: Props) {
   const installCmd = manifest?.install.command.join(" ") ?? "";
   const launchCmd = manifest?.launch.command.join(" ") ?? "";
 
+  // Arch compat: registry says which arches Flathub publishes, capabilities
+  // says what arch the host actually is. Mismatch = install button is futile.
+  const declaredArches = definition?.flatpakArches ?? [];
+  const hostArch = (status?.hostArch ?? caps?.arch ?? "").toLowerCase();
+  const archIncompatible = Boolean(
+    status?.archIncompatible ||
+    (declaredArches.length > 0 && hostArch && !declaredArches.includes(hostArch as never)),
+  );
+  const supportedArches = status?.supportedArches ?? declaredArches;
+
   return (
     <div className="desktop-panel external-app-panel" data-app={appId}>
       <div className="panel-header">
@@ -132,6 +142,21 @@ export function ExternalAppPanel({ appId, onClose }: Props) {
           </div>
         )}
 
+        {archIncompatible && (
+          <div
+            className="banner banner--warn"
+            style={{ padding: "0.5rem 0.75rem", border: "1px solid rgba(255,120,120,0.4)", borderRadius: 4, background: "rgba(255,120,120,0.06)" }}
+          >
+            <strong>won't run on this device.</strong>{" "}
+            <code>{flatpakId}</code> is published for{" "}
+            <code>{supportedArches.join(", ") || "x86_64"}</code> only on Flathub.
+            this host is <code>{hostArch || "unknown"}</code> (e.g. Raspberry Pi 3B+/4 = aarch64).
+            <div className="dim" style={{ marginTop: "0.35rem", fontSize: "0.85em" }}>
+              there is no upstream aarch64 build today. install is disabled to avoid a confusing failure.
+            </div>
+          </div>
+        )}
+
         {phase === "loading" && <div className="dim">loading status…</div>}
 
         {status && phase !== "loading" && (
@@ -156,10 +181,11 @@ export function ExternalAppPanel({ appId, onClose }: Props) {
           <button
             type="button"
             className="btn"
-            disabled={phase === "installing" || phase === "launching" || installed}
+            disabled={phase === "installing" || phase === "launching" || installed || archIncompatible}
+            title={archIncompatible ? "not available for this CPU architecture" : undefined}
             onClick={() => void handleInstall()}
           >
-            {phase === "installing" ? "installing…" : installed ? "installed" : "install"}
+            {phase === "installing" ? "installing…" : installed ? "installed" : archIncompatible ? "unavailable" : "install"}
           </button>
           <button
             type="button"

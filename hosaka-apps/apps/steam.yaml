@@ -9,6 +9,8 @@ description: >-
 provider: Valve
 backend: flatpak
 flatpak_id: com.valvesoftware.Steam
+# x86_64 only on Flathub.
+arches: [x86_64]
 install:
   command:
     - flatpak

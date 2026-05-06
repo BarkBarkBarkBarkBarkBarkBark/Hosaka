@@ -8,6 +8,8 @@ description: >-
 provider: Slack Technologies
 backend: flatpak
 flatpak_id: com.slack.Slack
+# x86_64 only on Flathub.
+arches: [x86_64]
 install:
   command:
     - flatpak

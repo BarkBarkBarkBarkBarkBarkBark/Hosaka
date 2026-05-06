@@ -91,6 +91,21 @@ import { CmdLine } from "./components/CmdLine";
 import { HintLayer } from "./components/HintLayer";
 import { useShortcuts } from "./ui/useShortcuts";
 
+// Build stamp injected by vite.config.ts via `define`. Empty fallback so
+// `npm test` and IDE type-checks don't error out.
+declare const __HOSAKA_BUILD__: { sha: string; ref: string; iso: string };
+const HOSAKA_BUILD = (typeof __HOSAKA_BUILD__ !== "undefined")
+  ? __HOSAKA_BUILD__
+  : { sha: "dev", ref: "?", iso: new Date().toISOString() };
+if (typeof window !== "undefined") {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).__hosakaBuild = HOSAKA_BUILD;
+  // One log line at boot so kiosk DevTools and `hosaka logs dump` agree on
+  // which bundle is actually live.
+  // eslint-disable-next-line no-console
+  console.info(`[hosaka] build ${HOSAKA_BUILD.sha} (${HOSAKA_BUILD.ref}) @ ${HOSAKA_BUILD.iso}`);
+}
+
 export function App() {
   const { t } = useTranslation("ui");
   useShortcuts();
@@ -551,6 +566,21 @@ export function App() {
           <ModeSwitch />
           <button
             type="button"
+            className="hosaka-build-chip dim"
+            title={`build ${HOSAKA_BUILD.sha} · ${HOSAKA_BUILD.ref} · ${HOSAKA_BUILD.iso}\nclick to copy`}
+            onClick={() => {
+              try { navigator.clipboard?.writeText(`${HOSAKA_BUILD.sha} ${HOSAKA_BUILD.iso}`); } catch { /* no-op */ }
+            }}
+            style={{
+              fontFamily: "var(--font-mono)", fontSize: "0.7em", opacity: 0.5,
+              background: "transparent", border: "1px solid var(--border)",
+              padding: "2px 6px", cursor: "pointer", borderRadius: 2,
+            }}
+          >
+            {HOSAKA_BUILD.sha.slice(0, 7)}
+          </button>
+          <button
+            type="button"
             className="icon-btn hosaka-chevron"
             aria-label={windowDoc.chromeCollapsed ? t("chrome.expand", "expand chrome") : t("chrome.collapse", "collapse chrome")}
             title={windowDoc.chromeCollapsed ? t("chrome.expand", "expand chrome") : t("chrome.collapse", "collapse chrome")}
@@ -574,6 +604,14 @@ export function App() {
       />
 
       <nav className="hosaka-dock">
+        {/*
+          The dock used to render every launcherApp as a chip below the
+          dropdown. On a 1024-wide kiosk that wrapped to 4 rows and ate
+          ~60% of the viewport — fully redundant with the dropdown right
+          next to it. The dropdown alone is enough; open windows still
+          show below in `hosaka-window-strip`. Discoverability lives in
+          the menu (☰ → apps → all apps).
+        */}
         <div className="hosaka-launchbar">
           <label className="hosaka-dock-picker">
             <span className="hosaka-dock-picker-label dim">{t("tabs.jump", "app")}</span>
@@ -590,17 +628,6 @@ export function App() {
               ))}
             </select>
           </label>
-          {launcherApps.map((app) => (
-            <button
-              key={app.id}
-              type="button"
-              className={`hosaka-dock-btn ${activeAppId === app.id ? "is-active" : ""}`}
-              onClick={() => setActiveApp(app.id)}
-            >
-              <span className="hosaka-dock-glyph">{app.glyph}</span>
-              <span className="hosaka-dock-label">{app.title}</span>
-            </button>
-          ))}
         </div>
 
         <div className="hosaka-window-strip" role="tablist" aria-label="open windows">

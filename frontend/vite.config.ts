@@ -1,5 +1,7 @@
 import path from "path";
 import { fileURLToPath } from "url";
+import { execSync } from "child_process";
+import { writeFileSync } from "fs";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -15,9 +17,46 @@ const base = process.env.HOSAKA_BASE ?? "/";
 const wantSourcemaps = process.env.HOSAKA_SOURCEMAP === "1";
 const apiTarget = process.env.HOSAKA_API_TARGET ?? "http://127.0.0.1:8421";
 
+// Build stamp baked into the bundle so an operator can verify a redeploy
+// actually loaded. Visible in the menu's "diagnostics" section, on
+// `window.__hosakaBuild`, and printed to console at boot. Prefer git sha;
+// fall back to env vars (HOSAKA_BUILD_SHA / HOSAKA_BUILD_REF) when the
+// build runs outside a checkout (e.g. CI tarball).
+function detectBuildStamp(): { sha: string; ref: string; iso: string } {
+  let sha = process.env.HOSAKA_BUILD_SHA ?? "";
+  let ref = process.env.HOSAKA_BUILD_REF ?? "";
+  if (!sha) {
+    try { sha = execSync("git rev-parse --short=10 HEAD", { cwd: __dirname }).toString().trim(); }
+    catch { sha = "unknown"; }
+  }
+  if (!ref) {
+    try { ref = execSync("git rev-parse --abbrev-ref HEAD", { cwd: __dirname }).toString().trim(); }
+    catch { ref = "?"; }
+  }
+  return { sha, ref, iso: new Date().toISOString() };
+}
+const __HOSAKA_BUILD__ = detectBuildStamp();
+
 export default defineConfig({
   base,
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      // Drop a sidecar JSON next to the built assets so server-side tools
+      // (hosaka logs dump, smoke tests) can confirm what's deployed without
+      // parsing the JS bundle.
+      name: "hosaka-build-stamp",
+      apply: "build",
+      writeBundle() {
+        const out = path.resolve(__dirname, "../hosaka/web/ui/build-stamp.json");
+        try { writeFileSync(out, JSON.stringify(__HOSAKA_BUILD__) + "\n"); }
+        catch { /* non-fatal */ }
+      },
+    },
+  ],
+  define: {
+    __HOSAKA_BUILD__: JSON.stringify(__HOSAKA_BUILD__),
+  },
   resolve: {
     alias: [
       // @automerge/automerge's "browser" export imports its WASM via ESM-

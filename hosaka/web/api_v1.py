@@ -1179,8 +1179,25 @@ def _read_app_manifests() -> list[dict[str, Any]]:
             "install": {"command": list(install.get("command") or [])},
             "launch": {"command": list(launch.get("command") or [])},
             "aliases": [_normalize_app_token(str(a)) for a in (data.get("aliases") or []) if str(a).strip()],
+            "arches": [str(a).strip().lower() for a in (data.get("arches") or []) if str(a).strip()],
         })
     return out
+
+
+def _host_flatpak_arch() -> str:
+    """Host CPU arch in flatpak's vocabulary (x86_64 / aarch64 / arm / i386)."""
+    raw = ""
+    if hasattr(os, "uname"):
+        try:
+            raw = os.uname().machine.lower()  # type: ignore[attr-defined]
+        except Exception:
+            raw = ""
+    return {
+        "x86_64": "x86_64", "amd64": "x86_64",
+        "aarch64": "aarch64", "arm64": "aarch64",
+        "armv7l": "arm", "armv6l": "arm",
+        "i386": "i386", "i686": "i386",
+    }.get(raw, raw or "unknown")
 
 
 def _resolve_app(raw: str) -> Optional[dict[str, Any]]:
@@ -1238,9 +1255,26 @@ def v1_apps_capabilities() -> dict[str, Any]:
             "set HOSAKA_APPS_HTTP=real on a Linux host to actually shell out."
         )
     manifests = _read_app_manifests()
+    # Map machine() to flatpak's arch vocabulary so the frontend can compare
+    # apples to apples against AppDefinition.flatpakArches without a translation
+    # layer in the UI. Anything we don't recognize is passed through as-is.
+    _arch_raw = ""
+    if hasattr(os, "uname"):
+        try:
+            _arch_raw = os.uname().machine.lower()  # type: ignore[attr-defined]
+        except Exception:
+            _arch_raw = ""
+    _arch_map = {
+        "x86_64": "x86_64", "amd64": "x86_64",
+        "aarch64": "aarch64", "arm64": "aarch64",
+        "armv7l": "arm", "armv6l": "arm",
+        "i386": "i386", "i686": "i386",
+    }
+    arch = _arch_map.get(_arch_raw, _arch_raw) or "unknown"
     return {
         "host": "web",
         "platform": os.uname().sysname.lower() if hasattr(os, "uname") else "unknown",
+        "arch": arch,
         "flatpakAvailable": bool(flatpak_bin),
         "flathubConfigured": flathub_ready,
         "manifestsRoot": str(_APPS_DIR),
@@ -1285,6 +1319,22 @@ def v1_apps_install(app_id: str) -> dict[str, Any]:
             "installed": False, "flatpakAvailable": False, "host": "web",
             "message": "flatpak is not installed on this host.",
             "actionableCommand": "sudo apt-get install -y flatpak && flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo",
+        }
+    # Arch gate. Spotify/Steam/Discord/Slack are x86_64-only on Flathub today
+    # and will fail with a confusing "No remote refs found" deep inside an
+    # apt-style install spinner. Catch it before we shell out.
+    arches = app.get("arches") or []
+    host_arch = _host_flatpak_arch()
+    if arches and host_arch not in arches:
+        supported = ", ".join(arches)
+        return {
+            "ok": False, "appId": app["id"], "manifestFound": True,
+            "installed": False, "flatpakAvailable": True, "host": "web",
+            "archIncompatible": True, "hostArch": host_arch, "supportedArches": arches,
+            "message": (
+                f"{app['name']} is not available for this CPU architecture. "
+                f"Flathub publishes {app['flatpak_id']} for {supported} only; this host is {host_arch}."
+            ),
         }
     cmd = list(app["install"]["command"])
     code, _out, err = _run(cmd, timeout=600)
