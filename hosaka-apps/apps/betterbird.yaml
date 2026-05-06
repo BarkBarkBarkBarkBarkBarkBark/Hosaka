@@ -1,0 +1,32 @@
+id: betterbird
+name: Betterbird
+category: mail
+description: >-
+  Betterbird (Thunderbird-derived mail client) wrapped as a Hosaka App.
+  Local IMAP/SMTP client; independent of any Hosaka mail surface.
+provider: Betterbird Project
+backend: flatpak
+flatpak_id: eu.betterbird.Betterbird
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - eu.betterbird.Betterbird
+launch:
+  command:
+    - flatpak
+    - run
+    - eu.betterbird.Betterbird
+aliases:
+  - betterbird
+  - mail
+  - thunderbird
+memory:
+  profile: medium
+permissions_notes:
+  - Network access required for mail sync.
+  - Local mail spool stored under the Flatpak sandbox.
+account_login_required: true
+hosaka_manages_credentials: false

@@ -1,0 +1,33 @@
+id: alienarena
+name: Alien Arena
+category: games
+description: >-
+  Alien Arena, a fast retro arena FPS. Available on aarch64 + x86_64
+  via Flathub. Bundled as a hosaka native easter-egg game.
+provider: COR Entertainment
+backend: flatpak
+flatpak_id: org.alienarena.alienarena
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - org.alienarena.alienarena
+launch:
+  command:
+    - flatpak
+    - run
+    - org.alienarena.alienarena
+aliases:
+  - alienarena
+  - alien-arena
+  - aa
+memory:
+  profile: medium
+  warning: 3D game; expect noticeable GPU load on the Pi.
+permissions_notes:
+  - Network access required for multiplayer servers.
+  - Audio + GPU access via Flatpak portals.
+account_login_required: false
+hosaka_manages_credentials: false

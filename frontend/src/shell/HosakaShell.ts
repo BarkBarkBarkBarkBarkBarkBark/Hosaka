@@ -194,10 +194,19 @@ export class HosakaShell {
   }
   private writePrompt(): void {
     const rows = this.term.rows ?? 24;
-    const padRows = Math.floor(rows / 2);
+    // Center the prompt cursor near the middle of the viewport — but only
+    // pad *down* from where the cursor already is. Naively writing rows/2
+    // blank lines scrolls the boot banner off the top on small terminals
+    // (Pi kiosk especially). Reading the live cursor row keeps the banner
+    // visible on first prompt while still centering on subsequent prompts
+    // after short output.
+    const buf = this.term.buffer.active;
+    const currentRow = typeof buf?.cursorY === "number" ? buf.cursorY : rows - 1;
+    const targetRow = Math.floor(rows / 2);
+    const padRows = Math.max(0, targetRow - currentRow);
     for (let i = 0; i < padRows; i++) this.writeln("");
     this.term.scrollToBottom();
-    this.write(`\x1b[${padRows}A`);
+    if (padRows > 0) this.write(`\x1b[${padRows}A`);
     this.write(prompt());
 
     if (this.suggestion) {

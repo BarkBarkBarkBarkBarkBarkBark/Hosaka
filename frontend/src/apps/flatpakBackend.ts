@@ -22,6 +22,9 @@ export type HosakaAppCapabilities = {
   host: "electron" | "web";
   platform: string;
   flatpakAvailable: boolean;
+  flathubConfigured?: boolean;
+  manifestsRoot?: string;
+  manifestsFound?: number;
   mocked: boolean;
   note: string | null;
 };

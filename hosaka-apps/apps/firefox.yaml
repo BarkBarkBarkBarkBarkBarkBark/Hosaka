@@ -1,0 +1,33 @@
+id: firefox
+name: Firefox
+category: web
+description: >-
+  Mozilla Firefox wrapped as a Hosaka App. Independent of the embedded
+  WebPanel — useful when you want a real, persistent browser session.
+provider: Mozilla
+backend: flatpak
+flatpak_id: org.mozilla.firefox
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - org.mozilla.firefox
+launch:
+  command:
+    - flatpak
+    - run
+    - org.mozilla.firefox
+aliases:
+  - firefox
+  - mozilla
+  - browser
+memory:
+  profile: heavy
+  warning: Firefox is large; expect 400 MB+ resident on first launch.
+permissions_notes:
+  - Network access required.
+  - Profile data is stored under the Flatpak sandbox.
+account_login_required: false
+hosaka_manages_credentials: false

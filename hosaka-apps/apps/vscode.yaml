@@ -1,0 +1,35 @@
+id: vscode
+name: VS Code
+category: tools
+description: >-
+  Visual Studio Code wrapped as a Hosaka App for editing source on the
+  device itself. Available on aarch64 + x86_64.
+provider: Microsoft (open-source build via Flathub)
+backend: flatpak
+flatpak_id: com.visualstudio.code
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - com.visualstudio.code
+launch:
+  command:
+    - flatpak
+    - run
+    - com.visualstudio.code
+aliases:
+  - vscode
+  - code
+  - editor
+memory:
+  profile: heavy
+  warning: VS Code is an Electron app and uses real RAM; expect 300-600 MB.
+permissions_notes:
+  - File-system access is sandboxed via Flatpak portals.
+  - Network is required for extension marketplace.
+account_login_required: false
+hosaka_manages_credentials: false
+notes:
+  - Hosaka does not manage your editor settings — sync via Settings Sync if you want them.

@@ -4,6 +4,8 @@ set -euo pipefail
 SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONSOLE_SERVICE="hosaka-field-terminal.service"
 HEADLESS_SERVICE="hosaka-field-terminal-headless.service"
+WEBSERVER_SERVICE="hosaka-webserver.service"
+KIOSK_SERVICE="hosaka-kiosk.service"
 
 find_repo_root() {
   if [[ -n "${HOSAKA_REPO_ROOT:-}" && -d "${HOSAKA_REPO_ROOT}/.git" ]]; then
@@ -56,7 +58,12 @@ echo "[hosaka-update] Reinstalling Hosaka runtime to /opt..."
 "$REPO_ROOT/scripts/install_hosaka.sh"
 
 ACTIVE_SERVICE=""
-if systemctl is-enabled --quiet "$CONSOLE_SERVICE"; then
+# Kiosk mode is the appliance default — webserver hosts the API while
+# hosaka-kiosk drives Chromium. Check it first so a kiosk Pi actually
+# restarts after `update_hosaka.sh`.
+if systemctl is-enabled --quiet "$WEBSERVER_SERVICE"; then
+  ACTIVE_SERVICE="$WEBSERVER_SERVICE"
+elif systemctl is-enabled --quiet "$CONSOLE_SERVICE"; then
   ACTIVE_SERVICE="$CONSOLE_SERVICE"
 elif systemctl is-enabled --quiet "$HEADLESS_SERVICE"; then
   ACTIVE_SERVICE="$HEADLESS_SERVICE"
@@ -66,10 +73,16 @@ if [[ -n "$ACTIVE_SERVICE" ]]; then
   echo "[hosaka-update] Restarting active service: $ACTIVE_SERVICE"
   sudo systemctl daemon-reload
   sudo systemctl restart "$ACTIVE_SERVICE"
+  # Bounce the kiosk too so Chromium reloads the freshly built SPA.
+  if [[ "$ACTIVE_SERVICE" == "$WEBSERVER_SERVICE" ]] \
+      && systemctl is-enabled --quiet "$KIOSK_SERVICE"; then
+    echo "[hosaka-update] Restarting kiosk: $KIOSK_SERVICE"
+    sudo systemctl restart "$KIOSK_SERVICE" || true
+  fi
   sudo systemctl --no-pager status "$ACTIVE_SERVICE" || true
 else
   echo "[hosaka-update] No Hosaka service currently enabled."
-  echo "[hosaka-update] Start manually: sudo systemctl start $CONSOLE_SERVICE"
+  echo "[hosaka-update] Start manually: sudo systemctl start $WEBSERVER_SERVICE"
 fi
 
 echo "[hosaka-update] Done."

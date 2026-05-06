@@ -48,6 +48,8 @@ export const CANON_SHORTCUTS: ShortcutDef[] = [
     command: { id: "ui.open_panel", target: "games" }, scope: "canon" },
   { id: "hint.start", chord: "Ctrl+;", label: "label every clickable element",
     command: { id: "ui.open_panel", target: "__hint__" }, scope: "canon" },
+  { id: "expose.windows", chord: "Ctrl+`", label: "show all open windows",
+    command: { id: "ui.expose_windows" }, scope: "canon" },
 ];
 
 const USER_KEY = "hosaka.user-shortcuts";

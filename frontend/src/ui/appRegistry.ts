@@ -28,6 +28,13 @@ export type AppId =
   | "discord"
   | "foliate"
   | "simulcast"
+  | "vscode"
+  | "firefox"
+  | "telegram"
+  | "betterbird"
+  | "alienarena"
+  | "slack"
+  | "steam"
   | "device_mic"
   | "device_cam"
   | "device_spk"
@@ -41,7 +48,7 @@ export type AppFlags = {
 
 export type PreferredHost = "electron" | "web" | "external-app" | "system-browser";
 export type InstallStrategy = "builtin" | "catalog" | "linux_package" | "windows_package" | "manual";
-export type HostScope = "any" | "electron-only" | "web";
+export type HostScope = "any" | "electron-only" | "web" | "linux";
 export type EmbedPolicy = "prefer_embed" | "allow_escape" | "no_embed";
 export type AppFamily = "core" | "integration";
 
@@ -395,15 +402,15 @@ export const APP_REGISTRY: AppDefinition[] = [
     family: "integration",
     backgroundCapable: true,
     defaultBackground: true,
-    showInLauncher: false,
+    showInLauncher: true,
     status: "shipping",
     preferredHost: "external-app",
     fallbackHosts: ["web", "system-browser"],
     installStrategy: "catalog",
-    hostScope: "any",
+    hostScope: "linux",
     embedPolicy: "no_embed",
-    maintainerNote: "Prefer Electron desktop apps, allow Linux/Windows package installs when necessary, and disable features on web when unsupported.",
-    agentNote: "Prefer Electron launches when available; fall back only if metadata permits.",
+    maintainerNote: "Flatpak: com.spotify.Client — x86_64-only on Flathub; install fails gracefully on aarch64.",
+    agentNote: "Prefer external-app launch via /api/v1/apps/spotify; surface install state in the panel.",
   },
   {
     id: "kindle",
@@ -429,15 +436,143 @@ export const APP_REGISTRY: AppDefinition[] = [
     glyph: "☵",
     aliases: ["discord"],
     family: "integration",
-    showInLauncher: false,
+    showInLauncher: true,
     status: "shipping",
     preferredHost: "external-app",
     fallbackHosts: ["web", "system-browser"],
-    installStrategy: "linux_package",
-    hostScope: "any",
+    installStrategy: "catalog",
+    hostScope: "linux",
     embedPolicy: "no_embed",
-    maintainerNote: "Treat Instagram, TikTok, and Discord as planned external app integrations, not presumed embedded iframe experiences.",
-    agentNote: "Never assume external apps exist; check capability and fail safely.",
+    maintainerNote: "Flatpak: com.discordapp.Discord (x86_64-only on Flathub).",
+    agentNote: "Launch via /api/v1/apps/discord; show install state if missing.",
+  },
+  {
+    id: "foliate",
+    title: "foliate",
+    description: "epub / mobi reader for the local library.",
+    glyph: "❧",
+    aliases: ["foliate", "epub", "reader"],
+    family: "integration",
+    showInLauncher: true,
+    status: "shipping",
+    preferredHost: "external-app",
+    fallbackHosts: ["web"],
+    installStrategy: "catalog",
+    hostScope: "linux",
+    embedPolicy: "no_embed",
+    maintainerNote: "Flatpak: com.github.johnfactotum.Foliate (aarch64 + x86_64).",
+  },
+  {
+    id: "vscode",
+    title: "vs code",
+    description: "visual studio code, edit source on the device itself.",
+    glyph: "⌗",
+    aliases: ["vscode", "code", "editor"],
+    family: "integration",
+    showInLauncher: true,
+    status: "shipping",
+    preferredHost: "external-app",
+    fallbackHosts: ["web"],
+    installStrategy: "catalog",
+    hostScope: "linux",
+    embedPolicy: "no_embed",
+    maintainerNote: "Flatpak: com.visualstudio.code (aarch64 + x86_64).",
+  },
+  {
+    id: "firefox",
+    title: "firefox",
+    description: "real persistent browser session, separate from the embedded web panel.",
+    glyph: "🦊",
+    aliases: ["firefox", "mozilla"],
+    family: "integration",
+    showInLauncher: true,
+    status: "shipping",
+    preferredHost: "external-app",
+    fallbackHosts: ["web"],
+    installStrategy: "catalog",
+    hostScope: "linux",
+    embedPolicy: "no_embed",
+    maintainerNote: "Flatpak: org.mozilla.firefox (aarch64 + x86_64).",
+  },
+  {
+    id: "telegram",
+    title: "telegram",
+    description: "telegram desktop, personal chat. signs in inside the launched window.",
+    glyph: "✈",
+    aliases: ["telegram", "tg"],
+    family: "integration",
+    showInLauncher: true,
+    status: "shipping",
+    preferredHost: "external-app",
+    fallbackHosts: ["web"],
+    installStrategy: "catalog",
+    hostScope: "linux",
+    embedPolicy: "no_embed",
+    maintainerNote: "Flatpak: org.telegram.desktop (aarch64 + x86_64).",
+  },
+  {
+    id: "betterbird",
+    title: "betterbird",
+    description: "thunderbird-derived mail client. local imap/smtp.",
+    glyph: "✉",
+    aliases: ["betterbird", "mail", "thunderbird"],
+    family: "integration",
+    showInLauncher: true,
+    status: "shipping",
+    preferredHost: "external-app",
+    fallbackHosts: ["web"],
+    installStrategy: "catalog",
+    hostScope: "linux",
+    embedPolicy: "no_embed",
+    maintainerNote: "Flatpak: eu.betterbird.Betterbird (aarch64 + x86_64).",
+  },
+  {
+    id: "alienarena",
+    title: "alien arena",
+    description: "retro arena fps. easter-egg game bundled with hosaka.",
+    glyph: "⚔",
+    aliases: ["alienarena", "alien-arena", "aa"],
+    family: "integration",
+    showInLauncher: true,
+    status: "shipping",
+    preferredHost: "external-app",
+    fallbackHosts: ["web"],
+    installStrategy: "catalog",
+    hostScope: "linux",
+    embedPolicy: "no_embed",
+    maintainerNote: "Flatpak: org.alienarena.alienarena (aarch64 + x86_64).",
+  },
+  {
+    id: "slack",
+    title: "slack",
+    description: "slack desktop client. x86_64-only on flathub today.",
+    glyph: "#",
+    aliases: ["slack"],
+    family: "integration",
+    showInLauncher: true,
+    status: "shipping",
+    preferredHost: "external-app",
+    fallbackHosts: ["web"],
+    installStrategy: "catalog",
+    hostScope: "linux",
+    embedPolicy: "no_embed",
+    maintainerNote: "Flatpak: com.slack.Slack — install will fail on aarch64 (Pi); panel surfaces the error.",
+  },
+  {
+    id: "steam",
+    title: "steam",
+    description: "valve steam. x86_64-only on flathub today.",
+    glyph: "♟",
+    aliases: ["steam"],
+    family: "integration",
+    showInLauncher: true,
+    status: "shipping",
+    preferredHost: "external-app",
+    fallbackHosts: ["web"],
+    installStrategy: "catalog",
+    hostScope: "linux",
+    embedPolicy: "no_embed",
+    maintainerNote: "Flatpak: com.valvesoftware.Steam — install will fail on aarch64 (Pi); panel surfaces the error.",
   },
   {
     id: "simulcast",
@@ -522,13 +657,27 @@ export function getAppDefinition(appId: AppId): AppDefinition | undefined {
   return APP_MAP.get(appId);
 }
 
-export function isAppEnabled(app: AppDefinition, flags: AppFlags): boolean {
+export function isHostScopeAllowed(scope: HostScope | undefined, platform: string | null): boolean {
+  if (!scope || scope === "any") return true;
+  if (scope === "web") return true; // web-only is shown everywhere; runtime gates the launch path
+  if (scope === "electron-only") return true; // host check happens at launch time
+  if (scope === "linux") {
+    // null platform = unknown (e.g. before /apps/capabilities resolves) — allow,
+    // so the apps appear on the Pi during boot. Once resolved, hide on non-linux.
+    if (!platform) return true;
+    return /linux/i.test(platform);
+  }
+  return true;
+}
+
+export function isAppEnabled(app: AppDefinition, flags: AppFlags, platform: string | null = null): boolean {
+  if (!isHostScopeAllowed(app.hostScope, platform)) return false;
   if (!app.requires) return app.status !== "planned";
   return flags[app.requires] && app.status !== "planned";
 }
 
-export function listEnabledApps(flags: AppFlags): AppDefinition[] {
-  return APP_REGISTRY.filter((app) => isAppEnabled(app, flags));
+export function listEnabledApps(flags: AppFlags, platform: string | null = null): AppDefinition[] {
+  return APP_REGISTRY.filter((app) => isAppEnabled(app, flags, platform));
 }
 
 export function resolveAppId(target: string): AppId | null {

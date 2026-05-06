@@ -84,6 +84,9 @@ const HelpPanel = lazy(() =>
 const DeviceCheckPanel = lazy(() =>
   import("./panels/DeviceCheckPanel").then((m) => ({ default: m.DeviceCheckPanel })),
 );
+const ExternalAppPanel = lazy(() =>
+  import("./panels/ExternalAppPanel").then((m) => ({ default: m.ExternalAppPanel })),
+);
 import { CmdLine } from "./components/CmdLine";
 import { HintLayer } from "./components/HintLayer";
 import { useShortcuts } from "./ui/useShortcuts";
@@ -102,6 +105,8 @@ export function App() {
   const [openOverride, setOpenOverride] = useState<AppId[] | null>(null);
   const [navOpen, setNavOpen] = useState(false);
   const [docToast, setDocToast] = useState<{ path: string; at: number } | null>(null);
+  const [hostPlatform, setHostPlatform] = useState<string | null>(null);
+  const [exposeOpen, setExposeOpen] = useState(false);
   useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
@@ -135,6 +140,25 @@ export function App() {
     void import("./sync/repo").then((m) => m.startSync());
   }, [syncEnabled]);
 
+  // Platform probe — resolves Linux-only apps in the registry. Falls back
+  // to navigator.platform on failure so non-Linux dev machines still hide
+  // the flatpak apps from the launcher.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/apps/capabilities")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { platform?: string } | null) => {
+        if (cancelled) return;
+        const p = d?.platform ?? (typeof navigator !== "undefined" ? navigator.platform : null);
+        setHostPlatform(p ?? null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setHostPlatform(typeof navigator !== "undefined" ? navigator.platform : null);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     try {
       const legacy = typeof localStorage !== "undefined" && localStorage.getItem("hosaka.immersive") === "1";
@@ -163,7 +187,7 @@ export function App() {
     () => ({ inboxEnabled, webPanelEnabled, nodesEnabled }),
     [inboxEnabled, webPanelEnabled, nodesEnabled],
   );
-  const enabledApps = useMemo(() => listEnabledApps(appFlags), [appFlags]);
+  const enabledApps = useMemo(() => listEnabledApps(appFlags, hostPlatform), [appFlags, hostPlatform]);
   const enabledIds = useMemo(() => new Set(enabledApps.map((app) => app.id)), [enabledApps]);
   const launcherApps = useMemo(
     () => enabledApps.filter((app) => app.showInLauncher !== false),
@@ -340,6 +364,8 @@ export function App() {
     window.addEventListener("hosaka:toggle-chrome", onToggleChrome);
     window.addEventListener("hosaka:focus-terminal", onFocusTerminal);
     window.addEventListener("keydown", onEscPanic);
+    const onExpose = () => setExposeOpen((v) => !v);
+    window.addEventListener("hosaka:expose-windows", onExpose);
     return () => {
       window.removeEventListener("hosaka:open-tab", onTab as EventListener);
       window.removeEventListener("hosaka:open-app", onTab as EventListener);
@@ -348,6 +374,7 @@ export function App() {
       window.removeEventListener("hosaka:toggle-chrome", onToggleChrome);
       window.removeEventListener("hosaka:focus-terminal", onFocusTerminal);
       window.removeEventListener("keydown", onEscPanic);
+      window.removeEventListener("hosaka:expose-windows", onExpose);
     };
   }, [closeApp, openApp, updateWindows]);
 
@@ -447,6 +474,17 @@ export function App() {
         return <DeviceCheckPanel kind="cam" onClose={() => closeApp("device_cam")} />;
       case "device_spk":
         return <DeviceCheckPanel kind="spk" onClose={() => closeApp("device_spk")} />;
+      case "spotify":
+      case "discord":
+      case "foliate":
+      case "vscode":
+      case "firefox":
+      case "telegram":
+      case "betterbird":
+      case "alienarena":
+      case "slack":
+      case "steam":
+        return <ExternalAppPanel appId={appId} onClose={closeApp} />;
       default:
         return (
           <div className="desktop-panel desktop-panel--directory">
@@ -621,6 +659,68 @@ export function App() {
       <OverlayStack />
       <HintLayer />
 
+      {exposeOpen && (
+        <div
+          className="window-expose"
+          role="dialog"
+          aria-label="open windows"
+          aria-modal="true"
+          onClick={(e) => { if (e.target === e.currentTarget) setExposeOpen(false); }}
+          onKeyDown={(e) => { if (e.key === "Escape") setExposeOpen(false); }}
+          tabIndex={-1}
+          ref={(el) => el?.focus()}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.7)",
+            backdropFilter: "blur(6px)",
+            zIndex: 220,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "3rem",
+          }}
+        >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+              gap: "1rem",
+              maxWidth: "min(1200px, 100%)",
+              maxHeight: "100%",
+              overflow: "auto",
+            }}
+          >
+            {openAppIds.map((id) => {
+              const app = getAppDefinition(id);
+              if (!app) return null;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => { setActiveApp(id); setExposeOpen(false); }}
+                  style={{
+                    background: id === activeAppId ? "rgba(120,160,255,0.18)" : "rgba(255,255,255,0.05)",
+                    border: id === activeAppId ? "1px solid rgba(120,160,255,0.6)" : "1px solid rgba(255,255,255,0.12)",
+                    borderRadius: 8,
+                    padding: "1.25rem 1rem",
+                    color: "inherit",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    minHeight: 120,
+                  }}
+                >
+                  <span style={{ fontSize: "2rem" }}>{app.glyph}</span>
+                  <span>{app.title}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {docToast && (
         <div className="doc-toast" role="status" aria-live="polite">
           <span className="doc-toast-glyph">✎</span>

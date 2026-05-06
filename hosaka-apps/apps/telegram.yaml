@@ -1,0 +1,33 @@
+id: telegram
+name: Telegram
+category: chat
+description: >-
+  Telegram Desktop wrapped as a Hosaka App for personal chat. Sign in with
+  your phone number inside the launched window.
+provider: Telegram FZ-LLC
+backend: flatpak
+flatpak_id: org.telegram.desktop
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - org.telegram.desktop
+launch:
+  command:
+    - flatpak
+    - run
+    - org.telegram.desktop
+aliases:
+  - telegram
+  - tg
+memory:
+  profile: medium
+permissions_notes:
+  - Network access required.
+  - Notifications use the Flatpak desktop portal.
+account_login_required: true
+hosaka_manages_credentials: false
+notes:
+  - Hosaka stores no Telegram credentials.

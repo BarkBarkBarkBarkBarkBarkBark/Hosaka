@@ -1091,9 +1091,14 @@ def _read_app_manifests() -> list[dict[str, Any]]:
     for entry in sorted(_APPS_DIR.iterdir()):
         if entry.suffix.lower() not in {".yaml", ".yml"}:
             continue
+        # Skip macOS AppleDouble sidecars and other dotfiles that occasionally
+        # leak through tar/scp transfers; their binary header is not UTF-8 and
+        # would otherwise crash the whole endpoint.
+        if entry.name.startswith("."):
+            continue
         try:
             data = _yaml.safe_load(entry.read_text(encoding="utf-8")) or {}
-        except (OSError, _yaml.YAMLError):
+        except (OSError, UnicodeDecodeError, _yaml.YAMLError):
             continue
         if not isinstance(data, dict):
             continue
@@ -1155,16 +1160,34 @@ def v1_apps_list() -> dict[str, Any]:
 
 @router.get("/apps/capabilities", summary="Apps subsystem capability probe")
 def v1_apps_capabilities() -> dict[str, Any]:
+    real_mode = _APPS_HTTP_MODE == "real"
+    flatpak_bin = shutil.which("flatpak") if real_mode else None
+    flathub_ready = False
+    note: Optional[str] = None
+    if real_mode and flatpak_bin:
+        code, out, _err = _run(["flatpak", "remotes", "--columns=name"], timeout=5)
+        flathub_ready = code == 0 and any(
+            line.strip() == "flathub" for line in out.splitlines()
+        )
+        if not flathub_ready:
+            note = "flatpak is installed but the `flathub` remote is not configured. run: flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo"
+    elif real_mode:
+        note = "HOSAKA_APPS_HTTP=real but the `flatpak` binary is not on PATH for the webserver process."
+    else:
+        note = (
+            "browser fallback — install/launch are mocked. "
+            "set HOSAKA_APPS_HTTP=real on a Linux host to actually shell out."
+        )
+    manifests = _read_app_manifests()
     return {
         "host": "web",
         "platform": os.uname().sysname.lower() if hasattr(os, "uname") else "unknown",
-        "flatpakAvailable": False,
-        "mocked": _APPS_HTTP_MODE != "real",
-        "note": (
-            "browser fallback — install/launch are mocked. "
-            "set HOSAKA_APPS_HTTP=real on a Linux host to actually shell out."
-            if _APPS_HTTP_MODE != "real" else None
-        ),
+        "flatpakAvailable": bool(flatpak_bin),
+        "flathubConfigured": flathub_ready,
+        "manifestsRoot": str(_APPS_DIR),
+        "manifestsFound": len(manifests),
+        "mocked": not real_mode,
+        "note": note,
     }
 
 
@@ -1175,6 +1198,13 @@ def v1_apps_status(app_id: str) -> dict[str, Any]:
         return {"ok": False, "manifestFound": False, "message": f"app not found: {app_id}"}
     if _APPS_HTTP_MODE != "real":
         return _mock_app_response(app, "status")
+    if not shutil.which("flatpak"):
+        return {
+            "ok": False, "appId": app["id"], "manifestFound": True,
+            "installed": False, "flatpakAvailable": False, "host": "web",
+            "message": "flatpak is not installed on this host.",
+            "actionableCommand": "sudo apt-get install -y flatpak",
+        }
     code, _out, _err = _run(["flatpak", "info", app["flatpak_id"]], timeout=8)
     return {
         "ok": True, "appId": app["id"], "manifestFound": True,
@@ -1190,12 +1220,28 @@ def v1_apps_install(app_id: str) -> dict[str, Any]:
         return {"ok": False, "manifestFound": False, "message": f"app not found: {app_id}"}
     if _APPS_HTTP_MODE != "real":
         return _mock_app_response(app, "install")
-    cmd = app["install"]["command"]
-    code, _out, err = _run(cmd, timeout=300)
+    if not shutil.which("flatpak"):
+        return {
+            "ok": False, "appId": app["id"], "manifestFound": True,
+            "installed": False, "flatpakAvailable": False, "host": "web",
+            "message": "flatpak is not installed on this host.",
+            "actionableCommand": "sudo apt-get install -y flatpak && flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo",
+        }
+    cmd = list(app["install"]["command"])
+    code, _out, err = _run(cmd, timeout=600)
+    if code == 0:
+        return {
+            "ok": True, "appId": app["id"], "manifestFound": True,
+            "installed": True, "flatpakAvailable": True, "host": "web",
+            "message": f"installed {app['name']}.",
+        }
+    short = err.strip().splitlines()[-1] if err.strip() else "unknown error"
     return {
-        "ok": code == 0, "appId": app["id"], "manifestFound": True,
-        "installed": code == 0, "flatpakAvailable": True, "host": "web",
-        "message": f"installed {app['name']}." if code == 0 else f"install failed: {err.strip()[:200]}",
+        "ok": False, "appId": app["id"], "manifestFound": True,
+        "installed": False, "flatpakAvailable": True, "host": "web",
+        "message": f"install failed: {short[:240]}",
+        "details": err.strip().splitlines()[-5:],
+        "actionableCommand": " ".join(cmd),
     }
 
 
@@ -1206,12 +1252,85 @@ def v1_apps_launch(app_id: str) -> dict[str, Any]:
         return {"ok": False, "manifestFound": False, "message": f"app not found: {app_id}"}
     if _APPS_HTTP_MODE != "real":
         return _mock_app_response(app, "launch")
-    cmd = app["launch"]["command"]
+    cmd = list(app["launch"]["command"])
+    env, seat_user, note = _resolve_kiosk_seat_env()
+    # If the webserver runs as root (the kiosk case) and we found a seat,
+    # drop privs so the launched window joins the operator's wayland/X11
+    # session. Without this the process spawns headless and never paints.
+    if seat_user and os.geteuid() == 0:
+        cmd = ["runuser", "-u", seat_user, "--"] + cmd
     try:
-        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            env={**os.environ, **env},
+        )
     except (OSError, FileNotFoundError) as e:
         return {"ok": False, "appId": app["id"], "host": "web", "message": f"launch failed: {e}"}
-    return {"ok": True, "appId": app["id"], "manifestFound": True, "launched": True, "host": "web", "message": f"launched {app['name']}."}
+    msg = f"launched {app['name']}."
+    if note:
+        msg += f" ({note})"
+    return {"ok": True, "appId": app["id"], "manifestFound": True, "launched": True, "host": "web", "message": msg}
+
+
+def _resolve_kiosk_seat_env() -> tuple[dict[str, str], Optional[str], Optional[str]]:
+    """Find the operator's graphical session env so spawned flatpak apps render.
+
+    Returns (env-overrides, user-to-runuser-as, optional human note).
+    Strategy:
+      1. Honor explicit overrides via HOSAKA_KIOSK_USER / HOSAKA_KIOSK_DISPLAY
+         / HOSAKA_KIOSK_WAYLAND_DISPLAY / HOSAKA_KIOSK_XDG_RUNTIME_DIR.
+      2. Otherwise, scan /run/user/<uid>/ for wayland-* sockets; take the
+         lowest-uid match >= 1000 as the kiosk seat.
+      3. Fall back to no overrides — the launch will still happen, but may
+         appear headless if there is no display attached yet.
+    """
+    user = os.getenv("HOSAKA_KIOSK_USER")
+    xdg = os.getenv("HOSAKA_KIOSK_XDG_RUNTIME_DIR")
+    wayland = os.getenv("HOSAKA_KIOSK_WAYLAND_DISPLAY")
+    display = os.getenv("HOSAKA_KIOSK_DISPLAY")
+    note: Optional[str] = None
+
+    if not (user and xdg and (wayland or display)):
+        # auto-detect from /run/user/<uid>
+        try:
+            run_user = Path("/run/user")
+            candidates = sorted(
+                (int(p.name) for p in run_user.iterdir() if p.name.isdigit() and int(p.name) >= 1000),
+            )
+        except OSError:
+            candidates = []
+        for uid in candidates:
+            seat = run_user / str(uid)
+            wls = sorted(seat.glob("wayland-*"))
+            wls = [p for p in wls if not p.name.endswith(".lock")]
+            if not wls and not (seat / "X11-unix").exists():
+                continue
+            try:
+                import pwd
+                pw = pwd.getpwuid(uid)
+            except (KeyError, ImportError):
+                continue
+            user = user or pw.pw_name
+            xdg = xdg or str(seat)
+            if wls and not wayland:
+                wayland = wls[0].name
+            break
+        if not user:
+            note = "no kiosk seat found — app spawned headless."
+
+    env: dict[str, str] = {}
+    if xdg:
+        env["XDG_RUNTIME_DIR"] = xdg
+    if wayland:
+        env["WAYLAND_DISPLAY"] = wayland
+    if display:
+        env["DISPLAY"] = display
+    elif not wayland:
+        env["DISPLAY"] = ":0"
+    return env, user, note
 
 
 @router.post("/apps/stage", summary="Stage a Flathub app manifest under hosaka-apps/apps/", dependencies=[Depends(require_write)])

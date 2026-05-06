@@ -36,7 +36,8 @@ export type HosakaUiCommand =
   | { id: "ui.launch_app"; target: string }
   | { id: "ui.device_check"; kind: DeviceCheckKind }
   | { id: "ui.device_select"; kind: "mic" | "cam" | "spk"; deviceId: string }
-  | { id: "ui.show_diagnostics" };
+  | { id: "ui.show_diagnostics" }
+  | { id: "ui.expose_windows" };
 
 export type HosakaUiResult =
   | {
@@ -228,6 +229,13 @@ export function executeHosakaUiCommand(command: HosakaUiCommand): HosakaUiResult
         ok: true,
         command: command.id,
         dispatched: [dispatch("hosaka:toggle-chrome")],
+        mode: "shipping",
+      };
+    case "ui.expose_windows":
+      return {
+        ok: true,
+        command: command.id,
+        dispatched: [dispatch("hosaka:expose-windows")],
         mode: "shipping",
       };
     case "ui.focus_terminal":

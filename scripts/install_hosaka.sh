@@ -27,6 +27,12 @@ sudo mkdir -p "$APP_ROOT"
 sudo rsync -a --delete "$REPO_ROOT/hosaka"               "$APP_ROOT/"
 sudo rsync -a --delete "$REPO_ROOT/docs"                 "$APP_ROOT/"
 sudo rsync -a --delete "$REPO_ROOT/scripts"              "$APP_ROOT/"
+# Flatpak app manifests (consumed by hosaka.web.api_v1 _read_app_manifests).
+# Exclude macOS AppleDouble sidecars (._*) so the YAML loader stays clean.
+if [[ -d "$REPO_ROOT/hosaka-apps" ]]; then
+  sudo rsync -a --delete --exclude='._*' --exclude='.DS_Store' \
+    "$REPO_ROOT/hosaka-apps" "$APP_ROOT/"
+fi
 sudo rsync -a           "$REPO_ROOT/README.md"           "$APP_ROOT/"
 sudo rsync -a           "$REPO_ROOT/requirements-hosaka.txt" "$APP_ROOT/"
 

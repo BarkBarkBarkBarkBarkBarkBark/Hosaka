@@ -1,0 +1,35 @@
+id: steam
+name: Steam
+category: games
+description: >-
+  Valve Steam wrapped as a Hosaka App. x86_64-only on Flathub; on aarch64
+  (Pi) Hosaka surfaces a "not available on this architecture" notice but
+  the app definition stays canonical so it shows up the moment you run
+  Hosaka on a supported machine.
+provider: Valve
+backend: flatpak
+flatpak_id: com.valvesoftware.Steam
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - com.valvesoftware.Steam
+launch:
+  command:
+    - flatpak
+    - run
+    - com.valvesoftware.Steam
+aliases:
+  - steam
+memory:
+  profile: heavy
+  warning: Steam pulls a multi-GB runtime and downloads games to disk.
+permissions_notes:
+  - Network access required.
+  - GPU + audio + controller access via Flatpak portals.
+account_login_required: true
+hosaka_manages_credentials: false
+notes:
+  - x86_64-only on Flathub today.
