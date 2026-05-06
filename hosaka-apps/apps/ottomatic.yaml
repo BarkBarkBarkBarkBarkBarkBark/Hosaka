@@ -1,0 +1,34 @@
+id: ottomatic
+name: Otto Matic
+category: games
+description: >-
+  Otto Matic — the 2001 Pangea Software 3D action game, now open-source
+  and packaged for modern Linux. Joins Alien Arena as the "lighter side
+  of the kiosk" entry.
+provider: Pangea Software / Iliyas Jorio
+backend: flatpak
+flatpak_id: io.jor.ottomatic
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - io.jor.ottomatic
+launch:
+  command:
+    - flatpak
+    - run
+    - io.jor.ottomatic
+aliases:
+  - ottomatic
+  - otto-matic
+  - otto
+memory:
+  profile: medium
+permissions_notes:
+  - Needs OpenGL + audio. Game controller optional.
+account_login_required: false
+hosaka_manages_credentials: false
+notes:
+  - Pi 3B+ may run it under software rendering; experience is best on x86_64.

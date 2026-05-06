@@ -43,6 +43,9 @@ export type AppId =
   | "readetexts"
   | "tonearm"
   | "isoimagewriter"
+  | "gqrx"
+  | "receiver"
+  | "ottomatic"
   | "device_mic"
   | "device_cam"
   | "device_spk"
@@ -742,6 +745,57 @@ export const APP_REGISTRY: AppDefinition[] = [
     hostScope: "linux",
     embedPolicy: "no_embed",
     maintainerNote: "Flatpak: org.kde.isoimagewriter (aarch64 + x86_64). Needs portal-granted device access at run time.",
+  },
+  {
+    id: "gqrx",
+    title: "gqrx",
+    description: "sdr scanner for rtl-sdr dongles. AM/FM/shortwave/ham/ADS-B sweeps.",
+    glyph: "≋",
+    aliases: ["gqrx", "sdr", "rtl-sdr", "scanner", "radio-scanner"],
+    family: "integration",
+    backgroundCapable: true,
+    showInLauncher: true,
+    status: "shipping",
+    preferredHost: "external-app",
+    fallbackHosts: ["web"],
+    installStrategy: "catalog",
+    hostScope: "linux",
+    embedPolicy: "no_embed",
+    maintainerNote: "Flatpak: dk.gqrx.gqrx (aarch64 + x86_64). Plug the RTL-SDR dongle before launch.",
+    agentNote: "Suggest plugging the RTL-SDR dongle in before launch; gqrx auto-detects on start.",
+  },
+  {
+    id: "receiver",
+    title: "receiver",
+    description: "internet-radio tuner backed by the radio-browser database. no antenna needed.",
+    glyph: "·))",
+    aliases: ["receiver", "internet-radio", "radio-browser"],
+    family: "integration",
+    backgroundCapable: true,
+    showInLauncher: true,
+    status: "shipping",
+    preferredHost: "external-app",
+    fallbackHosts: ["web"],
+    installStrategy: "catalog",
+    hostScope: "linux",
+    embedPolicy: "no_embed",
+    maintainerNote: "Flatpak: io.github.meehow.Receiver (aarch64 + x86_64). Pairs with gqrx for the over-the-air vs. internet split.",
+  },
+  {
+    id: "ottomatic",
+    title: "otto matic",
+    description: "the open-source 2001 pangea 3d action game. arcade downtime.",
+    glyph: "♠",
+    aliases: ["ottomatic", "otto-matic", "otto"],
+    family: "integration",
+    showInLauncher: true,
+    status: "shipping",
+    preferredHost: "external-app",
+    fallbackHosts: ["web"],
+    installStrategy: "catalog",
+    hostScope: "linux",
+    embedPolicy: "no_embed",
+    maintainerNote: "Flatpak: io.jor.ottomatic (aarch64 + x86_64). Pi 3B+ runs it under software GL.",
   },
   {
     id: "device_mic",

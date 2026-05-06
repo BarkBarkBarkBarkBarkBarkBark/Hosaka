@@ -1,0 +1,38 @@
+id: gqrx
+name: Gqrx SDR
+category: radio
+description: >-
+  Gqrx is a software-defined-radio scanner — pair it with an RTL-SDR USB
+  dongle and sweep AM, FM, shortwave, weather, ham, ADS-B, and more. The
+  centerpiece of the Hosaka radio surface.
+provider: Alexandru Csete & contributors
+backend: flatpak
+flatpak_id: dk.gqrx.gqrx
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - dk.gqrx.gqrx
+launch:
+  command:
+    - flatpak
+    - run
+    - dk.gqrx.gqrx
+aliases:
+  - gqrx
+  - sdr
+  - rtl-sdr
+  - scanner
+memory:
+  profile: medium
+  warning: SDR FFT plotting is moderately CPU-heavy on the Pi 3B+; expect higher load during a sweep.
+permissions_notes:
+  - Needs USB device access for the RTL-SDR dongle (flatpak --device=all is granted by the manifest).
+  - Audio playback to default sink.
+account_login_required: false
+hosaka_manages_credentials: false
+notes:
+  - Plug the RTL-SDR before launch; gqrx auto-detects on start.
+  - Pairs with Receiver (internet radio) for the "no antenna" fallback.

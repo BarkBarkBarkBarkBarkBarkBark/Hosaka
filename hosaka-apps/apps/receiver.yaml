@@ -1,0 +1,34 @@
+id: receiver
+name: Receiver
+category: radio
+description: >-
+  Receiver is a clean GTK internet-radio tuner backed by the radio-browser
+  community database. The "no antenna needed" companion to Gqrx — works
+  off plain wifi, surfaces tens of thousands of streaming stations.
+provider: meehow
+backend: flatpak
+flatpak_id: io.github.meehow.Receiver
+install:
+  command:
+    - flatpak
+    - install
+    - -y
+    - flathub
+    - io.github.meehow.Receiver
+launch:
+  command:
+    - flatpak
+    - run
+    - io.github.meehow.Receiver
+aliases:
+  - receiver
+  - internet-radio
+  - radio-browser
+memory:
+  profile: light
+permissions_notes:
+  - Network access for stream metadata + audio.
+account_login_required: false
+hosaka_manages_credentials: false
+notes:
+  - Backed by radio-browser.info; no Hosaka-managed account.

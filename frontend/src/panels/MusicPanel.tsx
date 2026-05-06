@@ -13,6 +13,7 @@ import {
   populateLibrary,
   type Track,
 } from "../apps/library";
+import { launchHosakaApp } from "../apps/flatpakBackend";
 
 type Status = { kind: "idle" | "info" | "ok" | "error"; text: string };
 
@@ -76,6 +77,34 @@ export function MusicPanel() {
     setStatus({ kind: "info", text: "library cleared." });
   }
 
+  // ── tuners ──────────────────────────────────────────────────────────
+  // Hosaka radio is a player. The actual scanning / streaming surfaces
+  // live in their own flatpak windows: gqrx (over-the-air SDR) and
+  // receiver (internet-radio browser). We launch them via the same
+  // capability-checked path as the apps panel — install state is shown
+  // by the message returned from the API.
+  async function onTune(appId: "gqrx" | "receiver") {
+    setBusy(true);
+    setStatus({ kind: "info", text: `launching ${appId}…` });
+    try {
+      const res = await launchHosakaApp(appId);
+      if (res.ok) {
+        setStatus({ kind: "ok", text: res.message ?? `${appId} launched.` });
+      } else if (res.archIncompatible) {
+        setStatus({ kind: "error", text: res.message ?? `${appId} not available on this device.` });
+      } else {
+        setStatus({
+          kind: "error",
+          text: res.message ?? `${appId} not installed yet — open the apps panel to install it.`,
+        });
+      }
+    } catch (err) {
+      setStatus({ kind: "error", text: `${appId}: ${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="desktop-panel desktop-panel--directory">
       <div className="panel-header">
@@ -94,6 +123,29 @@ export function MusicPanel() {
         </button>
         <button type="button" className="btn" disabled={busy || tracks.length === 0} onClick={onClear}>
           clear library
+        </button>
+      </div>
+
+      {/* tuners — over-the-air (gqrx + rtl-sdr) and internet (receiver). */}
+      <div style={{ padding: "0 1rem 0.5rem", display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+        <span className="dim" style={{ fontSize: "0.85em" }}>tuners&nbsp;·</span>
+        <button
+          type="button"
+          className="btn"
+          disabled={busy}
+          onClick={() => void onTune("gqrx")}
+          title="open gqrx — software-defined-radio scanner. needs an rtl-sdr dongle plugged in."
+        >
+          ≋ scanner (gqrx)
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={busy}
+          onClick={() => void onTune("receiver")}
+          title="open receiver — internet radio (radio-browser database)."
+        >
+          ·)) internet radio
         </button>
       </div>
 
