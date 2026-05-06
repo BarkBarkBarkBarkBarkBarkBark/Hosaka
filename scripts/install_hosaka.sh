@@ -39,9 +39,14 @@ sudo rsync -a           "$REPO_ROOT/requirements-hosaka.txt" "$APP_ROOT/"
 sudo install -m 755 "$REPO_ROOT/scripts/kiosk-chromium.sh"   /usr/local/bin/hosaka-kiosk-chromium
 sudo install -m 755 "$REPO_ROOT/scripts/kiosk-electron.sh"   /usr/local/bin/hosaka-kiosk-electron
 # Operator CLI (build/kiosk mode toggle, deploy, status) and the boot-mode
-# arbiter that the hosaka-mode.service runs at startup.
-sudo install -m 755 "$REPO_ROOT/scripts/hosaka"            /usr/local/bin/hosaka
-sudo install -m 755 "$REPO_ROOT/scripts/hosaka-mode-init"  /usr/local/bin/hosaka-mode-init
+# arbiter that the hosaka-mode.service runs at startup. Both are optional —
+# older repo snapshots may not ship them yet, so don't fail the install.
+if [[ -f "$REPO_ROOT/scripts/hosaka" ]]; then
+  sudo install -m 755 "$REPO_ROOT/scripts/hosaka"            /usr/local/bin/hosaka
+fi
+if [[ -f "$REPO_ROOT/scripts/hosaka-mode-init" ]]; then
+  sudo install -m 755 "$REPO_ROOT/scripts/hosaka-mode-init"  /usr/local/bin/hosaka-mode-init
+fi
 
 # ── Tailscale ────────────────────────────────────────────────────────────────
 if [[ "$INSTALL_TAILSCALE" == "1" ]]; then
