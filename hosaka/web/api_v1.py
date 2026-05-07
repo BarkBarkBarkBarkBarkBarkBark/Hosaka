@@ -1387,6 +1387,25 @@ def v1_apps_launch(app_id: str) -> dict[str, Any]:
     env, seat_user, note = _resolve_kiosk_seat_env()
     if seat_user:
         _sync_user_activation_env(seat_user, env)
+    # If the app already has a visible OS window, treat Launch as "raise".
+    # This makes repeat taps instant and avoids spawning extra flatpak
+    # processes while a GTK app is still starting up.
+    try:
+        existing, _existing_note = _list_x11_windows()
+        for win in existing:
+            if _window_matches_app(win, app):
+                ok, raise_msg = _xdotool_action(str(win["wid"]), "raise")
+                return {
+                    "ok": ok,
+                    "appId": app["id"],
+                    "manifestFound": True,
+                    "launched": False,
+                    "raised": ok,
+                    "host": "web",
+                    "message": f"{app['name']} is already open — {raise_msg if ok else 'raise failed' }.",
+                }
+    except Exception:
+        pass
     # Expand $HOME / ~/ / $USER in argv against the SEAT user's pw entry
     # (not the webserver's, which is root in production). This lets
     # manifests use portable paths like "$HOME/Vault" without getting
@@ -1647,17 +1666,34 @@ def _xdotool_available() -> bool:
     return bool(shutil.which("xdotool"))
 
 
-def _wm_class_to_app_id(wm_class: str, manifests: list[dict[str, Any]]) -> Optional[str]:
-    """Best-effort WM_CLASS -> Hosaka manifest appId.
+def _window_matches_app(win: dict[str, Any], app: dict[str, Any]) -> bool:
+    title = str(win.get("title") or "").lower()
+    wm_class = str(win.get("wmClass") or "").lower()
+    app_id = str(win.get("appId") or "").lower()
+    fid = str(app.get("flatpak_id") or "").lower()
+    name = str(app.get("name") or "").lower()
+    aid = str(app.get("id") or "").lower()
+    candidates = {aid, name, fid, fid.split(".")[-1]}
+    if app_id and app_id == aid:
+        return True
+    hay = " ".join([title, wm_class])
+    return any(c and c in hay for c in candidates)
+
+
+def _window_to_app_id(title: str, wm_class: str, manifests: list[dict[str, Any]]) -> Optional[str]:
+    """Best-effort window title / WM_CLASS -> Hosaka manifest appId.
 
     Flatpak GTK apps usually set WM_CLASS to either the flatpak id
     ("com.github.johnfactotum.Foliate") or the trailing segment
-    ("Foliate"). We accept either, case-insensitive.
+    ("Foliate"). Some GTK/Flatpak builds leave WM_CLASS blank but do set
+    a useful title, so title is part of the match too.
     """
-    if not wm_class:
+    raw = " ".join([title, wm_class]).strip()
+    if not raw:
         return None
-    needles: set[str] = {wm_class.lower()}
-    for piece in re.split(r"[,\s]+", wm_class):
+    needles: set[str] = set()
+    hay = raw.lower()
+    for piece in re.split(r"[,\s]+", raw):
         p = piece.strip().strip("\"'").lower()
         if p:
             needles.add(p)
@@ -1665,7 +1701,7 @@ def _wm_class_to_app_id(wm_class: str, manifests: list[dict[str, Any]]) -> Optio
     for m in manifests:
         fid = m["flatpak_id"].lower()
         candidates = {fid, fid.split(".")[-1], m["id"].lower(), m["name"].lower()}
-        if needles & candidates:
+        if needles & candidates or any(c and c in hay for c in candidates):
             return m["id"]
     return None
 
@@ -1708,7 +1744,7 @@ def _list_x11_windows() -> tuple[list[dict[str, Any]], Optional[str]]:
             continue
         if not title and not wm_class:
             continue
-        app_id = _wm_class_to_app_id(wm_class, manifests)
+        app_id = _window_to_app_id(title, wm_class, manifests)
         windows.append({
             "wid": wid,
             "title": title or wm_class,
