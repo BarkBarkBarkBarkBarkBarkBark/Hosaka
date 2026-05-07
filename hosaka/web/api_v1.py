@@ -1178,6 +1178,7 @@ def _read_app_manifests() -> list[dict[str, Any]]:
             "flatpak_id": flatpak_id,
             "install": {"command": list(install.get("command") or [])},
             "launch": {"command": list(launch.get("command") or [])},
+            "flatpak_overrides": [str(o) for o in (data.get("flatpak_overrides") or []) if str(o).strip()],
             "aliases": [_normalize_app_token(str(a)) for a in (data.get("aliases") or []) if str(a).strip()],
             "arches": [str(a).strip().lower() for a in (data.get("arches") or []) if str(a).strip()],
         })
@@ -1530,7 +1531,185 @@ def _resolve_kiosk_seat_env() -> tuple[dict[str, str], Optional[str], Optional[s
         env["DISPLAY"] = ":0"
     if xauthority:
         env["XAUTHORITY"] = xauthority
+    # ── portal bypass ──
+    # xdg-desktop-portal-gtk on the Pi 3B+ kiosk fails with
+    #   StartServiceByName for org.freedesktop.impl.portal.desktop.gtk:
+    #   Timeout was reached
+    # which makes GTK4 apps (foliate, etc.) hang for ~120s on first paint
+    # waiting for a portal that will never answer. We explicitly opt out:
+    # the flatpak manifests already grant direct --filesystem= access to
+    # the dirs the operator cares about (Books, Vault, etc.), so the
+    # portal-based file picker / settings handshake isn't needed for the
+    # launch path to succeed. If a portal ever comes online and the
+    # operator wants it, they can override these per-app.
+    env.setdefault("GTK_USE_PORTAL", "0")
+    env.setdefault("GIO_USE_PORTALS", "0")
     return env, user, note
+
+
+# ── windows / dock ────────────────────────────────────────────────────────────
+# Live X11 window enumeration so the SPA can render a thin task dock for
+# the OS-level windows that flatpak-launched apps spawn (foliate, spotify,
+# etc.). These windows are NOT Hosaka panels — they're real X11 clients
+# owned by openbox on the kiosk seat. Without this surface, the SPA's
+# "open windows" list only knows about Hosaka tabs (App.tsx openAppIds),
+# which is why clicking foliate there reopens the install/launch panel
+# instead of raising the actual reader window.
+#
+# Implementation notes:
+#   - xdotool is the only X11 client we need (already on the Pi).
+#   - We always run xdotool with the seat env from
+#     _resolve_kiosk_seat_env() because the webserver runs as root and
+#     has no DISPLAY/XAUTHORITY of its own.
+#   - We filter out the kiosk Electron window (WM_CLASS=hosaka-kiosk from
+#     kiosk/package.json "name") so the dock never lists "Hosaka" itself.
+#   - WM_CLASS is the dock's identity key; we map it to a manifest appId
+#     by matching flatpak_id (or its trailing segment) so the dock can
+#     reuse the same glyph the launcher uses.
+
+_DOCK_KIOSK_WM_CLASSES = {"hosaka-kiosk", "Hosaka"}
+
+
+def _x11_seat_env() -> dict[str, str]:
+    env, _user, _note = _resolve_kiosk_seat_env()
+    if "DISPLAY" not in env:
+        env["DISPLAY"] = ":0"
+    return env
+
+
+def _run_x11(cmd: list[str], timeout: int = 5) -> tuple[int, str, str]:
+    """Like _run, but injects DISPLAY/XAUTHORITY for the kiosk seat."""
+    seat_env = _x11_seat_env()
+    try:
+        p = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            env={**os.environ, **seat_env},
+        )
+        return p.returncode, p.stdout, p.stderr
+    except FileNotFoundError:
+        return 127, "", f"not found: {cmd[0]}"
+    except subprocess.TimeoutExpired:
+        return 124, "", f"timeout: {' '.join(cmd)}"
+
+
+def _xdotool_available() -> bool:
+    return bool(shutil.which("xdotool"))
+
+
+def _wm_class_to_app_id(wm_class: str, manifests: list[dict[str, Any]]) -> Optional[str]:
+    """Best-effort WM_CLASS -> Hosaka manifest appId.
+
+    Flatpak GTK apps usually set WM_CLASS to either the flatpak id
+    ("com.github.johnfactotum.Foliate") or the trailing segment
+    ("Foliate"). We accept either, case-insensitive.
+    """
+    if not wm_class:
+        return None
+    needles: set[str] = {wm_class.lower()}
+    for piece in re.split(r"[,\s]+", wm_class):
+        p = piece.strip().strip("\"'").lower()
+        if p:
+            needles.add(p)
+            needles.add(p.split(".")[-1])
+    for m in manifests:
+        fid = m["flatpak_id"].lower()
+        candidates = {fid, fid.split(".")[-1], m["id"].lower(), m["name"].lower()}
+        if needles & candidates:
+            return m["id"]
+    return None
+
+
+def _list_x11_windows() -> tuple[list[dict[str, Any]], Optional[str]]:
+    """Enumerate visible top-level windows, minus the kiosk's own electron."""
+    if not _xdotool_available():
+        return [], "xdotool not installed (sudo apt-get install -y xdotool)"
+    code, out, err = _run_x11(
+        ["xdotool", "search", "--onlyvisible", "--maxdepth", "4", "."],
+        timeout=4,
+    )
+    if code != 0:
+        return [], f"xdotool search failed: {(err or '').strip()[:160]}"
+    wids = [w.strip() for w in out.split() if w.strip().isdigit()]
+    if not wids:
+        return [], None
+
+    manifests = _read_app_manifests()
+    windows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for wid in wids:
+        if wid in seen:
+            continue
+        seen.add(wid)
+        # Each per-window probe is bounded; if any single one stalls we
+        # skip it rather than holding up the whole dock refresh.
+        _, name_out, _ = _run_x11(["xdotool", "getwindowname", wid], timeout=2)
+        _, class_out, _ = _run_x11(["xdotool", "getwindowclassname", wid], timeout=2)
+        _, pid_out, _ = _run_x11(["xdotool", "getwindowpid", wid], timeout=2)
+        title = name_out.strip()
+        wm_class = class_out.strip()
+        try:
+            pid = int(pid_out.strip())
+        except (TypeError, ValueError):
+            pid = 0
+        # Filter the kiosk's own electron window — we don't want the dock
+        # to list "Hosaka" as one of its tabs.
+        if wm_class in _DOCK_KIOSK_WM_CLASSES:
+            continue
+        if not title and not wm_class:
+            continue
+        app_id = _wm_class_to_app_id(wm_class, manifests)
+        windows.append({
+            "wid": wid,
+            "title": title or wm_class,
+            "wmClass": wm_class,
+            "pid": pid,
+            "appId": app_id,
+        })
+    return windows, None
+
+
+@router.get("/windows", summary="List visible OS windows on the kiosk seat")
+def v1_windows_list() -> dict[str, Any]:
+    windows, note = _list_x11_windows()
+    return {
+        "ok": True,
+        "windows": windows,
+        "count": len(windows),
+        "note": note,
+    }
+
+
+def _xdotool_action(wid: str, action: str) -> tuple[bool, str]:
+    """Apply raise/minimize/close to a window id. Returns (ok, message)."""
+    if not re.fullmatch(r"\d+", wid):
+        return False, "invalid window id"
+    if not _xdotool_available():
+        return False, "xdotool not installed"
+    if action == "raise":
+        # windowactivate maps cleanly to "raise + give focus" under EWMH-
+        # compliant WMs (openbox is). This is what we want from the dock.
+        cmd = ["xdotool", "windowactivate", "--sync", wid]
+    elif action == "minimize":
+        cmd = ["xdotool", "windowminimize", wid]
+    elif action == "close":
+        # windowclose sends WM_DELETE_WINDOW (graceful).
+        cmd = ["xdotool", "windowclose", wid]
+    else:
+        return False, f"unknown action: {action}"
+    code, _out, err = _run_x11(cmd, timeout=4)
+    if code != 0:
+        return False, (err or "").strip()[:240] or f"xdotool exited {code}"
+    return True, f"{action} sent to wid {wid}"
+
+
+@router.post("/windows/{wid}/{action}", summary="Raise / minimize / close a window", dependencies=[Depends(require_write)])
+def v1_windows_action(wid: str, action: str) -> dict[str, Any]:
+    ok, message = _xdotool_action(wid, action.strip().lower())
+    return {"ok": ok, "wid": wid, "action": action, "message": message}
 
 
 @router.post("/apps/stage", summary="Stage a Flathub app manifest under hosaka-apps/apps/", dependencies=[Depends(require_write)])

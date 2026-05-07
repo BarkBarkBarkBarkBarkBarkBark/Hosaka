@@ -171,12 +171,22 @@ export async function launchHosakaApp(raw: string): Promise<HosakaAppHostRespons
     return { ok: false, manifestFound: false, message: `app not found: ${raw}` };
   }
   const b = bridge();
-  if (b) return b.launchApp(appId);
-  const http = await httpJson<HosakaAppHostResponse>(
-    `${HTTP_BASE}/${encodeURIComponent(appId)}/launch`,
-    { method: "POST" },
-  );
-  return http ?? unsupported(appId, "launch");
+  const result = b
+    ? await b.launchApp(appId)
+    : (await httpJson<HosakaAppHostResponse>(
+        `${HTTP_BASE}/${encodeURIComponent(appId)}/launch`,
+        { method: "POST" },
+      )) ?? unsupported(appId, "launch");
+  // Tell the WindowDock to re-poll /api/v1/windows on the next animation
+  // frame so a freshly-spawned X11 window appears in the task strip
+  // without waiting for the slow background refresh. We dispatch even
+  // on a non-ok result; the dock's own poll is cheap and self-correcting.
+  if (typeof window !== "undefined") {
+    try {
+      window.dispatchEvent(new CustomEvent("hosaka:app-launched", { detail: { appId } }));
+    } catch { /* CustomEvent unsupported in some test envs */ }
+  }
+  return result;
 }
 
 export async function searchFlathub(query: string): Promise<FlathubSearchResponse> {

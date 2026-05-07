@@ -89,6 +89,7 @@ const ExternalAppPanel = lazy(() =>
 );
 import { CmdLine } from "./components/CmdLine";
 import { HintLayer } from "./components/HintLayer";
+import { WindowDock } from "./components/WindowDock";
 import { useShortcuts } from "./ui/useShortcuts";
 
 // Build stamp injected by vite.config.ts via `define`. Empty fallback so
@@ -681,6 +682,8 @@ export function App() {
       </main>
 
       <CmdLine />
+
+      <WindowDock />
 
       <footer className="hosaka-footer">
         <span className="hosaka-footer-dim">{t("footer")} · {openAppIds.length} windows</span>
