@@ -14,11 +14,23 @@ install:
     - -y
     - flathub
     - com.github.johnfactotum.Foliate
+# Applied as `flatpak --user override <flatpak_id> <arg>...` once install
+# returns 0. Foliate ships with ZERO filesystem access
+# (filesystems=xdg-run/speech-dispatcher:ro), so without the override the
+# app sees an empty home dir and the seeded epubs at $HOME/Books are
+# invisible to its file picker. The override is idempotent.
+flatpak_overrides:
+  - --filesystem=$HOME/Books
 launch:
+  # Pass the books directory as a positional arg so foliate opens its
+  # "library" view on $HOME/Books instead of the empty welcome screen.
+  # Foliate accepts both file and directory paths; a directory triggers a
+  # batch-add to the in-app library.
   command:
     - flatpak
     - run
     - com.github.johnfactotum.Foliate
+    - $HOME/Books
 aliases:
   - foliate
 memory:

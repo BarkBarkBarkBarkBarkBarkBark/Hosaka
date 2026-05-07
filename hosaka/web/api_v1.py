@@ -1341,10 +1341,29 @@ def v1_apps_install(app_id: str) -> dict[str, Any]:
     # Whatever the outcome, the cached `installed?` answer is now stale.
     _flatpak_cache_bust(f"installed:{app['flatpak_id']}")
     if code == 0:
+        # Apply any per-app flatpak overrides declared in the manifest. This
+        # is where we hand sandboxed apps the host paths they need — e.g.
+        # foliate gets --filesystem=$HOME/Books so the seeded epubs are
+        # visible to its file picker. We log per-override outcome but do
+        # not fail the install if an override didn't take; the app is
+        # already installed and a missing override is a recoverable
+        # post-step (operator can re-run from the panel).
+        overrides = app.get("flatpak_overrides") or []
+        override_notes: list[str] = []
+        for arg in overrides:
+            ovr_cmd = ["flatpak", "--user", "override", app["flatpak_id"], str(arg)]
+            ovr_code, _ovr_out, ovr_err = _run(ovr_cmd, timeout=15)
+            if ovr_code != 0:
+                override_notes.append(
+                    f"override {arg} failed: {(ovr_err or '').strip()[:120]}"
+                )
+        msg = f"installed {app['name']}."
+        if override_notes:
+            msg += " warnings: " + "; ".join(override_notes)
         return {
             "ok": True, "appId": app["id"], "manifestFound": True,
             "installed": True, "flatpakAvailable": True, "host": "web",
-            "message": f"installed {app['name']}.",
+            "message": msg,
         }
     short = err.strip().splitlines()[-1] if err.strip() else "unknown error"
     return {

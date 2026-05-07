@@ -48,6 +48,15 @@ fields:
     fields:
       command:
         type: list[string]
+  flatpak_overrides:
+    type: list[string]
+    required: false
+    notes: >-
+      Optional. Each entry is appended to `flatpak --user override
+      <flatpak_id>` after a successful install. Use this to grant a
+      sandboxed app the host paths it needs (e.g. `--filesystem=$HOME/Books`
+      so foliate can see seeded epubs). Idempotent. Failures are logged
+      as install warnings, not hard errors.
   aliases:
     type: list[string]
   memory:
