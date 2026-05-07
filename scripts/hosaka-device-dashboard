@@ -9,21 +9,30 @@
 #   --once    print one frame and exit (used by `hosaka dashboard`)
 #   default   loop forever (used by hosaka-device-dashboard.service on tty1)
 #
-# Refresh interval: HOSAKA_DASHBOARD_REFRESH (default 5 s).
+# Refresh interval: HOSAKA_DASHBOARD_REFRESH (default 300 s == 5 min).
+# We used to re-paint every 5 s, which caused a visible white flash on the
+# framebuffer console because the redraw started with a full clear-screen +
+# clear-scrollback. Now we (a) repaint slowly, and (b) repaint flicker-free
+# by homing the cursor and erasing line-by-line as we redraw. Tap any key
+# (or [r]) to force an immediate refresh.
 
 set -u
 
 ONCE=0
 [[ "${1:-}" == "--once" ]] && ONCE=1
 
-REFRESH_SECS="${HOSAKA_DASHBOARD_REFRESH:-5}"
+REFRESH_SECS="${HOSAKA_DASHBOARD_REFRESH:-300}"
 
 # ── ANSI ──────────────────────────────────────────────────────────────────────
 RST=$'\033[0m'; DIM=$'\033[2m'; BOLD=$'\033[1m'
 RED=$'\033[31m'; GREEN=$'\033[32m'; AMBER=$'\033[33m'
 CYAN=$'\033[36m'; VIOLET=$'\033[35m'; WHITE=$'\033[97m'
 
-home_clear() { printf '\033[H\033[2J\033[3J'; }   # home + clear screen + clear scrollback
+# Hard wipe — used once at startup and when leaving sub-screens (wifi/term).
+home_clear() { printf '\033[H\033[2J\033[3J'; }
+# Soft wipe — just home the cursor. Each printf in frame() erases its own
+# line via \033[K, and we clear-below at the end. No flash.
+home_only()  { printf '\033[H'; }
 hide_cursor() { printf '\033[?25l'; }
 show_cursor() { printf '\033[?25h'; }
 
@@ -198,33 +207,33 @@ frame() {
   local now; now="$(date '+%a %H:%M:%S')"
   local up; up="$(uptime -p 2>/dev/null | sed 's/^up //')"
 
-  home_clear
+  home_only
 
   # Header
-  printf '%s ▓▓▒ HOSAKA ▒▓▓%s  %sdevice mode%s · %s · up %s · %s\n' \
+  printf '%s ▓▓▒ HOSAKA ▒▓▓%s  %sdevice mode%s · %s · up %s · %s\033[K\n' \
     "$BOLD$AMBER" "$RST" "$AMBER" "$RST" "$(hostname)" "$up" "$now"
-  printf '%s%s%s\n' "$DIM" \
+  printf '%s%s%s\033[K\n' "$DIM" \
     '────────────────────────────────────────────────────────────────────────────' \
     "$RST"
 
   # Two-column section: NETWORK | SYSTEM
-  printf ' %sNETWORK%s%34s%sSYSTEM%s\n' "$BOLD$CYAN" "$RST" "" "$BOLD$CYAN" "$RST"
+  printf ' %sNETWORK%s%34s%sSYSTEM%s\033[K\n' "$BOLD$CYAN" "$RST" "" "$BOLD$CYAN" "$RST"
   col2 "ip   $ip_dis"                                  "mode   ${AMBER}${mode}${RST}   load ${load}"
   col2 "wifi ${wifi:-—}"                                "ram    ${mem_used}/${mem_total}M  free ${mem_avail}M"
   col2 "ts   ${VIOLET}${ts:-—}${RST}"                  "swap   ${swap_used}/${swap_total}M   cpu ${cpu}"
   col2 "mac  ${DIM}${mac:-—}${RST}"                    "disk   ${disk_use}/${disk_tot}  free ${disk_free}"
 
   # Two-column section: URLS | SERVICES
-  echo
-  printf ' %sURLS%s%37s%sSERVICES%s\n' "$BOLD$CYAN" "$RST" "" "$BOLD$CYAN" "$RST"
+  printf '\033[K\n'
+  printf ' %sURLS%s%37s%sSERVICES%s\033[K\n' "$BOLD$CYAN" "$RST" "" "$BOLD$CYAN" "$RST"
   col2 "ui     ${GREEN}$(trunc "$web" 30)${RST}"        "$(svc_dot hosaka-webserver)"
   col2 "setup  ${GREEN}$(trunc "${web}/setup" 30)${RST}" "$(svc_dot picoclaw-gateway)"
   col2 "device ${GREEN}$(trunc "${web}/device" 30)${RST}" "$(svc_dot hosaka-oom-guard)"
   col2 "ssh    ssh operator@${ip:-?}"                  "$(svc_dot ssh)"
 
   # Two-column section: PORTS table | TRAFFIC
-  echo
-  printf ' %sPORTS%s   %sport  process      listen%s%14s%sTRAFFIC%s   (%s)\n' \
+  printf '\033[K\n'
+  printf ' %sPORTS%s   %sport  process      listen%s%14s%sTRAFFIC%s   (%s)\033[K\n' \
     "$BOLD$CYAN" "$RST" "$DIM" "$RST" "" "$BOLD$CYAN" "$RST" "${iface:-—}"
   local rate; rate="$(net_rate_for "$iface")"
   local -a port_lines=()
@@ -241,16 +250,21 @@ frame() {
     col2 "$left" "$right"
   done
 
-  printf '%s%s%s\n' "$DIM" \
+  printf '%s%s%s\033[K\n' "$DIM" \
     '────────────────────────────────────────────────────────────────────────────' \
     "$RST"
-  printf ' %s[c]%s console   %s[w]%s wifi   %s[r]%s refresh   %s[q]%s quit   %srefresh %ss%s\n' \
-    "$AMBER" "$RST" "$AMBER" "$RST" "$AMBER" "$RST" "$AMBER" "$RST" \
+  printf ' %s[c]%s console  %s[w]%s wifi  %s[u]%s update  %s[t]%s term  %s[r]%s refresh  %s[q]%s quit\033[K\n' \
+    "$AMBER" "$RST" "$AMBER" "$RST" "$AMBER" "$RST" \
+    "$AMBER" "$RST" "$AMBER" "$RST" "$AMBER" "$RST"
+  printf '   %sauto-refresh every %ss · tap any key to repaint%s\033[K\n' \
     "$DIM" "$REFRESH_SECS" "$RST"
+  # Erase anything left over from a previous (taller) frame.
+  printf '\033[J'
 }
 
 # Print two columns: left at col 1, right at col 41. Strips ANSI for width
-# math so colours don't shift the divider.
+# math so colours don't shift the divider. Ends with \033[K so leftover
+# chars from the previous frame don't bleed.
 col2() {
   local left="${1:-}" right="${2:-}"
   local plain_left vis_len pad
@@ -258,7 +272,7 @@ col2() {
   vis_len=${#plain_left}
   pad=$(( 40 - vis_len ))
   (( pad < 1 )) && pad=1
-  printf '   %s%*s%s\n' "$left" "$pad" "" "$right"
+  printf '   %s%*s%s\033[K\n' "$left" "$pad" "" "$right"
 }
 
 # ── inline wifi config ────────────────────────────────────────────────────────
@@ -295,7 +309,42 @@ if (( ONCE )); then
   exit 0
 fi
 
+# ── update from source ───────────────────────────────────────────────────────
+# Pulls ~/Hosaka, runs scripts/update_hosaka.sh. Best-effort: shows whatever
+# the scripts emit, then waits for enter. Sudo may prompt for a password if
+# the operator user isn't allow-listed for the install steps.
+update_from_source() {
+  show_cursor; home_clear
+  printf '  %sUPDATE FROM SOURCE%s\n\n' "$BOLD$CYAN" "$RST"
+  local repo="${HOSAKA_REPO_DIR:-$HOME/Hosaka}"
+  if [[ ! -d "$repo/.git" ]]; then
+    printf '  %sno git repo at %s%s\n' "$RED" "$repo" "$RST"
+    printf '  press enter '; read -r _
+    hide_cursor; return
+  fi
+  printf '  repo: %s%s%s\n' "$DIM" "$repo" "$RST"
+  printf '  %sgit fetch + pull --ff-only…%s\n' "$AMBER" "$RST"
+  ( cd "$repo" && git fetch --quiet && git pull --ff-only ) 2>&1 | sed 's/^/    /' || true
+  printf '\n  %srunning update_hosaka.sh (may prompt for sudo)…%s\n' "$AMBER" "$RST"
+  ( cd "$repo" && sudo -E bash scripts/update_hosaka.sh ) 2>&1 | sed 's/^/    /' || true
+  printf '\n  %sdone.%s  press enter to return to dashboard ' "$GREEN" "$RST"; read -r _
+  hide_cursor
+}
+
+# ── tiny shell drop-in ───────────────────────────────────────────────────────
+# Hands control to an interactive bash. `exit` (or Ctrl-D) returns to the
+# dashboard. Useful for quick `journalctl -u …`, `flatpak list`, etc.
+tiny_terminal() {
+  show_cursor; home_clear
+  printf '  %sHOSAKA TERMINAL%s   type %sexit%s (or Ctrl-D) to return to dashboard\n\n' \
+    "$BOLD$CYAN" "$RST" "$AMBER" "$RST"
+  # Use --login so PATH/aliases are reasonable. Don't propagate failure.
+  bash --login || true
+  hide_cursor
+}
+
 trap 'show_cursor; printf "\n"; exit 0' INT TERM
+home_clear
 hide_cursor
 while true; do
   frame
@@ -310,6 +359,8 @@ while true; do
       [[ "$ans" =~ ^[Yy]$ ]] && sudo systemctl reboot
       hide_cursor ;;
     w|W) wifi_config ;;
+    u|U) update_from_source ;;
+    t|T) tiny_terminal ;;
     r|R) ;;   # falls through, frame redraws immediately
     q|Q) show_cursor; home_clear; exit 0 ;;
   esac
