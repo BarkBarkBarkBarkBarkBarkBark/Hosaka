@@ -88,9 +88,12 @@ if [[ -n "$ACTIVE_SERVICE" ]]; then
   echo "[hosaka-update] Restarting active service: $ACTIVE_SERVICE"
   sudo systemctl daemon-reload
   sudo systemctl restart "$ACTIVE_SERVICE"
-  # Bounce the kiosk too so Chromium reloads the freshly built SPA.
+  # Bounce the kiosk too only if someone is deliberately running the
+  # systemd unit. The normal appliance path is openbox/autostart inside
+  # tty1's X session; starting hosaka-kiosk.service from here has no
+  # DISPLAY and crashes in a cache-evicting loop.
   if [[ "$ACTIVE_SERVICE" == "$WEBSERVER_SERVICE" ]] \
-      && systemctl is-enabled --quiet "$KIOSK_SERVICE"; then
+      && systemctl is-active --quiet "$KIOSK_SERVICE"; then
     echo "[hosaka-update] Restarting kiosk: $KIOSK_SERVICE"
     sudo systemctl restart "$KIOSK_SERVICE" || true
   fi

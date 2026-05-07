@@ -1577,6 +1577,10 @@ def _sync_user_activation_env(user: str, env: dict[str, str]) -> None:
     for cmd in (
         ["runuser", "-u", user, "--", "systemctl", "--user", "import-environment", *keys],
         ["runuser", "-u", user, "--", "dbus-update-activation-environment", "--systemd", *keys],
+        [
+            "runuser", "-u", user, "--", "systemctl", "--user", "reset-failed",
+            "xdg-desktop-portal-gtk.service", "xdg-desktop-portal.service",
+        ],
     ):
         try:
             subprocess.run(

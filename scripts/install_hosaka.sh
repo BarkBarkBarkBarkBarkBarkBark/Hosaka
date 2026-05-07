@@ -188,7 +188,16 @@ done
 
 # Patch picoclaw service user to match whoever is running the install
 CURRENT_USER="$(id -un)"
+CURRENT_HOME="$(getent passwd "$CURRENT_USER" | cut -d: -f6)"
 sudo sed -i "s/^User=operator/User=${CURRENT_USER}/" "/etc/systemd/system/$PICOCLAW_SERVICE_NAME" 2>/dev/null || true
+
+# Openbox owns the actual X11 kiosk session on the appliance. Keep the
+# checked-in autostart in sync so fixes to kiosk supervision / portal env
+# imports take effect after updates.
+if [[ -n "$CURRENT_HOME" && -f "$REPO_ROOT/dotfiles/openbox/autostart" ]]; then
+  sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    "$REPO_ROOT/dotfiles/openbox/autostart" "$CURRENT_HOME/.config/openbox/autostart"
+fi
 
 # Kiosk Chromium must run as the graphical-session user (X11 cookie path).
 if [[ -f "/etc/systemd/system/$SERVICE_KIOSK" ]]; then
@@ -211,8 +220,14 @@ done
 case "$HOSAKA_BOOT_MODE" in
   kiosk)
     sudo systemctl enable "$SERVICE_WEBSERVER"
-    sudo systemctl enable "$SERVICE_KIOSK"
-    ok "Kiosk mode enabled: webserver + Chromium kiosk on boot."
+    # Do NOT enable hosaka-kiosk.service here. The appliance starts X via
+    # tty1 autologin -> startx -> openbox, and openbox/autostart supervises
+    # Electron inside that real X session. A systemd-launched kiosk has no
+    # DISPLAY/XAUTHORITY, crashes in a loop, evicts the live Chromium cache,
+    # and makes the wall flash. Keep the unit installed for manual debugging,
+    # but disabled by default.
+    sudo systemctl disable "$SERVICE_KIOSK" 2>/dev/null || true
+    ok "Kiosk mode enabled: webserver on boot; openbox supervises Electron on tty1."
     ;;
   headless)
     sudo systemctl enable "$SERVICE_WEBSERVER"
