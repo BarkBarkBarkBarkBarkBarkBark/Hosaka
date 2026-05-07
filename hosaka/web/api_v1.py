@@ -1633,7 +1633,8 @@ def _sync_user_activation_env(user: str, env: dict[str, str]) -> None:
 #     by matching flatpak_id (or its trailing segment) so the dock can
 #     reuse the same glyph the launcher uses.
 
-_DOCK_KIOSK_WM_CLASSES = {"hosaka-kiosk", "Hosaka"}
+_DOCK_KIOSK_WM_CLASSES = {"hosaka-kiosk", "hosaka"}
+_DOCK_KIOSK_TITLE_PREFIXES = ("hosaka web desktop", "hosaka")
 
 
 def _x11_seat_env() -> dict[str, str]:
@@ -1740,7 +1741,9 @@ def _list_x11_windows() -> tuple[list[dict[str, Any]], Optional[str]]:
             pid = 0
         # Filter the kiosk's own electron window — we don't want the dock
         # to list "Hosaka" as one of its tabs.
-        if wm_class in _DOCK_KIOSK_WM_CLASSES:
+        if wm_class.lower() in _DOCK_KIOSK_WM_CLASSES:
+            continue
+        if title.lower().startswith(_DOCK_KIOSK_TITLE_PREFIXES):
             continue
         if not title and not wm_class:
             continue
