@@ -29,6 +29,11 @@ launch:
   command:
     - flatpak
     - run
+    # Pi 3B+ / GTK4 WebKit cold-starts faster when we skip the failing GL
+    # probe and force the lightweight software renderer.
+    - --env=GSK_RENDERER=cairo
+    - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
+    - --env=LIBGL_ALWAYS_SOFTWARE=1
     - com.github.johnfactotum.Foliate
     - $HOME/Books
 aliases:

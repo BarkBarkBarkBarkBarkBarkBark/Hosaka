@@ -1385,27 +1385,26 @@ def v1_apps_launch(app_id: str) -> dict[str, Any]:
         return _mock_app_response(app, "launch")
     cmd = list(app["launch"]["command"])
     env, seat_user, note = _resolve_kiosk_seat_env()
-    if seat_user:
-        _sync_user_activation_env(seat_user, env)
     # If the app already has a visible OS window, treat Launch as "raise".
     # This makes repeat taps instant and avoids spawning extra flatpak
     # processes while a GTK app is still starting up.
     try:
-        existing, _existing_note = _list_x11_windows()
-        for win in existing:
-            if _window_matches_app(win, app):
-                ok, raise_msg = _xdotool_action(str(win["wid"]), "raise")
-                return {
-                    "ok": ok,
-                    "appId": app["id"],
-                    "manifestFound": True,
-                    "launched": False,
-                    "raised": ok,
-                    "host": "web",
-                    "message": f"{app['name']} is already open — {raise_msg if ok else 'raise failed' }.",
-                }
+        wid = _find_existing_app_window(app, env)
+        if wid:
+            ok, raise_msg = _xdotool_action(wid, "raise", env)
+            return {
+                "ok": ok,
+                "appId": app["id"],
+                "manifestFound": True,
+                "launched": False,
+                "raised": ok,
+                "host": "web",
+                "message": f"{app['name']} is already open — {raise_msg if ok else 'raise failed' }.",
+            }
     except Exception:
         pass
+    if seat_user:
+        _sync_user_activation_env(seat_user, env)
     # Expand $HOME / ~/ / $USER in argv against the SEAT user's pw entry
     # (not the webserver's, which is root in production). This lets
     # manifests use portable paths like "$HOME/Vault" without getting
@@ -1644,9 +1643,9 @@ def _x11_seat_env() -> dict[str, str]:
     return env
 
 
-def _run_x11(cmd: list[str], timeout: int = 5) -> tuple[int, str, str]:
+def _run_x11(cmd: list[str], timeout: int = 5, env_overrides: Optional[dict[str, str]] = None) -> tuple[int, str, str]:
     """Like _run, but injects DISPLAY/XAUTHORITY for the kiosk seat."""
-    seat_env = _x11_seat_env()
+    seat_env = env_overrides or _x11_seat_env()
     try:
         p = subprocess.run(
             cmd,
@@ -1679,6 +1678,44 @@ def _window_matches_app(win: dict[str, Any], app: dict[str, Any]) -> bool:
         return True
     hay = " ".join([title, wm_class])
     return any(c and c in hay for c in candidates)
+
+
+def _find_existing_app_window(app: dict[str, Any], env: dict[str, str]) -> Optional[str]:
+    """Fast path for Launch-as-raise without enumerating every window."""
+    if not _xdotool_available():
+        return None
+    fid = str(app.get("flatpak_id") or "")
+    raw_candidates = [
+        str(app.get("name") or ""),
+        str(app.get("id") or ""),
+        fid,
+        fid.split(".")[-1] if fid else "",
+    ]
+    candidates: list[str] = []
+    for c in raw_candidates:
+        c = c.strip()
+        if len(c) >= 3 and c not in candidates:
+            candidates.append(c)
+    for candidate in candidates:
+        code, out, _err = _run_x11(
+            ["xdotool", "search", "--onlyvisible", "--name", candidate],
+            timeout=1,
+            env_overrides=env,
+        )
+        if code != 0:
+            continue
+        for wid in [w.strip() for w in out.split() if w.strip().isdigit()]:
+            _, name_out, _ = _run_x11(["xdotool", "getwindowname", wid], timeout=1, env_overrides=env)
+            _, class_out, _ = _run_x11(["xdotool", "getwindowclassname", wid], timeout=1, env_overrides=env)
+            title = name_out.strip()
+            wm_class = class_out.strip()
+            if wm_class.lower() in _DOCK_KIOSK_WM_CLASSES:
+                continue
+            if title.lower().startswith(_DOCK_KIOSK_TITLE_PREFIXES):
+                continue
+            if _window_matches_app({"title": title, "wmClass": wm_class}, app):
+                return wid
+    return None
 
 
 def _window_to_app_id(title: str, wm_class: str, manifests: list[dict[str, Any]]) -> Optional[str]:
@@ -1769,7 +1806,7 @@ def v1_windows_list() -> dict[str, Any]:
     }
 
 
-def _xdotool_action(wid: str, action: str) -> tuple[bool, str]:
+def _xdotool_action(wid: str, action: str, env_overrides: Optional[dict[str, str]] = None) -> tuple[bool, str]:
     """Apply raise/minimize/close to a window id. Returns (ok, message)."""
     if not re.fullmatch(r"\d+", wid):
         return False, "invalid window id"
@@ -1786,7 +1823,7 @@ def _xdotool_action(wid: str, action: str) -> tuple[bool, str]:
         cmd = ["xdotool", "windowclose", wid]
     else:
         return False, f"unknown action: {action}"
-    code, _out, err = _run_x11(cmd, timeout=4)
+    code, _out, err = _run_x11(cmd, timeout=4, env_overrides=env_overrides)
     if code != 0:
         return False, (err or "").strip()[:240] or f"xdotool exited {code}"
     return True, f"{action} sent to wid {wid}"
