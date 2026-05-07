@@ -71,11 +71,45 @@ for d in /opt/hosaka-field-terminal/kiosk /home/operator/Hosaka/kiosk; do
     fi
 done
 if [ -x "$ELECTRON_LAUNCHER" ] && [ -n "$ELECTRON_BIN" ]; then
+    # ── singleton guard ───────────────────────────────────────────────────
+    # If hosaka-kiosk.service (systemd) is already supervising electron, we
+    # MUST NOT also launch one here. Two electrons sharing
+    # ~/.config/hosaka-kiosk fight over Chromium's SingletonLock; the
+    # second one bounces every few seconds, and our wrapper evicts the
+    # HTTP cache the live electron is using on every retry. Symptom on
+    # the wall: the SPA flashes white every ~5–7 seconds and stops
+    # accepting input mid-flash.
+    #
+    # In that case, just paint the background, log the yield, and wait.
+    # If systemd ever stops the unit, the autostart shell stays alive so
+    # an operator can restart it manually; we don't try to take over
+    # mid-session because that's exactly the duel we're avoiding.
+    if command -v systemctl >/dev/null 2>&1 \
+       && systemctl is-active --quiet hosaka-kiosk.service; then
+        echo "[autostart] hosaka-kiosk.service is active — yielding to systemd, not launching a second electron" \
+            >>/tmp/hosaka-kiosk-electron.log
+        # Background paint stays; just sleep forever so openbox doesn't exit.
+        # `tail -f /dev/null` is the cheapest portable "wait forever".
+        tail -f /dev/null &
+        wait
+        exit 0
+    fi
+
     echo 800 > /proc/self/oom_score_adj 2>/dev/null || true
     while true; do
         "$ELECTRON_LAUNCHER" >>/tmp/hosaka-kiosk-electron.log 2>&1 || true
         sleep 3
         if [ "$(read_mode)" = "device" ]; then
+            exit 0
+        fi
+        # Same defensive check on respawn: if something (operator, updater)
+        # started the systemd unit between iterations, stop competing.
+        if command -v systemctl >/dev/null 2>&1 \
+           && systemctl is-active --quiet hosaka-kiosk.service; then
+            echo "[autostart] hosaka-kiosk.service came up mid-loop — yielding" \
+                >>/tmp/hosaka-kiosk-electron.log
+            tail -f /dev/null &
+            wait
             exit 0
         fi
     done &
