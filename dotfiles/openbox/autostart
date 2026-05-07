@@ -29,6 +29,18 @@ if [ "$(read_mode)" = "device" ]; then
     exit 0
 fi
 
+# Teach the operator's user-systemd + dbus activation environment about
+# the real X11 seat. Flatpak apps ask xdg-desktop-portal to start helpers
+# through the user bus; without DISPLAY/XAUTHORITY there, portal-gtk exits
+# with "cannot open display", then every GTK app waits through 120s dbus
+# activation timeouts before painting. Importing here makes launches quick.
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user import-environment DISPLAY XAUTHORITY XDG_RUNTIME_DIR 2>/dev/null || true
+fi
+if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+    dbus-update-activation-environment --systemd DISPLAY XAUTHORITY XDG_RUNTIME_DIR 2>/dev/null || true
+fi
+
 # Background dim until Chromium paints
 xsetroot -solid "#0b0b14" &
 

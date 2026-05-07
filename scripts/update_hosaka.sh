@@ -13,14 +13,27 @@ find_repo_root() {
     return
   fi
 
+  if [[ -f /etc/hosaka/repo_root ]]; then
+    local recorded
+    recorded="$(cat /etc/hosaka/repo_root 2>/dev/null || true)"
+    if [[ -n "$recorded" && -d "$recorded/.git" ]]; then
+      echo "$recorded"
+      return
+    fi
+  fi
+
   local candidates=(
     "$SCRIPT_ROOT"
     "$PWD"
+    "$HOME/Hosaka"
     "/workspace/cyber_deck"
     "$HOME/cyber_deck"
   )
 
   local home_candidate
+  for home_candidate in /home/*/Hosaka; do
+    candidates+=("$home_candidate")
+  done
   for home_candidate in /home/*/cyber_deck; do
     candidates+=("$home_candidate")
   done
@@ -37,13 +50,15 @@ find_repo_root() {
 REPO_ROOT="$(find_repo_root || true)"
 if [[ -z "$REPO_ROOT" ]]; then
   echo "[hosaka-update] Could not find git repository root."
-  echo "[hosaka-update] Set HOSAKA_REPO_ROOT=/path/to/cyber_deck and retry."
+  echo "[hosaka-update] Checked /etc/hosaka/repo_root, /opt, cwd, ~/Hosaka, /home/*/Hosaka, and legacy cyber_deck paths."
+  echo "[hosaka-update] Set HOSAKA_REPO_ROOT=/path/to/Hosaka and retry."
   exit 1
 fi
 
 TARGET_BRANCH="${1:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)}"
 
 cd "$REPO_ROOT"
+echo "[hosaka-update] Source checkout: $REPO_ROOT"
 
 echo "[hosaka-update] Fetching remote updates..."
 git fetch --all --prune

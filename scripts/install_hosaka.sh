@@ -24,6 +24,8 @@ fi
 
 # ── sync repo files ───────────────────────────────────────────────────────────
 sudo mkdir -p "$APP_ROOT"
+sudo mkdir -p /etc/hosaka
+printf '%s\n' "$REPO_ROOT" | sudo tee /etc/hosaka/repo_root >/dev/null
 sudo rsync -a --delete "$REPO_ROOT/hosaka"               "$APP_ROOT/"
 sudo rsync -a --delete "$REPO_ROOT/docs"                 "$APP_ROOT/"
 sudo rsync -a --delete "$REPO_ROOT/scripts"              "$APP_ROOT/"

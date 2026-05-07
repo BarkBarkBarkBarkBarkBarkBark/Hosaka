@@ -1385,6 +1385,8 @@ def v1_apps_launch(app_id: str) -> dict[str, Any]:
         return _mock_app_response(app, "launch")
     cmd = list(app["launch"]["command"])
     env, seat_user, note = _resolve_kiosk_seat_env()
+    if seat_user:
+        _sync_user_activation_env(seat_user, env)
     # Expand $HOME / ~/ / $USER in argv against the SEAT user's pw entry
     # (not the webserver's, which is root in production). This lets
     # manifests use portable paths like "$HOME/Vault" without getting
@@ -1523,6 +1525,7 @@ def _resolve_kiosk_seat_env() -> tuple[dict[str, str], Optional[str], Optional[s
     env: dict[str, str] = {}
     if xdg:
         env["XDG_RUNTIME_DIR"] = xdg
+        env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path={xdg}/bus")
     if wayland:
         env["WAYLAND_DISPLAY"] = wayland
     if display:
@@ -1545,6 +1548,46 @@ def _resolve_kiosk_seat_env() -> tuple[dict[str, str], Optional[str], Optional[s
     env.setdefault("GTK_USE_PORTAL", "0")
     env.setdefault("GIO_USE_PORTALS", "0")
     return env, user, note
+
+
+def _sync_user_activation_env(user: str, env: dict[str, str]) -> None:
+    """Push the resolved kiosk seat env into user systemd/dbus activation.
+
+    Flatpak apps may still use xdg-desktop-portal even when GTK_USE_PORTAL=0
+    because the sandbox proxy and individual libraries touch portal-backed
+    interfaces. On the Pi kiosk, portal-gtk is dbus-activated by the operator's
+    user manager; if that manager doesn't know DISPLAY/XAUTHORITY, portal-gtk
+    dies with "cannot open display" and the app waits through dbus' 120s
+    activation timeout. Best effort only: launching the app is still allowed
+    if import fails.
+    """
+    keys = [
+        key for key in (
+            "DISPLAY",
+            "XAUTHORITY",
+            "WAYLAND_DISPLAY",
+            "XDG_RUNTIME_DIR",
+            "DBUS_SESSION_BUS_ADDRESS",
+        )
+        if env.get(key)
+    ]
+    if not keys:
+        return
+    base = {**os.environ, **env}
+    for cmd in (
+        ["runuser", "-u", user, "--", "systemctl", "--user", "import-environment", *keys],
+        ["runuser", "-u", user, "--", "dbus-update-activation-environment", "--systemd", *keys],
+    ):
+        try:
+            subprocess.run(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=3,
+                env=base,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
 
 
 # ── windows / dock ────────────────────────────────────────────────────────────
