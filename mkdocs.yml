@@ -20,7 +20,13 @@ theme:
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
+  - User manual:
+      - Overview: manual/index.md
+      - All features: manual/manual.md
   - API reference: api.md
+  - Observability:
+      - Plan: increased_observability.yaml
+      - Agent context: AGENT_CONTEXT.md
   - Client (hosakactl): client.md
   - Modes (console / device): modes.md
   - Wifi setup: wifi.md

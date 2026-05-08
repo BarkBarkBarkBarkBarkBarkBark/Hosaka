@@ -9,7 +9,8 @@
     "/api/v1/health": {
       "get": {
         "tags": [
-          "v1"
+          "v1",
+          "device health"
         ],
         "summary": "Liveness ping",
         "operationId": "v1_health_api_v1_health_get",
@@ -29,13 +30,15 @@
           {
             "HTTPBearer": []
           }
-        ]
+        ],
+        "x-feature-id": "device.health"
       }
     },
     "/api/v1/system/info": {
       "get": {
         "tags": [
-          "v1"
+          "v1",
+          "device health"
         ],
         "summary": "One-shot snapshot of everything device-mode shows",
         "operationId": "v1_system_info_api_v1_system_info_get",
@@ -55,7 +58,8 @@
           {
             "HTTPBearer": []
           }
-        ]
+        ],
+        "x-feature-id": "device.health"
       }
     },
     "/api/v1/mode": {
@@ -85,7 +89,8 @@
       },
       "post": {
         "tags": [
-          "v1"
+          "v1",
+          "console / device mode"
         ],
         "summary": "Switch operating mode (console|device)",
         "operationId": "v1_mode_set_api_v1_mode_post",
@@ -125,13 +130,15 @@
           {
             "HTTPBearer": []
           }
-        ]
+        ],
+        "x-feature-id": "device.mode"
       }
     },
     "/api/v1/wifi/networks": {
       "get": {
         "tags": [
-          "v1"
+          "v1",
+          "wifi"
         ],
         "summary": "Saved + visible wifi networks (nmcli)",
         "operationId": "v1_wifi_list_api_v1_wifi_networks_get",
@@ -151,11 +158,13 @@
           {
             "HTTPBearer": []
           }
-        ]
+        ],
+        "x-feature-id": "network.wifi"
       },
       "post": {
         "tags": [
-          "v1"
+          "v1",
+          "wifi"
         ],
         "summary": "Add or join a wifi network",
         "operationId": "v1_wifi_add_api_v1_wifi_networks_post",
@@ -195,13 +204,15 @@
           {
             "HTTPBearer": []
           }
-        ]
+        ],
+        "x-feature-id": "network.wifi"
       }
     },
     "/api/v1/wifi/networks/{ssid}": {
       "delete": {
         "tags": [
-          "v1"
+          "v1",
+          "wifi"
         ],
         "summary": "Forget a saved wifi network",
         "operationId": "v1_wifi_forget_api_v1_wifi_networks__ssid__delete",
@@ -242,7 +253,78 @@
               }
             }
           }
-        }
+        },
+        "x-feature-id": "network.wifi"
+      }
+    },
+    "/api/v1/audio/volume": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Current system output volume + mute state",
+        "operationId": "v1_audio_get_api_v1_audio_volume_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioVolume"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Set system output volume and/or mute",
+        "operationId": "v1_audio_set_api_v1_audio_volume_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AudioVolumeSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioVolume"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/services": {
@@ -322,6 +404,1647 @@
         }
       }
     },
+    "/api/v1/system/update": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Run the Hosaka git pull / reinstall script in the background",
+        "description": "Same flow as the Python TUI `/update` \u2014 fires `scripts/update_hosaka.sh`.\n\nRuns detached so the HTTP handler returns before services restart.",
+        "operationId": "v1_system_update_api_v1_system_update_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/channel/messages": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Public channel messages (SHA-256 chain, persisted on the appliance SD card)",
+        "operationId": "v1_channel_messages_api_v1_channel_messages_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tag"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelFeedOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Append a message (extends the hash chain)",
+        "operationId": "v1_channel_post_api_v1_channel_messages_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelPostIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelMessageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inbox/events": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Append-only inbox / notification feed",
+        "operationId": "v1_inbox_events_api_v1_inbox_events_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 200,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "topic",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Topic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxFeedOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Append a notification event",
+        "operationId": "v1_inbox_post_api_v1_inbox_events_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboxPostIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxEventOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inbox/events/{event_id}/ack": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Append an acknowledgement event for a notification",
+        "operationId": "v1_inbox_ack_api_v1_inbox_events__event_id__ack_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/InboxAckIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxEventOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/http/get": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Perform an allowlisted outbound HTTP GET",
+        "operationId": "v1_http_get_api_v1_http_get_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HttpGetIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpResponseOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/http/post": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Perform an allowlisted outbound HTTP POST",
+        "operationId": "v1_http_post_api_v1_http_post_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HttpPostIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpResponseOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/apps/": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "List staged Hosaka app manifests",
+        "operationId": "v1_apps_list_api_v1_apps__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response V1 Apps List Api V1 Apps  Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/capabilities": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Apps subsystem capability probe",
+        "operationId": "v1_apps_capabilities_api_v1_apps_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response V1 Apps Capabilities Api V1 Apps Capabilities Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/status": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Get a Hosaka app's install status (mock or real)",
+        "operationId": "v1_apps_status_api_v1_apps__app_id__status_get",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response V1 Apps Status Api V1 Apps  App Id  Status Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/install": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Install a Hosaka app (mock by default)",
+        "operationId": "v1_apps_install_api_v1_apps__app_id__install_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response V1 Apps Install Api V1 Apps  App Id  Install Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/{app_id}/launch": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Launch a Hosaka app (mock by default)",
+        "operationId": "v1_apps_launch_api_v1_apps__app_id__launch_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response V1 Apps Launch Api V1 Apps  App Id  Launch Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/windows": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "List visible OS windows on the kiosk seat",
+        "operationId": "v1_windows_list_api_v1_windows_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response V1 Windows List Api V1 Windows Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/windows/{wid}/{action}": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Raise / minimize / close a window",
+        "operationId": "v1_windows_action_api_v1_windows__wid___action__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "wid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Wid"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Action"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response V1 Windows Action Api V1 Windows  Wid   Action  Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/apps/stage": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Stage a Flathub app manifest under hosaka-apps/apps/",
+        "operationId": "v1_apps_stage_api_v1_apps_stage_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppStageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response V1 Apps Stage Api V1 Apps Stage Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/voice/ephemeral-token": {
+      "post": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Mint a short-lived OpenAI Realtime session token for the browser",
+        "description": "Delegate to OpenAI's ``POST /v1/realtime/sessions`` endpoint.\n\nThe real ``OPENAI_API_KEY`` stays on this process \u2014 the browser\nonly ever sees ``client_secret.value`` (valid for ~1 minute).",
+        "operationId": "voice_ephemeral_token_api_v1_voice_ephemeral_token_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EphemeralOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/voice/tools/{name}": {
+      "post": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Run a voice tool server-side (called by the browser on function_call events)",
+        "operationId": "voice_tool_dispatch_api_v1_voice_tools__name__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/voice/agent-turn": {
+      "post": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Transcribe uploaded speech and route the turn through PicoClaw",
+        "operationId": "voice_agent_turn_api_v1_voice_agent_turn_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_voice_agent_turn_api_v1_voice_agent_turn_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTurnOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/voice/agent-jobs": {
+      "post": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Queue a local voice-agent turn and return immediately with a job id",
+        "operationId": "voice_agent_job_create_api_v1_voice_agent_jobs_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_voice_agent_job_create_api_v1_voice_agent_jobs_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentJobCreateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/voice/agent-jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Read the current state of a queued local voice-agent turn",
+        "operationId": "voice_agent_job_get_api_v1_voice_agent_jobs__job_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentJobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/voice/todos": {
+      "get": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Last N voice-added todos (for the VoicePanel to mirror into the Todo list)",
+        "operationId": "voice_todos_api_v1_voice_todos_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceTodosOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/voice/camera/snapshot.jpg": {
+      "get": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Single JPEG from the attached USB webcam",
+        "operationId": "voice_camera_snapshot_api_v1_voice_camera_snapshot_jpg_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "image/jpeg": {}
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/docs": {
+      "get": {
+        "tags": [
+          "docs"
+        ],
+        "summary": "List Docs",
+        "operationId": "list_docs_api_v1_docs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/docs/file": {
+      "get": {
+        "tags": [
+          "docs"
+        ],
+        "summary": "Read Doc",
+        "operationId": "read_doc_api_v1_docs_file_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocReadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "docs"
+        ],
+        "summary": "Write Doc",
+        "operationId": "write_doc_api_v1_docs_file_put",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocWriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocWriteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/docs/template": {
+      "post": {
+        "tags": [
+          "docs"
+        ],
+        "summary": "Write Template",
+        "operationId": "write_template_api_v1_docs_template_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocWriteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/diag/system": {
+      "get": {
+        "tags": [
+          "diagnostics"
+        ],
+        "summary": "Diag System",
+        "operationId": "diag_system_api_v1_diag_system_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Diag System Api V1 Diag System Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/diag/network": {
+      "get": {
+        "tags": [
+          "diagnostics"
+        ],
+        "summary": "Diag Network",
+        "operationId": "diag_network_api_v1_diag_network_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Diag Network Api V1 Diag Network Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/diag/peripherals": {
+      "get": {
+        "tags": [
+          "diagnostics"
+        ],
+        "summary": "Diag Peripherals",
+        "operationId": "diag_peripherals_api_v1_diag_peripherals_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Diag Peripherals Api V1 Diag Peripherals Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/diag/snapshot": {
+      "get": {
+        "tags": [
+          "diagnostics"
+        ],
+        "summary": "Diag Snapshot",
+        "operationId": "diag_snapshot_api_v1_diag_snapshot_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Diag Snapshot Api V1 Diag Snapshot Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "tags": [
+          "events",
+          "event store"
+        ],
+        "summary": "List Events",
+        "operationId": "list_events_api_v1_events_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO8601 UTC; only events newer than this",
+              "title": "Since"
+            },
+            "description": "ISO8601 UTC; only events newer than this"
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "function|module|command|keystroke|ui|crash|health|recovery|custom",
+              "title": "Kind"
+            },
+            "description": "function|module|command|keystroke|ui|crash|health|recovery|custom"
+          },
+          {
+            "name": "feature_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Feature Id"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "debug|info|warn|error|fatal",
+              "title": "Level"
+            },
+            "description": "debug|info|warn|error|fatal"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5000,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventsListOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-feature-id": "obs.events"
+      }
+    },
+    "/api/v1/events/summary": {
+      "get": {
+        "tags": [
+          "events",
+          "event store"
+        ],
+        "summary": "Summary",
+        "operationId": "summary_api_v1_events_summary_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "window_hours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 24.0,
+              "exclusiveMinimum": 0.0,
+              "default": 1.0,
+              "title": "Window Hours"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SummaryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-feature-id": "obs.events"
+      }
+    },
+    "/api/v1/events/silent": {
+      "get": {
+        "tags": [
+          "events",
+          "event store"
+        ],
+        "summary": "Silent",
+        "operationId": "silent_api_v1_events_silent_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "minutes",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1440,
+              "minimum": 1,
+              "default": 15,
+              "title": "Minutes"
+            }
+          },
+          {
+            "name": "expected",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Comma-separated feature_ids that should be alive. If omitted, we use every feature_id seen in the last 24h as the baseline.",
+              "title": "Expected"
+            },
+            "description": "Comma-separated feature_ids that should be alive. If omitted, we use every feature_id seen in the last 24h as the baseline."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SilentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-feature-id": "obs.events"
+      }
+    },
+    "/api/v1/events/stats": {
+      "get": {
+        "tags": [
+          "events",
+          "event store"
+        ],
+        "summary": "Stats",
+        "operationId": "stats_api_v1_events_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "x-feature-id": "obs.events"
+      }
+    },
+    "/api/tailscale/status": {
+      "get": {
+        "summary": "Tailscale Status",
+        "description": "Return a small shape describing the local node's tailnet state.",
+        "operationId": "tailscale_status_api_tailscale_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "tags": [
+          "tailscale"
+        ],
+        "x-feature-id": "network.tailscale"
+      }
+    },
+    "/api/beacon": {
+      "get": {
+        "summary": "Beacon Snapshot",
+        "description": "Return the local beacon plus the last seen peer beacons.",
+        "operationId": "beacon_snapshot_api_beacon_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tailscale/up": {
+      "post": {
+        "summary": "Tailscale Up",
+        "description": "Stream the `tailscale up` output as Server-Sent Events.\n\nBrowser usage:\n    const es = new EventSource(\"/api/tailscale/up\", { method: \"POST\" });\n    es.addEventListener(\"login_url\", (e) => window.open(e.data, \"_blank\"));\n    es.addEventListener(\"done\", () => es.close());\n\nEvents emitted: `line`, `login_url`, `done`. See hosaka.network.tailscale.",
+        "operationId": "tailscale_up_api_tailscale_up_post",
+        "parameters": [
+          {
+            "name": "hostname",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hostname"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tailscale/logout": {
+      "post": {
+        "summary": "Tailscale Logout",
+        "operationId": "tailscale_logout_api_tailscale_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/nodes": {
+      "get": {
+        "summary": "List Nodes",
+        "description": "Return the list of tailnet peers with a `reachable` flag set to True\nfor those running Hosaka. The frontend uses this to populate the Nodes\npanel; it also surfaces non-Hosaka peers so the user can see what else\nis on their tailnet, but greys them out.",
+        "operationId": "list_nodes_api_nodes_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/device": {
       "get": {
         "summary": "Device Page",
@@ -345,6 +2068,70 @@
       "get": {
         "summary": "Health",
         "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/llm-key": {
+      "get": {
+        "summary": "Get Llm Key",
+        "description": "Return LLM provider metadata (provider, model, base_url) \u2014 never the key.",
+        "operationId": "get_llm_key_api_llm_key_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Patch Llm Key",
+        "description": "Store provider/model/api_key/base_url and apply immediately.",
+        "operationId": "patch_llm_key_api_llm_key_patch",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config": {
+      "get": {
+        "summary": "Get Config",
+        "description": "Return persisted system config (hostname, backend endpoint, picoclaw toggle).",
+        "operationId": "get_config_api_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Patch Config",
+        "description": "Update system config fields \u2014 JSON body, all fields optional.",
+        "operationId": "patch_config_api_config_patch",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -670,6 +2457,267 @@
         ],
         "title": "ActionResult"
       },
+      "AgentJobCreateOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "spoken_text": {
+            "type": "string",
+            "title": "Spoken Text",
+            "default": ""
+          },
+          "internal_note": {
+            "type": "string",
+            "title": "Internal Note",
+            "default": ""
+          },
+          "used_backend": {
+            "type": "string",
+            "title": "Used Backend",
+            "default": "picoclaw"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "job_id",
+          "status"
+        ],
+        "title": "AgentJobCreateOut"
+      },
+      "AgentJobOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "operator_text": {
+            "type": "string",
+            "title": "Operator Text",
+            "default": ""
+          },
+          "spoken_text": {
+            "type": "string",
+            "title": "Spoken Text",
+            "default": ""
+          },
+          "internal_note": {
+            "type": "string",
+            "title": "Internal Note",
+            "default": ""
+          },
+          "used_backend": {
+            "type": "string",
+            "title": "Used Backend",
+            "default": "picoclaw"
+          },
+          "error": {
+            "type": "string",
+            "title": "Error",
+            "default": ""
+          },
+          "done": {
+            "type": "boolean",
+            "title": "Done",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "job_id",
+          "status"
+        ],
+        "title": "AgentJobOut"
+      },
+      "AgentTurnOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "operator_text": {
+            "type": "string",
+            "title": "Operator Text"
+          },
+          "spoken_text": {
+            "type": "string",
+            "title": "Spoken Text"
+          },
+          "internal_note": {
+            "type": "string",
+            "title": "Internal Note",
+            "default": ""
+          },
+          "used_backend": {
+            "type": "string",
+            "title": "Used Backend",
+            "default": "picoclaw"
+          },
+          "transcript_visibility": {
+            "type": "string",
+            "title": "Transcript Visibility",
+            "default": "operator+status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "operator_text",
+          "spoken_text"
+        ],
+        "title": "AgentTurnOut"
+      },
+      "AppStageIn": {
+        "properties": {
+          "flatpak_id": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Flatpak Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "overwrite": {
+            "type": "boolean",
+            "title": "Overwrite",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "flatpak_id"
+        ],
+        "title": "AppStageIn"
+      },
+      "AudioVolume": {
+        "properties": {
+          "level": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Level",
+            "description": "0-100 system output volume"
+          },
+          "muted": {
+            "type": "boolean",
+            "title": "Muted",
+            "default": false
+          },
+          "backend": {
+            "type": "string",
+            "title": "Backend",
+            "description": "pactl | osascript | unsupported"
+          }
+        },
+        "type": "object",
+        "required": [
+          "level",
+          "backend"
+        ],
+        "title": "AudioVolume"
+      },
+      "AudioVolumeSet": {
+        "properties": {
+          "level": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "muted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Muted"
+          }
+        },
+        "type": "object",
+        "title": "AudioVolumeSet"
+      },
       "Body_save_backend_setup_backend_post": {
         "properties": {
           "backend_endpoint": {
@@ -704,6 +2752,541 @@
         },
         "type": "object",
         "title": "Body_save_picoclaw_setup_picoclaw_post"
+      },
+      "Body_voice_agent_job_create_api_v1_voice_agent_jobs_post": {
+        "properties": {
+          "audio": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Audio"
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio"
+        ],
+        "title": "Body_voice_agent_job_create_api_v1_voice_agent_jobs_post"
+      },
+      "Body_voice_agent_turn_api_v1_voice_agent_turn_post": {
+        "properties": {
+          "audio": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Audio"
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio"
+        ],
+        "title": "Body_voice_agent_turn_api_v1_voice_agent_turn_post"
+      },
+      "ChannelFeedOut": {
+        "properties": {
+          "chain_head": {
+            "type": "string",
+            "title": "Chain Head"
+          },
+          "chain_ok": {
+            "type": "boolean",
+            "title": "Chain Ok"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChannelMessageOut"
+            },
+            "type": "array",
+            "title": "Messages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chain_head",
+          "chain_ok",
+          "messages"
+        ],
+        "title": "ChannelFeedOut"
+      },
+      "ChannelMessageOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "at": {
+            "type": "integer",
+            "title": "At"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "prev_hash": {
+            "type": "string",
+            "title": "Prev Hash"
+          },
+          "hash": {
+            "type": "string",
+            "title": "Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "at",
+          "author",
+          "text",
+          "tags",
+          "prev_hash",
+          "hash"
+        ],
+        "title": "ChannelMessageOut"
+      },
+      "ChannelPostIn": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "author": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Author",
+            "default": "operator"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "ChannelPostIn"
+      },
+      "DocListResponse": {
+        "properties": {
+          "root": {
+            "type": "string",
+            "title": "Root"
+          },
+          "docs": {
+            "items": {
+              "$ref": "#/components/schemas/DocSummary"
+            },
+            "type": "array",
+            "title": "Docs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "root",
+          "docs"
+        ],
+        "title": "DocListResponse"
+      },
+      "DocReadResponse": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "mtime": {
+            "type": "number",
+            "title": "Mtime"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "body",
+          "mtime"
+        ],
+        "title": "DocReadResponse"
+      },
+      "DocSummary": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "mtime": {
+            "type": "number",
+            "title": "Mtime"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "size",
+          "mtime",
+          "title"
+        ],
+        "title": "DocSummary"
+      },
+      "DocTemplateRequest": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "enum": [
+              "summary",
+              "todo",
+              "note"
+            ],
+            "title": "Template"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          }
+        },
+        "type": "object",
+        "required": [
+          "template"
+        ],
+        "title": "DocTemplateRequest"
+      },
+      "DocWriteRequest": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "Relative path under docs root, .md auto-added."
+          },
+          "body": {
+            "type": "string",
+            "title": "Body",
+            "description": "File body. UTF-8.",
+            "default": ""
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "overwrite",
+              "append"
+            ],
+            "title": "Mode",
+            "default": "overwrite"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "DocWriteRequest"
+      },
+      "DocWriteResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "bytes": {
+            "type": "integer",
+            "title": "Bytes"
+          },
+          "mtime": {
+            "type": "number",
+            "title": "Mtime"
+          },
+          "spoken": {
+            "type": "string",
+            "title": "Spoken"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "path",
+          "bytes",
+          "mtime",
+          "spoken"
+        ],
+        "title": "DocWriteResponse"
+      },
+      "EphemeralOut": {
+        "properties": {
+          "client_secret": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Client Secret"
+          },
+          "session": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Session"
+          },
+          "tools": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Tools"
+          },
+          "instructions": {
+            "type": "string",
+            "title": "Instructions"
+          },
+          "voice": {
+            "type": "string",
+            "title": "Voice"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "api_shape": {
+            "type": "string",
+            "title": "Api Shape",
+            "default": "ga"
+          },
+          "sdp_url": {
+            "type": "string",
+            "title": "Sdp Url",
+            "default": "https://api.openai.com/v1/realtime/calls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "client_secret",
+          "session",
+          "tools",
+          "instructions",
+          "voice",
+          "model"
+        ],
+        "title": "EphemeralOut",
+        "description": "Subset of OpenAI's response, plus the tool schema echoed back.\n\nBrowser code only needs ``client_secret.value`` to open the WebRTC\npeer connection; the rest is returned so the panel can show session\nmetadata in its debug drawer without a second round-trip."
+      },
+      "EventOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "ts_utc": {
+            "type": "string",
+            "title": "Ts Utc"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "feature_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feature Id"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "level": {
+            "type": "string",
+            "title": "Level"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "payload": {
+            "title": "Payload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "ts_utc",
+          "session_id",
+          "kind",
+          "source",
+          "level"
+        ],
+        "title": "EventOut"
+      },
+      "EventsListOut": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EventOut"
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "events"
+        ],
+        "title": "EventsListOut"
+      },
+      "FeatureSummary": {
+        "properties": {
+          "feature_id": {
+            "type": "string",
+            "title": "Feature Id"
+          },
+          "last_seen_utc": {
+            "type": "string",
+            "title": "Last Seen Utc"
+          },
+          "events_total": {
+            "type": "integer",
+            "title": "Events Total"
+          },
+          "errors_1h": {
+            "type": "integer",
+            "title": "Errors 1H"
+          },
+          "p95_duration_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Duration Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "feature_id",
+          "last_seen_utc",
+          "events_total",
+          "errors_1h"
+        ],
+        "title": "FeatureSummary"
       },
       "HTTPValidationError": {
         "properties": {
@@ -754,6 +3337,360 @@
           "timestamp"
         ],
         "title": "HealthOut"
+      },
+      "HttpGetIn": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Url"
+          },
+          "headers": {
+            "items": {
+              "$ref": "#/components/schemas/HttpHeaderIn"
+            },
+            "type": "array",
+            "title": "Headers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "HttpGetIn"
+      },
+      "HttpHeaderIn": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "HttpHeaderIn"
+      },
+      "HttpPostIn": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Url"
+          },
+          "headers": {
+            "items": {
+              "$ref": "#/components/schemas/HttpHeaderIn"
+            },
+            "type": "array",
+            "title": "Headers"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "json_body": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Json Body"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "HttpPostIn"
+      },
+      "HttpResponseOut": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "status": {
+            "type": "integer",
+            "title": "Status"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Headers"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "status",
+          "content_type",
+          "headers",
+          "body"
+        ],
+        "title": "HttpResponseOut"
+      },
+      "InboxAckIn": {
+        "properties": {
+          "author": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Author",
+            "default": "operator"
+          }
+        },
+        "type": "object",
+        "title": "InboxAckIn"
+      },
+      "InboxEventOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "at": {
+            "type": "integer",
+            "title": "At"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "notify",
+              "ack"
+            ],
+            "title": "Kind"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "topic": {
+            "type": "string",
+            "title": "Topic"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "success",
+              "warn",
+              "error"
+            ],
+            "title": "Severity"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "event_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Ref"
+          },
+          "prev_hash": {
+            "type": "string",
+            "title": "Prev Hash"
+          },
+          "hash": {
+            "type": "string",
+            "title": "Hash"
+          },
+          "acked": {
+            "type": "boolean",
+            "title": "Acked",
+            "default": false
+          },
+          "ack_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ack At"
+          },
+          "ack_author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ack Author"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "at",
+          "kind",
+          "author",
+          "node_id",
+          "topic",
+          "severity",
+          "title",
+          "body",
+          "target",
+          "tags",
+          "prev_hash",
+          "hash"
+        ],
+        "title": "InboxEventOut"
+      },
+      "InboxFeedOut": {
+        "properties": {
+          "chain_head": {
+            "type": "string",
+            "title": "Chain Head"
+          },
+          "chain_ok": {
+            "type": "boolean",
+            "title": "Chain Ok"
+          },
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "notifications": {
+            "items": {
+              "$ref": "#/components/schemas/InboxEventOut"
+            },
+            "type": "array",
+            "title": "Notifications"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chain_head",
+          "chain_ok",
+          "node_id",
+          "notifications"
+        ],
+        "title": "InboxFeedOut"
+      },
+      "InboxPostIn": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 140,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Body",
+            "default": ""
+          },
+          "author": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Author",
+            "default": "operator"
+          },
+          "topic": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Topic",
+            "default": "general"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "success",
+              "warn",
+              "error"
+            ],
+            "title": "Severity",
+            "default": "info"
+          },
+          "target": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "Target",
+            "default": "broadcast"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "InboxPostIn"
       },
       "MemInfo": {
         "properties": {
@@ -916,6 +3853,74 @@
         ],
         "title": "ServiceInfo"
       },
+      "SilentOut": {
+        "properties": {
+          "silent_for_minutes": {
+            "type": "integer",
+            "title": "Silent For Minutes"
+          },
+          "features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Features"
+          }
+        },
+        "type": "object",
+        "required": [
+          "silent_for_minutes",
+          "features"
+        ],
+        "title": "SilentOut"
+      },
+      "StatsOut": {
+        "properties": {
+          "db_exists": {
+            "type": "boolean",
+            "title": "Db Exists"
+          },
+          "db_path": {
+            "type": "string",
+            "title": "Db Path"
+          },
+          "counters": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counters"
+          }
+        },
+        "type": "object",
+        "required": [
+          "db_exists",
+          "db_path",
+          "counters"
+        ],
+        "title": "StatsOut"
+      },
+      "SummaryOut": {
+        "properties": {
+          "window_hours": {
+            "type": "number",
+            "title": "Window Hours"
+          },
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/FeatureSummary"
+            },
+            "type": "array",
+            "title": "Features"
+          }
+        },
+        "type": "object",
+        "required": [
+          "window_hours",
+          "features"
+        ],
+        "title": "SummaryOut"
+      },
       "SystemInfoOut": {
         "properties": {
           "mode": {
@@ -991,6 +3996,35 @@
         ],
         "title": "SystemInfoOut"
       },
+      "ToolIn": {
+        "properties": {
+          "args": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Args"
+          }
+        },
+        "type": "object",
+        "title": "ToolIn"
+      },
+      "ToolOut": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "output": {
+            "type": "string",
+            "title": "Output"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "output"
+        ],
+        "title": "ToolOut"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -1030,6 +4064,50 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VoiceTodoOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "at": {
+            "type": "integer",
+            "title": "At"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "voice"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "at",
+          "text"
+        ],
+        "title": "VoiceTodoOut"
+      },
+      "VoiceTodosOut": {
+        "properties": {
+          "todos": {
+            "items": {
+              "$ref": "#/components/schemas/VoiceTodoOut"
+            },
+            "type": "array",
+            "title": "Todos"
+          }
+        },
+        "type": "object",
+        "required": [
+          "todos"
+        ],
+        "title": "VoiceTodosOut"
       },
       "WifiAdd": {
         "properties": {
@@ -1139,5 +4217,39 @@
         "scheme": "bearer"
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "name": "device health",
+      "description": "Hostname, uptime, services, mode, network, memory, temperature."
+    },
+    {
+      "name": "console / device mode",
+      "description": "Switch the pi between console (server) and device (kiosk) modes."
+    },
+    {
+      "name": "tailscale",
+      "description": "Tailnet status, peer list, magic DNS."
+    },
+    {
+      "name": "wifi",
+      "description": "List networks, connect, forget. Backed by nmcli."
+    },
+    {
+      "name": "event store",
+      "description": "24-hour rolling SQLite event store. Every traced function, every command, every keystroke (opt-out) lands here. Read it to know what just happened."
+    },
+    {
+      "name": "canary rollout",
+      "description": "Stage updates on the device that crashed first, then one ring device, then the fleet. Rollback is one command."
+    },
+    {
+      "name": "crash bundle",
+      "description": "Build a redacted tarball with the last 30 minutes of events, system context, and (optionally) ship it to the triage relay over Tailscale."
+    },
+    {
+      "name": "user manual",
+      "description": "The generated manual. Lowercase, terse, leads with the baller command."
+    }
+  ]
 }

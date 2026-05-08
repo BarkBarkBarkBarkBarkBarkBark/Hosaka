@@ -404,6 +404,8 @@ from hosaka.web.api_v1 import router as v1_router  # noqa: E402
 from hosaka.web.voice_api import router as voice_router  # noqa: E402
 from hosaka.web.docs_api import router as docs_router  # noqa: E402
 from hosaka.web.diag_api import router as diag_router  # noqa: E402
+from hosaka.web.events_api import router as events_router  # noqa: E402
+from hosaka.web.manual_api import router as manual_router  # noqa: E402
 from hosaka.web.nodes import router as nodes_router  # noqa: E402
 from hosaka.web.sync_ws import router as sync_router  # noqa: E402
 
@@ -411,6 +413,8 @@ app.include_router(v1_router)
 app.include_router(voice_router)
 app.include_router(docs_router)
 app.include_router(diag_router)
+app.include_router(events_router)
+app.include_router(manual_router)
 if TAILSCALE_API_ENABLED:
     app.include_router(nodes_router)
 if SYNC_ENABLED:

@@ -1,0 +1,140 @@
+{
+  "schema_version": "1",
+  "generated_at_utc": "2026-05-07T19:14:27Z",
+  "single_source_of_truth": "Hosaka/docs/hosaka.features.yaml",
+  "human_seed": "Hosaka/docs/AGENT_CONTEXT.md",
+  "plan": "Hosaka/docs/increased_observability.yaml",
+  "event_store": {
+    "path": "Hosaka/runtime/observability/events.db",
+    "engine": "sqlite-wal",
+    "retention_hours": 24,
+    "read_api": [
+      "GET /api/v1/events",
+      "GET /api/v1/events/summary",
+      "GET /api/v1/events/silent",
+      "GET /api/v1/events/stats"
+    ]
+  },
+  "obs_library": {
+    "import": "from hosaka.obs import emit, trace, heartbeat",
+    "guarantees": [
+      "never raises",
+      "supervised writer thread",
+      "bounded queue (4096) and payload (4 KiB)",
+      "disabling via HOSAKA_OBS=off is a true no-op"
+    ]
+  },
+  "catalog_summary": {
+    "total_features": 8,
+    "by_status": {
+      "stable": [
+        "obs.events",
+        "device.health",
+        "device.mode",
+        "network.wifi",
+        "network.tailscale",
+        "manual"
+      ],
+      "beta": [
+        "obs.crash"
+      ],
+      "experimental": [
+        "obs.canary"
+      ]
+    },
+    "by_category": {
+      "observability": [
+        "obs.events"
+      ],
+      "recovery": [
+        "obs.crash",
+        "obs.canary"
+      ],
+      "devices": [
+        "device.health",
+        "device.mode"
+      ],
+      "network": [
+        "network.wifi",
+        "network.tailscale"
+      ],
+      "workflow": [
+        "manual"
+      ]
+    }
+  },
+  "http_routes": [
+    {
+      "method": "GET",
+      "path": "/api/tailscale/status",
+      "feature_id": "network.tailscale"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/events",
+      "feature_id": "obs.events"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/events/silent",
+      "feature_id": "obs.events"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/events/stats",
+      "feature_id": "obs.events"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/events/summary",
+      "feature_id": "obs.events"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/health",
+      "feature_id": "device.health"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/mode",
+      "feature_id": "device.mode"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/info",
+      "feature_id": "device.health"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/wifi/networks",
+      "feature_id": "network.wifi"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/wifi/networks",
+      "feature_id": "network.wifi"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/wifi/networks/{ssid}",
+      "feature_id": "network.wifi"
+    }
+  ],
+  "scripts": [
+    {
+      "path": "scripts/build_crash_bundle.py",
+      "feature_id": "obs.crash"
+    },
+    {
+      "path": "scripts/hosaka-canary.sh",
+      "feature_id": "obs.canary"
+    }
+  ],
+  "hard_nos": [
+    "no new long-running processes",
+    "no editing docs/openapi.json or docs/manual/** by hand",
+    "no removing features (mark status=deprecated)",
+    "no telemetry that can throw",
+    "no ORM, no migration framework inside hosaka.obs"
+  ]
+}

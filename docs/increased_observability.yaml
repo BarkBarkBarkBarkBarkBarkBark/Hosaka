@@ -1,0 +1,548 @@
+manifest_version: "1.0"
+
+project:
+  name: "Hosaka"
+  goal: "Reduce unknown risk surface in a vibe-coded terminal-first operating system by adding observability, deterministic state, feature contracts, crash reporting, health checks, and AI-assisted recovery."
+  repo: "https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka"
+
+principles:
+  - "Preserve current architecture where possible."
+  - "Prefer additive changes over breaking rewrites."
+  - "Make implicit behavior explicit and machine-readable."
+  - "Terminal-first behavior is the source of truth."
+  - "Every GUI feature should be reachable or explainable from the terminal."
+  - "Every feature should declare ownership, commands, dependencies, permissions, and tests."
+  - "Every crash should become actionable."
+  # --- v2 additions -----------------------------------------------------
+  - "Observability MUST NOT be able to crash Hosaka. All emit paths fail silent and bounded."
+  - "One source of truth. The feature registry generates the OpenAPI surface AND the user manual."
+  - "No new daemons. Reuse the running web process; everything else is a thread or a tiny library."
+  - "Bounded everything: bounded queue, bounded retention, bounded payload size, bounded fan-out."
+  - "If we can't explain what a function did in the last 24 h from one query, the design is wrong."
+
+implementation_order:
+  - phase: "01_observe"
+    goal: "Add visibility before refactoring."
+    tasks:
+      - id: "structured_logging"
+        description: "Replace scattered console logs with structured JSON logs."
+        outputs:
+          - "logs/hosaka.jsonl"
+          - "src/core/logger.*"
+        required_fields:
+          - "timestamp"
+          - "level"
+          - "service"
+          - "event"
+          - "status"
+          - "duration_ms"
+          - "session_id"
+          - "correlation_id"
+          - "metadata"
+
+      - id: "session_flight_recorder"
+        description: "Record command history, app launches, websocket events, plugin events, errors, and state transitions."
+        outputs:
+          - "runtime/sessions/{session_id}.jsonl"
+        capture:
+          - "terminal_command"
+          - "state_transition"
+          - "plugin_launch"
+          - "device_check"
+          - "websocket_event"
+          - "crash"
+          - "recovery_attempt"
+
+      - id: "health_endpoint"
+        description: "Expose local system health for terminal and agent interrogation."
+        outputs:
+          - "GET /health"
+          - "GET /health/services"
+          - "GET /health/features"
+        service_health_schema:
+          service: "string"
+          healthy: "boolean"
+          status: "ok|degraded|failed|unknown"
+          latency_ms: "number|null"
+          last_error: "string|null"
+          last_seen: "iso8601"
+
+  - phase: "02_contracts"
+    goal: "Create feature registry and manifests."
+    tasks:
+      - id: "feature_registry"
+        description: "Create a central registry of Hosaka features."
+        outputs:
+          - "hosaka.features.yaml"
+          - "src/core/featureRegistry.*"
+        feature_schema:
+          id: "string"
+          name: "string"
+          description: "string"
+          owner: "core|plugin|external"
+          status: "stable|beta|experimental|deprecated"
+          commands: []
+          entrypoints: []
+          dependencies: []
+          permissions: []
+          telemetry_events: []
+          tests: []
+          docs: []
+          failure_modes: []
+
+      - id: "command_registry"
+        description: "Bind terminal commands to feature IDs."
+        outputs:
+          - "hosaka.commands.yaml"
+        command_schema:
+          command: "string"
+          feature_id: "string"
+          description: "string"
+          args: []
+          examples: []
+          expected_outputs: []
+          failure_behavior: "string"
+
+      - id: "plugin_manifest_standard"
+        description: "Standardize plugin/app manifests."
+        outputs:
+          - "plugins/*/plugin.yaml"
+        plugin_schema:
+          id: "string"
+          name: "string"
+          version: "semver"
+          feature_ids: []
+          launch:
+            type: "process|flatpak|webview|internal"
+            command: "string"
+            args: []
+          permissions: []
+          healthcheck:
+            command: "string|null"
+            timeout_ms: 5000
+          smoke_tests: []
+
+  - phase: "03_determinism"
+    goal: "Move toward replayable state transitions."
+    tasks:
+      - id: "canonical_state_model"
+        description: "Define one canonical app state model."
+        outputs:
+          - "src/core/state/schema.*"
+          - "docs/state_model.md"
+        state_domains:
+          - "terminal"
+          - "windows"
+          - "plugins"
+          - "devices"
+          - "network"
+          - "sessions"
+          - "errors"
+
+      - id: "event_reducer_pattern"
+        description: "Route command results and UI changes through events where practical."
+        required_events:
+          - "COMMAND_RECEIVED"
+          - "COMMAND_STARTED"
+          - "COMMAND_COMPLETED"
+          - "COMMAND_FAILED"
+          - "PLUGIN_STARTED"
+          - "PLUGIN_FAILED"
+          - "DEVICE_CHECK_STARTED"
+          - "DEVICE_CHECK_COMPLETED"
+          - "STATE_RECOVERED"
+
+      - id: "session_replay"
+        description: "Allow a recorded session to be replayed for debugging."
+        outputs:
+          - "scripts/replay-session.*"
+        acceptance_criteria:
+          - "Can replay terminal command sequence."
+          - "Can reproduce logged state transitions."
+          - "Can identify last successful event before crash."
+
+  - phase: "04_crash_reporting"
+    goal: "Turn crashes into GitHub issues and AI-fixable units."
+    tasks:
+      - id: "crash_capture"
+        description: "Capture crash context locally."
+        capture:
+          - "stack_trace"
+          - "last_100_log_events"
+          - "session_id"
+          - "feature_id"
+          - "command"
+          - "platform"
+          - "node_version"
+          - "python_version"
+          - "memory_usage"
+          - "cpu_usage"
+          - "git_commit"
+          - "config_hash"
+
+      - id: "github_issue_reporter"
+        description: "Optionally create a GitHub issue from crash bundle."
+        outputs:
+          - "scripts/report-crash-to-github.*"
+        issue_template:
+          title: "[Crash] {feature_id}: {error_summary}"
+          labels:
+            - "crash"
+            - "auto-report"
+            - "needs-triage"
+          body_sections:
+            - "Summary"
+            - "Reproduction Steps"
+            - "Crash Context"
+            - "Logs"
+            - "Suspected Feature"
+            - "Suggested Fix Area"
+
+      - id: "llm_triage_prompt"
+        description: "Generate a structured prompt for an LLM coding agent."
+        outputs:
+          - ".github/llm/crash_triage_prompt.md"
+        prompt_requirements:
+          - "Summarize likely root cause."
+          - "Identify files likely involved."
+          - "Suggest minimal patch."
+          - "Add regression test."
+          - "Avoid broad rewrites."
+
+  - phase: "05_tests"
+    goal: "Add confidence loops without slowing development."
+    tasks:
+      - id: "golden_path_tests"
+        description: "Create smoke tests for the core user flows."
+        outputs:
+          - "tests/golden/"
+        flows:
+          - name: "boot"
+            steps:
+              - "start Hosaka"
+              - "verify terminal renders"
+              - "verify health endpoint returns ok"
+
+          - name: "launch_app"
+            steps:
+              - "run /launch test-app"
+              - "verify feature registry resolves command"
+              - "verify launch event emitted"
+
+          - name: "device_check_mic"
+            steps:
+              - "run /device check mic"
+              - "verify audio devices enumerated"
+              - "verify result is displayed in terminal"
+
+          - name: "websocket_reconnect"
+            steps:
+              - "start websocket service"
+              - "drop connection"
+              - "verify reconnect behavior"
+              - "verify terminal survives"
+
+      - id: "invariant_checks"
+        description: "Add runtime assertions for critical assumptions."
+        invariants:
+          - "Every command maps to a feature_id."
+          - "Every feature_id exists in hosaka.features.yaml."
+          - "Every plugin has a manifest."
+          - "Every launched process emits success or failure."
+          - "Terminal never crashes from plugin failure."
+          - "Health endpoint always responds, even degraded."
+
+      - id: "dead_code_detection"
+        description: "Compare registry features against actual imports, commands, and entrypoints."
+        outputs:
+          - "reports/dead_code_report.md"
+        checks:
+          - "features with no commands"
+          - "commands with no feature"
+          - "plugins with no tests"
+          - "files not reachable from registered entrypoints"
+          - "deprecated features still referenced"
+
+  - phase: "06_recovery"
+    goal: "Make failures survivable."
+    tasks:
+      - id: "graceful_degradation"
+        description: "Ensure subsystem failure does not kill Hosaka core."
+        rules:
+          - "Plugin crash must not crash terminal."
+          - "Audio failure must not crash app shell."
+          - "Camera failure must return diagnostic output."
+          - "Network failure must preserve local terminal."
+          - "Remote service failure must show actionable status."
+
+      - id: "safe_mode"
+        description: "Add safe mode boot with plugins disabled."
+        command:
+          - "/safe-mode"
+        behavior:
+          - "disable third-party plugins"
+          - "load terminal only"
+          - "show health report"
+          - "offer repair commands"
+
+      - id: "repair_commands"
+        description: "Add terminal-first recovery commands."
+        commands:
+          - "/health"
+          - "/doctor"
+          - "/logs recent"
+          - "/crash last"
+          - "/features list"
+          - "/features validate"
+          - "/plugins disable <id>"
+          - "/plugins enable <id>"
+
+  - phase: "07_heartbeat"
+    goal: "Every file/function emits proof-of-life without becoming a load-bearing crash surface."
+    design_constraints:
+      - "Single import: `from hosaka.obs import trace, heartbeat, emit`. No other public surface."
+      - "All emits go through one in-process bounded queue (maxlen=4096). Drops are counted, never raised."
+      - "If the sink thread dies, decorators degrade to no-ops. The wrapper NEVER lets an emit error bubble into business code."
+      - "Zero network calls on the hot path. The sink writes locally; uploaders are separate."
+      - "Sampling: per-call decorators default to sample_rate=1.0 for commands, 0.05 for hot loops, 0 for tight render frames. Configurable via hosaka.features.yaml."
+    api:
+      decorators:
+        - name: "@trace(feature_id, sample_rate=1.0)"
+          wraps: "function|method"
+          emits:
+            - "FUNCTION_ENTERED (lazy, only on sample hit)"
+            - "FUNCTION_EXITED with duration_ms and ok|error"
+            - "FUNCTION_FAILED with truncated stack on exception, then re-raises"
+        - name: "@heartbeat(module_id, interval_s=300)"
+          wraps: "module import"
+          emits:
+            - "MODULE_LOADED on first import"
+            - "MODULE_ALIVE every interval_s if any traced fn ran since last beat"
+      raw:
+        - "emit(event, **fields) — fire-and-forget, never raises, returns bool"
+    rollout:
+      - "Apply @trace first to every command handler in hosaka/web and hosaka/tui (≈1 line each)."
+      - "Apply @heartbeat to every package __init__.py (one line)."
+      - "Skip render-loop and per-keystroke functions (covered by phase 09 keystroke channel)."
+    invariants:
+      - "Importing hosaka.obs MUST NOT start a network connection."
+      - "An exception inside the sink MUST NOT propagate; it increments obs.dropped_events_total."
+      - "The decorator's overhead on a no-op call MUST be < 5µs at sample_rate=0."
+
+  - phase: "08_event_sink_24h"
+    goal: "One local store of truth for everything observable; 24 h ring; cheap to query, cheap to ship."
+    storage:
+      primary: "SQLite WAL at runtime/observability/events.db"
+      rationale:
+        - "No new daemon. No port. No password. Survives reboot."
+        - "Postgres exists for sync/cloud features (channel_store) — DO NOT couple boot to it."
+      mirror_optional:
+        target: "Postgres `hosaka_events` table"
+        trigger: "background uploader, batched, only if HOSAKA_EVENTS_PG_DSN is set"
+        failure_mode: "log-and-drop; never blocks local writes"
+    schema:
+      table: "events"
+      columns:
+        - "id INTEGER PK"
+        - "ts_utc TEXT NOT NULL  -- ISO8601"
+        - "ts_mono REAL NOT NULL -- monotonic ns for ordering across clock skew"
+        - "session_id TEXT NOT NULL"
+        - "correlation_id TEXT"
+        - "kind TEXT NOT NULL    -- function|module|command|keystroke|ui|crash|health|recovery"
+        - "feature_id TEXT"
+        - "source TEXT NOT NULL  -- module:function or 'tui:keystroke'"
+        - "level TEXT NOT NULL   -- debug|info|warn|error|fatal"
+        - "status TEXT           -- ok|degraded|failed|null"
+        - "duration_ms REAL"
+        - "payload_json TEXT     -- bounded to HOSAKA_OBS_MAX_PAYLOAD (default 4096B)"
+      indexes:
+        - "(ts_utc)"
+        - "(kind, ts_utc)"
+        - "(feature_id, ts_utc)"
+        - "(session_id)"
+    retention:
+      window: "24h default, configurable HOSAKA_OBS_RETENTION_HOURS"
+      enforcement:
+        - "DELETE older than window on every 1000th insert (cheap, opportunistic)"
+        - "VACUUM nightly only if db > 64MB"
+        - "Hard cap: 250k rows; oldest evicted FIFO"
+    write_path:
+      - "Producer side: bounded queue.put_nowait, never blocks."
+      - "Single writer thread, batched commits every 250ms or 200 rows."
+      - "Writer thread is supervised: on crash, restart with exponential backoff, increment obs.sink_restarts_total, never exit process."
+    read_api:
+      - "GET /api/v1/events?since=&kind=&feature_id=&limit= (read-only, allowlisted by health auth)"
+      - "GET /api/v1/events/summary -> per-feature: last_seen, error_rate_1h, p95_duration_ms"
+      - "GET /api/v1/events/silent -> features that have manifests but no events in last N minutes"
+    no_debt_rules:
+      - "No ORM. Plain sqlite3 with prepared statements."
+      - "No migration framework. Schema is created if missing; additive columns only, ever."
+      - "No dependency on the rest of Hosaka — this module imports only stdlib."
+
+  - phase: "09_input_telemetry"
+    goal: "Reconstruct user + machine intent from keystroke + invocation stream; opt-out friendly."
+    capture:
+      keystrokes:
+        scope: "TUI input layer only (hosaka/tui). Never raw text outside the prompt buffer."
+        record:
+          - "ts_mono"
+          - "session_id"
+          - "key_name (e.g. 'Enter','Tab','C-c','printable')"
+          - "context (e.g. 'prompt','app:foliate','dialog:confirm')"
+          - "buffer_len (length only, not contents) unless command was submitted"
+        on_submit:
+          - "Record the full submitted command line as a 'command' event with feature_id resolved via command_registry."
+        privacy:
+          - "Never log key contents inside password/secret prompts (mark context='secret')."
+          - "Honor HOSAKA_OBS_KEYSTROKES=off for the paranoid; default on for owner devices."
+      ui_events:
+        scope: "Web frontend"
+        record:
+          - "click/route/feature_invoked with feature_id"
+          - "shipped via existing websocket; sink writes them with kind='ui'"
+    inference_targets:
+      - "What did the user attempt in the last hour?"
+      - "Which features were touched but never completed?"
+      - "Which keystrokes preceded a crash by < 30s?"
+      - "Idle vs active periods (gap analysis)."
+
+  - phase: "10_single_source_of_truth_and_manual"
+    goal: "hosaka.features.yaml is THE catalog. OpenAPI, user manual, and agent context are all generated from it. No duplication."
+    pipeline:
+      input:
+        - "hosaka.features.yaml"
+        - "hosaka.commands.yaml"
+        - "plugins/*/plugin.yaml"
+      generators:
+        - id: "openapi_gen"
+          script: "scripts/gen_openapi.py"
+          output: "docs/openapi.json"
+          rule: "Each feature with entrypoints of type=http contributes paths. Tags = feature.id. Description = feature.description."
+        - id: "user_manual_gen"
+          script: "scripts/gen_user_manual.py"
+          output: "docs/manual/index.md + docs/manual/<feature>.md"
+          style:
+            - "lowercase, terse, 'no wrong way' tone"
+            - "lead with the BALLER COMMAND, then one-paragraph why-you-care"
+            - "hide internal/experimental features unless --include-internal"
+            - "group by feature.category (workflow, devices, network, fun, recovery)"
+          required_per_page:
+            - "the one command that proves it works"
+            - "one example"
+            - "what success looks like"
+            - "where to look if it didn't work (link to /doctor output for that feature_id)"
+        - id: "agent_context_gen"
+          script: "scripts/gen_agent_context.py"
+          output: "docs/AGENT_CONTEXT.md  +  docs/agent_context.json"
+          purpose: "What every future Copilot/Claude session needs in <5KB: feature ids, owners, where logs live, how to ship a crash bundle, what NOT to touch."
+    ci_check:
+      - "Build fails if a registered command has no doc generated."
+      - "Build fails if an HTTP route exists in code but not in any feature's entrypoints."
+      - "Build fails if a feature has status=stable but no smoke test."
+    discoverability_commands:
+      - "/manual                  # opens the generated manual"
+      - "/manual <feature>        # one feature page"
+      - "/features list           # one-line per feature, status emoji"
+      - "/what-can-i-do           # curated 'baller commands' surface, ranked by usage from event sink"
+
+  - phase: "11_crash_shipping_and_canary"
+    goal: "From red flag to Copilot diagnosis to one-machine canary fix without manual log scraping."
+    bundle:
+      builder: "scripts/build_crash_bundle.py"
+      output: "runtime/crashes/<ts>-<short_id>.tgz"
+      contents:
+        - "events.db slice: last 30 min of events (sqlite .dump filtered)"
+        - "structured logs (last 1000 lines)"
+        - "stack trace + crash context (phase 04)"
+        - "git commit, config_hash, platform info"
+        - "feature manifest snapshot for the suspected feature_id"
+        - "redaction pass: drop secrets/, .env, anything matching HOSAKA_OBS_REDACT regex list"
+      size_cap: "5 MB; trim oldest events first"
+    transport:
+      default: "Tailscale-only HTTPS POST to hosaka-triage relay"
+      relay: "tiny stateless service that opens a private GitHub issue with the bundle attached and tags @copilot for triage"
+      auth: "device-scoped token, rotated per machine, stored in hosaka/secrets"
+      offline_fallback: "queue under runtime/crashes/outbox/ and retry with backoff"
+      programmatic_only: "End users CANNOT compose Copilot prompts. The relay's prompt template is the only thing that talks to the model."
+    triage_prompt:
+      file: ".github/llm/crash_triage_prompt.md"
+      requires:
+        - "feature_id and last 50 events"
+        - "stack trace + suspected file list"
+        - "diff vs last green commit on this device"
+      forbids:
+        - "broad rewrites"
+        - "removing features"
+        - "touching anything outside the suspected feature_id's file list without justification"
+    canary_rollout:
+      stages:
+        - id: "stage_0_local"
+          target: "the device that crashed"
+          gate: "golden_path_tests + 24h soak with zero new ERROR-level events for that feature"
+        - id: "stage_1_ring"
+          target: "1 additional opted-in device on the same Tailnet"
+          gate: "48h soak, no regression in event_sink summary"
+        - id: "stage_2_fleet"
+          target: "all devices"
+          gate: "manual approval"
+      mechanics:
+        - "Updates flow through existing scripts/update_hosaka.sh."
+        - "Each device records 'STATE_RECOVERED' or 'CANARY_PROMOTED' events so the timeline is queryable."
+        - "Rollback is one command: /canary rollback — restores previous git ref + restarts."
+    operator_commands:
+      - "/crash last           # show last crash bundle summary"
+      - "/crash ship           # force-ship the queued bundle now"
+      - "/canary status        # what stage is each device on"
+      - "/canary promote       # advance stage if gates pass"
+      - "/canary rollback      # revert this device"
+
+coding_agent_instructions:
+  priority: "stabilization_over_rewrite"
+  style:
+    - "Small commits."
+    - "Minimal invasive changes."
+    - "Prefer typed schemas where possible."
+    - "Preserve current user-facing behavior."
+    - "Do not remove features unless marked deprecated and unreachable."
+    - "Add tests for every fix."
+    - "Document every new manifest field."
+
+acceptance_criteria:
+  - "Hosaka can start and report health."
+  - "Core terminal survives plugin/app failures."
+  - "Every terminal command maps to a registered feature."
+  - "Every registered feature has owner, status, permissions, and tests."
+  - "Crash bundles can be generated locally."
+  - "Crash bundles can optionally create GitHub issues."
+  - "A coding agent can read manifests and understand project surface area."
+  - "Golden path smoke tests can run in CI."
+  - "Dead or vestigial code can be reported."
+  - "The system becomes easier to debug after each failure."
+  # --- v2 ---
+  - "Every traced function has at least one event in events.db within its expected cadence; a /events/silent query returns the gap list."
+  - "Disabling the obs sink (HOSAKA_OBS=off) MUST NOT change any user-visible behavior."
+  - "Killing the sink thread mid-run MUST NOT crash Hosaka; obs.sink_restarts_total increments and life goes on."
+  - "docs/openapi.json, docs/manual/, and docs/AGENT_CONTEXT.md are 100% generated; editing them by hand fails CI."
+  - "A crash on device A produces a private GitHub issue with a redacted bundle, reachable only via Tailnet, within 60s."
+  - "End users cannot author the prompt sent to Copilot. The relay template is the only path."
+  - "/canary rollback restores the previous green ref on a single device without touching the fleet."
+
+single_source_of_truth:
+  catalog: "Hosaka/docs/hosaka.features.yaml"
+  generated_from_catalog:
+    - "Hosaka/docs/openapi.json"
+    - "Hosaka/docs/manual/**"
+    - "Hosaka/docs/AGENT_CONTEXT.md"
+    - "Hosaka/docs/agent_context.json"
+  agent_entrypoint: "Hosaka/docs/AGENT_CONTEXT.md  (read this first, then this manifest)"
+  human_entrypoint: "Hosaka/docs/manual/index.md   (the baller-commands user manual)"
+  event_store: "Hosaka/runtime/observability/events.db (24h rolling, sqlite WAL)"
+
+future_extensions:
+  - "LLM-generated pull requests from crash reports."
+  - "Vector index of logs, features, docs, and code."
+  - "Permission sandbox for plugins."
+  - "Visual feature dependency graph."
+  - "Remote Tailscale smoke-test agent."
+  - "OBS/audio/video device diagnostic panel."
+  - "Flatpak app wrapper registry."

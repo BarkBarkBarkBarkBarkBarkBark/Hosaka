@@ -3,9 +3,15 @@ __pycache__/
 *.pyc
 *.pyo
 .venv/
+.hosakavenv/
 *.egg-info/
 dist/
 build/
+
+# Runtime artifacts
+runtime/observability/*.db
+runtime/observability/*.db-*
+runtime/crashes/*.tgz
 
 # Node / frontend
 frontend/node_modules/

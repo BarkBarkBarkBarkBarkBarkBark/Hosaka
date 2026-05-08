@@ -1,0 +1,175 @@
+# hosaka.features.yaml — single source of truth for what hosaka does.
+#
+# This file drives:
+#   * docs/openapi.json     (via scripts/gen_openapi_overlay.py — adds tags/descriptions)
+#   * docs/manual/**        (via scripts/gen_user_manual.py — the baller-commands manual)
+#   * docs/AGENT_CONTEXT.md (via scripts/gen_agent_context.py — agent seed)
+#
+# Edit ONLY this file. The generators rebuild the rest. CI fails if generated
+# artifacts drift from this file.
+#
+# Adding a feature: copy an entry, fill it in, run `bash scripts/gen_docs.sh`.
+
+manifest_version: "1.0"
+
+categories:
+  workflow:    "things you do every day"
+  devices:     "the box itself — health, mode, services"
+  network:     "wifi, tailscale, beacons"
+  recovery:    "when it's on fire"
+  observability: "what just happened, and why"
+  fun:         "vibes"
+
+features:
+  - id: "obs.events"
+    name: "event store"
+    category: "observability"
+    description: >
+      24-hour rolling SQLite event store. Every traced function, every command,
+      every keystroke (opt-out) lands here. Read it to know what just happened.
+    owner: "core"
+    status: "stable"
+    commands:
+      - "/events recent"
+      - "/events summary"
+      - "/events silent"
+    entrypoints:
+      - { type: "http", method: "GET", path: "/api/v1/events" }
+      - { type: "http", method: "GET", path: "/api/v1/events/summary" }
+      - { type: "http", method: "GET", path: "/api/v1/events/silent" }
+      - { type: "http", method: "GET", path: "/api/v1/events/stats" }
+    permissions: ["read"]
+    failure_modes:
+      - "sink writer crashes → restarts with backoff, decorators no-op"
+      - "queue full → events dropped, dropped_queue_full counter bumped"
+    tests: ["tests/test_obs_smoke.py", "tests/test_events_api_smoke.py"]
+    baller_command: "/events recent"
+    why_you_care: >
+      every weird moment leaves a footprint here. when something breaks, this
+      is where you look first.
+
+  - id: "obs.crash"
+    name: "crash bundle"
+    category: "recovery"
+    description: >
+      Build a redacted tarball with the last 30 minutes of events, system
+      context, and (optionally) ship it to the triage relay over Tailscale.
+    owner: "core"
+    status: "beta"
+    commands:
+      - "/crash last"
+      - "/crash ship"
+    entrypoints:
+      - { type: "script", path: "scripts/build_crash_bundle.py" }
+    permissions: ["read", "write:runtime/crashes"]
+    failure_modes:
+      - "no DB → empty events section, bundle still builds"
+      - "relay unreachable → bundle queued under runtime/crashes/outbox/"
+    tests: ["tests/test_crash_bundle_smoke.py"]
+    baller_command: "python scripts/build_crash_bundle.py --reason 'manual'"
+    why_you_care: >
+      one command turns a red flag into something copilot can read.
+
+  - id: "obs.canary"
+    name: "canary rollout"
+    category: "recovery"
+    description: >
+      Stage updates on the device that crashed first, then one ring device,
+      then the fleet. Rollback is one command.
+    owner: "core"
+    status: "experimental"
+    commands:
+      - "/canary status"
+      - "/canary rollback"
+    entrypoints:
+      - { type: "script", path: "scripts/hosaka-canary.sh" }
+    permissions: ["write:runtime/canary"]
+    failure_modes:
+      - "git ref missing → script aborts, leaves device on current ref"
+    tests: []
+    baller_command: "bash scripts/hosaka-canary.sh status"
+    why_you_care: >
+      scared to ship? stage to one box, soak, then promote.
+
+  - id: "device.health"
+    name: "device health"
+    category: "devices"
+    description: "Hostname, uptime, services, mode, network, memory, temperature."
+    owner: "core"
+    status: "stable"
+    commands:
+      - "/health"
+      - "/doctor"
+    entrypoints:
+      - { type: "http", method: "GET", path: "/api/v1/health" }
+      - { type: "http", method: "GET", path: "/api/v1/system/info" }
+    permissions: ["read"]
+    failure_modes: []
+    tests: []
+    baller_command: "curl -s http://hosaka:8421/api/v1/system/info | jq"
+    why_you_care: "is the box ok? this answers in one shot."
+
+  - id: "device.mode"
+    name: "console / device mode"
+    category: "devices"
+    description: "Switch the pi between console (server) and device (kiosk) modes."
+    owner: "core"
+    status: "stable"
+    commands: ["hosaka mode console", "hosaka mode device"]
+    entrypoints:
+      - { type: "http", method: "POST", path: "/api/v1/mode" }
+    permissions: ["write:mode"]
+    failure_modes: []
+    tests: []
+    baller_command: "hosaka mode device"
+    why_you_care: >
+      one command flips the whole personality of the box.
+
+  - id: "network.wifi"
+    name: "wifi"
+    category: "network"
+    description: "List networks, connect, forget. Backed by nmcli."
+    owner: "core"
+    status: "stable"
+    commands: ["hosaka wifi list", "hosaka wifi connect <ssid>"]
+    entrypoints:
+      - { type: "http", method: "GET", path: "/api/v1/wifi/networks" }
+      - { type: "http", method: "POST", path: "/api/v1/wifi/networks" }
+      - { type: "http", method: "DELETE", path: "/api/v1/wifi/networks/{ssid}" }
+    permissions: ["write:network"]
+    failure_modes:
+      - "nmcli missing → returns 503 with diagnostic"
+    tests: []
+    baller_command: "hosaka wifi list"
+    why_you_care: "no GUI required to get online."
+
+  - id: "network.tailscale"
+    name: "tailscale"
+    category: "network"
+    description: "Tailnet status, peer list, magic DNS."
+    owner: "core"
+    status: "stable"
+    commands: ["hosaka net tailscale status"]
+    entrypoints:
+      - { type: "http", method: "GET", path: "/api/tailscale/status" }
+    permissions: ["read"]
+    failure_modes: []
+    tests: []
+    baller_command: "hosaka net tailscale status"
+    why_you_care: "the private wire that makes everything else simple."
+
+  - id: "manual"
+    name: "user manual"
+    category: "workflow"
+    description: "The generated manual. Lowercase, terse, leads with the baller command."
+    owner: "core"
+    status: "stable"
+    commands: ["/manual", "/manual <feature>", "/what-can-i-do"]
+    entrypoints:
+      - { type: "doc", path: "docs/manual/index.md" }
+    permissions: ["read"]
+    failure_modes: []
+    tests: ["tests/test_manual_gen_smoke.py"]
+    baller_command: "/what-can-i-do"
+    why_you_care: >
+      everything you can do, ranked by what people actually use.
