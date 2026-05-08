@@ -14,8 +14,13 @@ install:
     - flatpak
     - install
     - -y
+    - --noninteractive
     - flathub
     - com.github.birros.WebArchives
+# Give the app a canonical offline archive folder so downloaded .zim files
+# are visible without wrestling with a portal file picker on the Pi kiosk.
+flatpak_overrides:
+  - --filesystem=~/WebArchives:create
 launch:
   command:
     - flatpak
@@ -29,7 +34,7 @@ aliases:
 memory:
   profile: medium
 permissions_notes:
-  - Reads .zim archive files from local disk; no network needed once seeded.
+  - Reads .zim archive files from ~/WebArchives; no network needed once seeded.
 account_login_required: false
 hosaka_manages_credentials: false
 notes:

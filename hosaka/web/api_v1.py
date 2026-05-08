@@ -1174,6 +1174,8 @@ def _read_app_manifests() -> list[dict[str, Any]]:
             "id": app_id,
             "name": str(data.get("name", app_id)),
             "category": str(data.get("category", "other")),
+            "description": str(data.get("description", "")),
+            "provider": str(data.get("provider", "unknown")),
             "backend": str(data.get("backend", "flatpak")),
             "flatpak_id": flatpak_id,
             "install": {"command": list(install.get("command") or [])},
@@ -1181,6 +1183,11 @@ def _read_app_manifests() -> list[dict[str, Any]]:
             "flatpak_overrides": [str(o) for o in (data.get("flatpak_overrides") or []) if str(o).strip()],
             "aliases": [_normalize_app_token(str(a)) for a in (data.get("aliases") or []) if str(a).strip()],
             "arches": [str(a).strip().lower() for a in (data.get("arches") or []) if str(a).strip()],
+            "memory": data.get("memory") if isinstance(data.get("memory"), dict) else {"profile": "unknown"},
+            "permissions_notes": [str(n) for n in (data.get("permissions_notes") or []) if str(n).strip()],
+            "account_login_required": bool(data.get("account_login_required", False)),
+            "hosaka_manages_credentials": bool(data.get("hosaka_manages_credentials", False)),
+            "notes": [str(n) for n in (data.get("notes") or []) if str(n).strip()],
         })
     return out
 
@@ -1383,6 +1390,20 @@ def v1_apps_launch(app_id: str) -> dict[str, Any]:
         return {"ok": False, "manifestFound": False, "message": f"app not found: {app_id}"}
     if _APPS_HTTP_MODE != "real":
         return _mock_app_response(app, "launch")
+    if not _flatpak_which():
+        return {
+            "ok": False, "appId": app["id"], "manifestFound": True,
+            "installed": False, "flatpakAvailable": False, "host": "web",
+            "message": "flatpak is not installed on this host.",
+            "actionableCommand": "sudo apt-get install -y flatpak",
+        }
+    if not _flatpak_app_installed(app["flatpak_id"]):
+        return {
+            "ok": False, "appId": app["id"], "manifestFound": True,
+            "installed": False, "flatpakAvailable": True, "host": "web",
+            "message": f"{app['name']} is not installed yet.",
+            "actionableCommand": f"/install {app['id']}",
+        }
     cmd = list(app["launch"]["command"])
     env, seat_user, note = _resolve_kiosk_seat_env()
     # If the app already has a visible OS window, treat Launch as "raise".

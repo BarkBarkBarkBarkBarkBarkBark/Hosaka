@@ -36,6 +36,13 @@ fields:
     enum: [flatpak]
   flatpak_id:
     type: string
+  arches:
+    type: list[string]
+    required: false
+    notes: >-
+      Optional Flatpak CPU architecture allowlist using Flathub vocabulary
+      (`x86_64`, `aarch64`, `arm`, `i386`). Empty/missing means no known
+      constraint.
   install:
     type: map
     required: [command]

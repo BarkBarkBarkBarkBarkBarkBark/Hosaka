@@ -13,6 +13,7 @@ install:
     - flatpak
     - install
     - -y
+    - --noninteractive
     - flathub
     - io.github.meehow.Receiver
 launch:

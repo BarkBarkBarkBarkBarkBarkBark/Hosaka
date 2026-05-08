@@ -13,8 +13,13 @@ install:
     - flatpak
     - install
     - -y
+    - --noninteractive
     - flathub
     - dk.gqrx.gqrx
+# Persist USB access after install so RTL-SDR dongles are visible inside
+# the sandbox. Without this, gqrx can launch but often reports no devices.
+flatpak_overrides:
+  - --device=all
 launch:
   command:
     - flatpak
@@ -29,7 +34,7 @@ memory:
   profile: medium
   warning: SDR FFT plotting is moderately CPU-heavy on the Pi 3B+; expect higher load during a sweep.
 permissions_notes:
-  - Needs USB device access for the RTL-SDR dongle (flatpak --device=all is granted by the manifest).
+  - Needs USB device access for the RTL-SDR dongle; Hosaka grants Flatpak device access on install.
   - Audio playback to default sink.
 account_login_required: false
 hosaka_manages_credentials: false

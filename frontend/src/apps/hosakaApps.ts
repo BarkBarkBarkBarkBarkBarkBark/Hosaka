@@ -17,6 +17,8 @@ export type HosakaAppManifest = {
   flatpak_id: string;
   install: { command: string[] };
   launch: { command: string[] };
+  flatpak_overrides?: string[];
+  arches?: string[];
   aliases: string[];
   memory: { profile: string; warning?: string };
   permissions_notes: string[];
@@ -73,6 +75,12 @@ function toManifest(value: unknown): HosakaAppManifest | null {
   const launchCommand = Array.isArray(data.launch?.command)
     ? data.launch.command.map((token) => String(token))
     : [];
+  const flatpakOverrides = Array.isArray(data.flatpak_overrides)
+    ? data.flatpak_overrides.map((token) => String(token)).filter(Boolean)
+    : [];
+  const arches = Array.isArray(data.arches)
+    ? data.arches.map((token) => String(token).toLowerCase()).filter(Boolean)
+    : [];
   return {
     id,
     name: String(data.name ?? id),
@@ -83,6 +91,8 @@ function toManifest(value: unknown): HosakaAppManifest | null {
     flatpak_id: String(data.flatpak_id ?? ""),
     install: { command: installCommand },
     launch: { command: launchCommand },
+    flatpak_overrides: flatpakOverrides,
+    arches,
     aliases: Array.from(new Set([id, ...aliases])),
     memory: {
       profile: String(data.memory?.profile ?? "unknown"),

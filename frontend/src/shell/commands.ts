@@ -73,6 +73,7 @@ export function getCommands(): CommandEntry[] {
     { cmd: "/library populate <classical|jazz>", desc: "pull public-domain tracks from internet archive.", cat: st("commands.catApps") },
     { cmd: "/messages",  desc: st("commands.messagesDesc"),    cat: st("commands.catPanels") },
     { cmd: "/launch <app>", desc: st("commands.launchDesc"),   cat: st("commands.catPanels") },
+    { cmd: "/launch list", desc: "list launchable Hosaka-native and Flatpak apps.", cat: st("commands.catPanels") },
     { cmd: "/web",       desc: st("commands.webDesc"),         cat: st("commands.catPanels") },
     { cmd: "/web <url>", desc: st("commands.webOpenDesc"),     cat: st("commands.catPanels") },
     { cmd: "/video",     desc: st("commands.videoDesc"),       cat: st("commands.catPanels") },

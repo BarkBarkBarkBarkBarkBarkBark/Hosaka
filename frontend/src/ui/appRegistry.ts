@@ -628,9 +628,9 @@ export const APP_REGISTRY: AppDefinition[] = [
     installStrategy: "catalog",
     hostScope: "linux",
     embedPolicy: "no_embed",
-    flatpakArches: ["x86_64"],
-    maintainerNote: "Flatpak: md.obsidian.Obsidian — x86_64-only on Flathub. On aarch64 (Pi) suggest apostrophe instead.",
-    agentNote: "Treat ~/Obsidian as a future agent-readable vault; today, write through /api/v1/docs/* on the docs panel.",
+    flatpakArches: ["x86_64", "aarch64"],
+    maintainerNote: "Flatpak: md.obsidian.Obsidian (aarch64 + x86_64). Opens the canonical ~/Vault markdown directory.",
+    agentNote: "Treat ~/Vault as a future agent-readable vault; today, write through /api/v1/docs/* on the docs panel.",
   },
   {
     id: "apostrophe",

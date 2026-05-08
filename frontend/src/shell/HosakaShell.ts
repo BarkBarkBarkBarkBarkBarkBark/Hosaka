@@ -1745,9 +1745,12 @@ export class HosakaShell {
   private async handleLaunch(arg: string): Promise<void> {
     const target = arg.trim();
     if (!target) {
-      const launchable = APP_REGISTRY.filter((app) => app.status !== "planned").map((app) => app.id).join(", ");
       this.writeln(`  ${GRAY}usage: /launch <app>${R}`);
-      this.writeln(`  ${DARK_GRAY}apps: ${launchable}${R}`);
+      this.writeln(`  ${DARK_GRAY}try: ${CYAN}/launch list${R}${DARK_GRAY} for every launchable Hosaka + Flatpak target.${R}`);
+      return;
+    }
+    if (["list", "ls", "apps"].includes(target.toLowerCase())) {
+      await this.handleLaunchList();
       return;
     }
     const hosakaAppId = resolveHosakaAppId(target);
@@ -1785,6 +1788,38 @@ export class HosakaShell {
       appId: "terminal",
     });
     this.writeln(`  ${GRAY}launched ${AMBER}${appId}${R}`);
+  }
+
+  private async handleLaunchList(): Promise<void> {
+    const nativeApps = APP_REGISTRY
+      .filter((app) => app.status !== "planned" && app.preferredHost !== "external-app")
+      .sort((a, b) => a.title.localeCompare(b.title));
+
+    this.writeln(`  ${CYAN}launchable apps${R}`);
+    this.writeln(`  ${AMBER}hosaka native${R}`);
+    for (const app of nativeApps) {
+      this.writeln(`    ${CYAN}/launch ${app.id}${R} ${GRAY}${app.title} — ${app.description}${R}`);
+    }
+
+    this.writeln(`  ${AMBER}flatpak / external${R}`);
+    if (HOSAKA_APPS.length === 0) {
+      this.writeln(`    ${DARK_GRAY}no external app manifests found.${R}`);
+      return;
+    }
+    const statuses = await Promise.all(
+      HOSAKA_APPS.map(async (app) => ({ app, status: await getHosakaAppStatus(app.id) })),
+    );
+    for (const { app, status } of statuses) {
+      const state = status.installed === true
+        ? `${GREEN}installed${R}`
+        : status.archIncompatible
+          ? `${AMBER}unavailable on ${status.hostArch ?? "this arch"}${R}`
+          : status.flatpakAvailable === false
+            ? `${AMBER}flatpak missing${R}`
+            : `${DARK_GRAY}installable${R}`;
+      this.writeln(`    ${CYAN}/launch ${app.id}${R} ${GRAY}${app.name} · ${app.category} · ${state}`);
+    }
+    this.writeln(`  ${DARK_GRAY}install an external app first with ${CYAN}/install <id>${R}${DARK_GRAY}; details with ${CYAN}/app <id>${R}${DARK_GRAY}.${R}`);
   }
 
   private openWebPreset(presetId: string): void {

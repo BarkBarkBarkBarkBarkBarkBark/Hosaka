@@ -1,15 +1,13 @@
 id: obsidian
 name: Obsidian
 category: writing
-# Flathub publishes md.obsidian.Obsidian for x86_64 only today.
-# On aarch64 (Pi 3B+/4) the install handler refuses early and surfaces
-# a friendly message; users can still launch the markdown docs panel
-# or apostrophe (apostrophe.yaml) which is the aarch64-friendly path.
-arches: [x86_64]
+# Flathub currently publishes md.obsidian.Obsidian for x86_64 and aarch64.
+# Keep this explicit so the UI can gate cleanly if upstream changes again.
+arches: [x86_64, aarch64]
 description: >-
   Obsidian markdown vault wrapped as a Hosaka App. The user signs in
   with their own Obsidian account inside the launched window. Hosaka
-  treats the on-disk vault under ~/Obsidian as a future surface for
+  treats the on-disk vault under ~/Vault as a future surface for
   agent-authored notes; today the agent writes through /api/v1/docs/*.
 provider: Obsidian
 backend: flatpak
@@ -19,8 +17,12 @@ install:
     - flatpak
     - install
     - -y
+    - --noninteractive
     - flathub
     - md.obsidian.Obsidian
+# Let Obsidian see the canonical Hosaka vault immediately.
+flatpak_overrides:
+  - --filesystem=~/Vault:create
 launch:
   # Always open onto the canonical vault directory so the operator sees
   # something the moment Obsidian launches. seed-vault.sh creates it.
@@ -37,10 +39,10 @@ memory:
   profile: heavy
   warning: Obsidian is an Electron app; expect ~250 MB resident.
 permissions_notes:
-  - Vault lives on local disk under ~/Obsidian by convention.
+  - Vault lives on local disk under ~/Vault by convention.
   - Sync requires the user's own Obsidian account.
 account_login_required: false
 hosaka_manages_credentials: false
 notes:
   - Future:agent agents may read and append vault notes through a sandbox.
-  - On aarch64 hosts use apostrophe or the built-in docs panel.
+  - Run scripts/seed-vault.sh once to create ~/Vault/welcome.md.

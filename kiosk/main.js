@@ -136,14 +136,30 @@ function normalizeManifest(rawManifest) {
   const aliases = Array.isArray(manifest.aliases)
     ? manifest.aliases.map((alias) => normalizeAppToken(alias)).filter(Boolean)
     : [];
+  const flatpakOverrides = Array.isArray(manifest.flatpak_overrides)
+    ? manifest.flatpak_overrides.map((entry) => String(entry)).filter(Boolean)
+    : [];
+  const arches = Array.isArray(manifest.arches)
+    ? manifest.arches.map((entry) => String(entry).trim().toLowerCase()).filter(Boolean)
+    : [];
   return {
     id,
     name: String(manifest.name ?? id),
+    category: String(manifest.category ?? "other"),
+    description: String(manifest.description ?? ""),
+    provider: String(manifest.provider ?? "unknown"),
     backend: String(manifest.backend ?? "flatpak"),
     flatpakId,
     installCommand,
     launchCommand,
+    flatpakOverrides,
+    arches,
     aliases: Array.from(new Set([id, ...aliases])),
+    memory: manifest.memory && typeof manifest.memory === "object" ? manifest.memory : { profile: "unknown" },
+    permissionsNotes: Array.isArray(manifest.permissions_notes) ? manifest.permissions_notes.map(String) : [],
+    accountLoginRequired: Boolean(manifest.account_login_required),
+    hosakaManagesCredentials: Boolean(manifest.hosaka_manages_credentials),
+    notes: Array.isArray(manifest.notes) ? manifest.notes.map(String) : [],
   };
 }
 
@@ -413,6 +429,16 @@ async function installApp(appId) {
       details: [`install command: ${manifest.installCommand.join(" ")}`, ...collectDetails(result)],
     };
   }
+  const overrideDetails = [];
+  for (const overrideArg of manifest.flatpakOverrides ?? []) {
+    const overrideResult = fakeFlatpakEnabled()
+      ? { ok: true, code: 0, stdout: `[mock] override ${overrideArg}\n`, stderr: "" }
+      : await runCommand("flatpak", ["--user", "override", manifest.flatpakId, overrideArg], { timeoutMs: 15 * 1000 });
+    if (!overrideResult.ok) {
+      overrideDetails.push(`override ${overrideArg} failed`);
+      overrideDetails.push(...collectDetails(overrideResult));
+    }
+  }
   return {
     ok: true,
     appId: manifest.id,
@@ -421,8 +447,10 @@ async function installApp(appId) {
     flatpakAvailable: true,
     flathubConfigured: true,
     host: "electron",
-    message: `installed ${manifest.name}.`,
-    details: [`install command: ${manifest.installCommand.join(" ")}`, ...collectDetails(result)],
+    message: overrideDetails.length > 0
+      ? `installed ${manifest.name}; some permissions need review.`
+      : `installed ${manifest.name}.`,
+    details: [`install command: ${manifest.installCommand.join(" ")}`, ...collectDetails(result), ...overrideDetails],
   };
 }
 
@@ -518,11 +546,21 @@ ipcMain.handle("hosaka-apps:list", async () => {
   return readAppManifests().map((m) => ({
     id: m.id,
     name: m.name,
+    category: m.category,
+    description: m.description,
+    provider: m.provider,
     backend: m.backend,
     flatpak_id: m.flatpakId,
     install: { command: m.installCommand },
     launch: { command: m.launchCommand },
+    flatpak_overrides: m.flatpakOverrides,
+    arches: m.arches,
     aliases: m.aliases,
+    memory: m.memory,
+    permissions_notes: m.permissionsNotes,
+    account_login_required: m.accountLoginRequired,
+    hosaka_manages_credentials: m.hosakaManagesCredentials,
+    notes: m.notes,
   }));
 });
 
