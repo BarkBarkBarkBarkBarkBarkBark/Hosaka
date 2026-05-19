@@ -743,14 +743,15 @@ def health() -> JSONResponse:
 @app.get("/api/llm-key")
 def get_llm_key() -> JSONResponse:
     """Return LLM provider metadata (provider, model, base_url) — never the key."""
-    from hosaka.llm.llm_config import load as _llm_load
+    from hosaka.llm.llm_config import load as _llm_load, openai_compatible_defaults as _llm_defaults
     cfg = _llm_load()
+    defaults = _llm_defaults()
     env_key = bool(os.environ.get("OPENAI_API_KEY"))
     return JSONResponse({
-        "provider":   cfg.get("provider", "openai"),
-        "model":      cfg.get("model") or os.environ.get("OPENAI_MODEL", ""),
-        "base_url":   cfg.get("base_url") or os.environ.get("OPENAI_BASE_URL", ""),
-        "configured": bool(cfg.get("api_key")) or env_key,
+        "provider":   cfg.get("provider", defaults["provider"]),
+        "model":      cfg.get("model") or os.environ.get("OPENAI_MODEL", defaults["model"]),
+        "base_url":   cfg.get("base_url") or os.environ.get("OPENAI_BASE_URL", defaults["base_url"]),
+        "configured": bool(cfg.get("api_key")) or env_key or bool(defaults["api_key"]),
     })
 
 

@@ -37,7 +37,7 @@ def non_empty(value: str) -> str | None:
 REQUIRED: tuple[Key, ...] = (
     Key(
         name="OPENAI_API_KEY",
-        purpose="OpenAI Realtime + chat + Whisper",
+        purpose="OpenAI or OpenAI-compatible chat endpoint",
         validator=starts_with("sk-"),
         probe="openai_chat_models",
     ),
@@ -47,14 +47,14 @@ REQUIRED: tuple[Key, ...] = (
 OPTIONAL: tuple[Key, ...] = (
     Key(
         name="OPENAI_BASE_URL",
-        purpose="Override the OpenAI API base (proxy / Azure / vLLM)",
-        default="https://api.openai.com",
+        purpose="Override the OpenAI-compatible API base (Ollama / proxy / Azure / vLLM)",
+        default="http://100.78.174.79:11434/v1",
         secret=False,
     ),
     Key(
         name="OPENAI_MODEL",
-        purpose="Default OpenAI chat model id",
-        default="gpt-4o-mini",
+        purpose="Default OpenAI-compatible chat model id",
+        default="qwen2.5:0.5b",
         secret=False,
     ),
     Key(

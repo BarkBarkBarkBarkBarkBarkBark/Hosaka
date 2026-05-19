@@ -13,6 +13,18 @@ from pathlib import Path
 _STATE_PATH_ENV = "HOSAKA_STATE_PATH"
 _SYSTEM_DIR = Path("/var/lib/hosaka")
 _USER_DIR = Path.home() / ".hosaka"
+OLLAMA_DEFAULT_BASE_URL = "http://100.78.174.79:11434/v1"
+OLLAMA_DEFAULT_API_KEY = "ollama"
+OLLAMA_DEFAULT_MODEL = "qwen2.5:0.5b"
+
+
+def openai_compatible_defaults() -> dict[str, str]:
+    return {
+        "provider": "openai-compatible",
+        "model": os.getenv("HOSAKA_OLLAMA_MODEL", OLLAMA_DEFAULT_MODEL),
+        "base_url": os.getenv("HOSAKA_OLLAMA_BASE_URL", OLLAMA_DEFAULT_BASE_URL),
+        "api_key": os.getenv("HOSAKA_OLLAMA_API_KEY", OLLAMA_DEFAULT_API_KEY),
+    }
 
 
 def _config_dir() -> Path:
@@ -32,6 +44,8 @@ def load() -> dict:
     try:
         return json.loads(_config_file().read_text(encoding="utf-8"))
     except Exception:
+        if os.getenv("HOSAKA_LOCAL_FIRST", "1").strip().lower() in ("1", "true", "yes", "on"):
+            return openai_compatible_defaults()
         return {}
 
 
@@ -47,6 +61,13 @@ def save(cfg: dict) -> None:
 
 def apply_to_env(cfg: dict) -> None:
     """Inject stored values into os.environ so openai_adapter picks them up."""
+    if cfg.get("provider") == "openai-compatible":
+        defaults = openai_compatible_defaults()
+        os.environ["OPENAI_API_KEY"] = str(cfg.get("api_key") or defaults["api_key"])
+        os.environ["OPENAI_MODEL"] = str(cfg.get("model") or defaults["model"])
+        os.environ["OPENAI_BASE_URL"] = str(cfg.get("base_url") or defaults["base_url"])
+        return
+
     if cfg.get("api_key"):
         os.environ["OPENAI_API_KEY"] = cfg["api_key"]
     if cfg.get("model"):

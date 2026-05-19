@@ -12,6 +12,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 IDENTITY_DIR = REPO_ROOT / "identity"
 MANAGER_DIR = REPO_ROOT / "manager"
 SKILLS_DIR = REPO_ROOT / "skills"
+OLLAMA_DEFAULT_BASE_URL = "http://100.78.174.79:11434/v1"
+OLLAMA_DEFAULT_API_KEY = "ollama"
+OLLAMA_DEFAULT_MODEL = "qwen2.5:0.5b"
+OLLAMA_DEFAULT_ALIAS = "qwen2.5"
 
 IDENTITY_FILES = {
     "AGENT.md": IDENTITY_DIR / "AGENT.md",
@@ -69,16 +73,16 @@ def _seed_config(home: Path) -> dict[str, Any]:
                 "workspace": workspace,
                 "restrict_to_workspace": False,
                 "allow_read_outside_workspace": True,
-                "model_name": "gpt-4o-mini",
+                "model_name": OLLAMA_DEFAULT_ALIAS,
                 "max_tokens": 16384,
                 "max_tool_iterations": 50,
             }
         },
         "model_list": [
             {
-                "model_name": "gpt-4o-mini",
-                "model": "openai/gpt-4o-mini",
-                "api_base": "https://api.openai.com/v1",
+                "model_name": OLLAMA_DEFAULT_ALIAS,
+                "model": f"ollama/{OLLAMA_DEFAULT_MODEL}",
+                "api_base": OLLAMA_DEFAULT_BASE_URL,
             }
         ],
         "gateway": {"host": "127.0.0.1", "port": 18790, "log_level": "warn"},
@@ -146,9 +150,31 @@ def ensure_picoclaw_runtime(home: str | Path | None = None, seed_config: bool = 
     defaults["workspace"] = str(workspace)
     defaults.setdefault("restrict_to_workspace", False)
     defaults.setdefault("allow_read_outside_workspace", True)
-    defaults.setdefault("model_name", "gpt-4o-mini")
+    defaults.setdefault("model_name", OLLAMA_DEFAULT_ALIAS)
     defaults["max_tokens"] = 4096
     defaults.setdefault("max_tool_iterations", 50)
+
+    local_first = os.getenv("HOSAKA_LOCAL_FIRST", "1").strip().lower() in ("1", "true", "yes", "on")
+    model_list = config.setdefault("model_list", [])
+    if isinstance(model_list, list):
+        if not any(
+            isinstance(entry, dict) and entry.get("model_name") == OLLAMA_DEFAULT_ALIAS
+            for entry in model_list
+        ):
+            model_list.insert(0, {
+                "model_name": OLLAMA_DEFAULT_ALIAS,
+                "model": f"ollama/{OLLAMA_DEFAULT_MODEL}",
+                "api_base": OLLAMA_DEFAULT_BASE_URL,
+            })
+        if local_first and defaults.get("model_name") != OLLAMA_DEFAULT_ALIAS:
+            current = str(defaults.get("model_name") or "")
+            target_entry = next(
+                (e for e in model_list if isinstance(e, dict) and e.get("model_name") == current),
+                None,
+            )
+            target_model = str((target_entry or {}).get("model") or "")
+            if not target_model.startswith("ollama/"):
+                defaults["model_name"] = OLLAMA_DEFAULT_ALIAS
 
     gateway = config.setdefault("gateway", {})
     gateway.setdefault("host", "127.0.0.1")
@@ -181,9 +207,6 @@ def ensure_picoclaw_runtime(home: str | Path | None = None, seed_config: bool = 
     clawhub.setdefault("search_path", "")
     clawhub.setdefault("skills_path", "")
     clawhub.setdefault("download_path", "")
-
-    if seed_config and "model_list" not in config:
-        config["model_list"] = _seed_config(home_path)["model_list"]
 
     config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 

@@ -63,8 +63,18 @@ def _probe_openai(key: str, *, timeout: float = 5.0) -> CheckResult:
             status=STATUS_SKIPPED,
             detail="httpx not installed; skipping live probe",
         )
-    base = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com").rstrip("/")
-    url = f"{base}/v1/models"
+    base = os.environ.get("OPENAI_BASE_URL", "").strip().rstrip("/")
+    if not base:
+        try:
+            from hosaka.llm.llm_config import load as _llm_load
+
+            base = str(_llm_load().get("base_url") or "").strip().rstrip("/")
+        except Exception:
+            base = ""
+    base = base or "https://api.openai.com"
+    api_base = base if base.endswith("/v1") else f"{base}/v1"
+    url = f"{api_base}/models"
+    label = "OpenAI-compatible endpoint" if base != "https://api.openai.com" else "OpenAI"
     try:
         with httpx.Client(timeout=timeout) as client:
             resp = client.get(url, headers={"Authorization": f"Bearer {key}"})
@@ -72,10 +82,10 @@ def _probe_openai(key: str, *, timeout: float = 5.0) -> CheckResult:
         return CheckResult(
             name="OPENAI_API_KEY",
             status=STATUS_UNREACHABLE,
-            detail=f"could not reach {base}: {exc}",
+            detail=f"could not reach {label} at {api_base}: {exc}",
         )
     if resp.status_code == 200:
-        return CheckResult(name="OPENAI_API_KEY", status=STATUS_OK, detail=f"{base} accepted the key")
+        return CheckResult(name="OPENAI_API_KEY", status=STATUS_OK, detail=f"{label} at {api_base} accepted the key")
     if resp.status_code in (401, 403):
         try:
             err = resp.json().get("error") or {}
@@ -86,13 +96,25 @@ def _probe_openai(key: str, *, timeout: float = 5.0) -> CheckResult:
         return CheckResult(
             name="OPENAI_API_KEY",
             status=STATUS_INVALID,
-            detail=f"{base} rejected the key ({code}): {message}",
+            detail=f"{label} at {api_base} rejected the key ({code}): {message}",
         )
     return CheckResult(
         name="OPENAI_API_KEY",
         status=STATUS_UNREACHABLE,
-        detail=f"unexpected {resp.status_code} from {base}",
+        detail=f"unexpected {resp.status_code} from {label} at {api_base}",
     )
+
+
+def _allows_compatible_placeholder(key_name: str, value: str) -> bool:
+    base = os.environ.get("OPENAI_BASE_URL", "").strip().rstrip("/")
+    if not base:
+        try:
+            from hosaka.llm.llm_config import load as _llm_load
+
+            base = str(_llm_load().get("base_url") or "").strip().rstrip("/")
+        except Exception:
+            base = ""
+    return key_name == "OPENAI_API_KEY" and base and base != "https://api.openai.com" and value == "ollama"
 
 
 def check_key(key: spec.Key, *, probe: bool = True, timeout: float = 5.0) -> CheckResult:
@@ -114,7 +136,7 @@ def check_key(key: spec.Key, *, probe: bool = True, timeout: float = 5.0) -> Che
             required=True,
         )
 
-    if key.validator:
+    if key.validator and not _allows_compatible_placeholder(key.name, value):
         problem = key.validator(value)
         if problem:
             return CheckResult(
