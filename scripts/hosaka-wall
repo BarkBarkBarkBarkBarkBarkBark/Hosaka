@@ -120,6 +120,7 @@ chromium_flags() {
   )
   case "$HOSAKA_CHROMIUM_MODE" in
     app_window)
+      # shellcheck disable=SC2054  # commas inside Chromium flag values, not array separators
       base+=(
         "--app=$HOSAKA_CHROMIUM_URL"
         --window-size=800,480

@@ -1,0 +1,157 @@
+# Machine-readable known failures and fixes for the Hosaka Pi appliance
+# installer. Consumed by tooling (hosaka doctor extensions, install
+# supervisor) and by humans grepping for a specific symptom.
+#
+# Schema (per entry):
+#   id:                   stable slug
+#   symptom:              what the user sees / what the log shows
+#   layer:                which subsystem owns the failure
+#   detect:               commands that match the failure
+#   fix:                  commands or steps that recover
+#   prevention:           install-time guard that keeps it from recurring
+#   references:           file paths / docs that explain the fix in depth
+
+version: 1
+
+failures:
+
+  - id: missing_x_server
+    symptom: |
+      Chromium prints "Missing X server or $DISPLAY" /
+      "The platform failed to initialize. Exiting." and the wall is black.
+    layer: display
+    detect:
+      - test -z "$DISPLAY"
+      - xdpyinfo -display :0 ; [ $? -ne 0 ]
+      - pgrep -x Xorg ; [ $? -ne 0 ]
+    fix:
+      - hosaka display doctor
+      - sudo systemctl restart getty@tty1     # if autologin drop-in present
+      - /usr/local/bin/hosaka-startx          # manual relaunch
+    prevention:
+      - scripts/install_hosaka_display.sh --profile display-kiosk --enable-tty1-autologin
+      - dotfiles/xinitrc anchors with `exec tail -f /dev/null` so the session never dies on shell close
+    references:
+      - docs/raspberry-pi-install.md#x--chromium-kiosk-boot
+      - scripts/hosaka-startx
+
+  - id: xorg_only_console_users
+    symptom: |
+      /var/log/Xorg.0.log or startx output says:
+      "Xorg.wrap: only console users are allowed to run the X server"
+    layer: display
+    detect:
+      - grep -F "only console users" /var/log/Xorg.0.log
+      - grep -F "only console users" "$HOME/.local/state/startx.log"
+    fix:
+      - sudo tee /etc/X11/Xwrapper.config <<<'allowed_users=anybody\nneeds_root_rights=yes'
+    prevention:
+      - scripts/install_hosaka_display.sh --profile display-kiosk writes Xwrapper.config automatically
+      - file is intentionally opt-in for appliance / kiosk builds only
+    references:
+      - scripts/install_hosaka_display.sh
+
+  - id: xorg_drm_device_busy
+    symptom: |
+      Xorg fails with "drm device is busy" or "no screens found";
+      typically after a previous Xorg crash left /tmp/.X0-lock stale.
+    layer: display
+    detect:
+      - test -e /tmp/.X0-lock
+      - pgrep -x Xorg ; [ $? -ne 0 ]
+    fix:
+      - sudo rm -f /tmp/.X0-lock /tmp/.X11-unix/X0
+      - hosaka-startx
+    prevention:
+      - hosaka-startx has a re-entry guard but cannot clear a stale lock without consent
+    references:
+      - scripts/hosaka-startx
+
+  - id: picoclaw_bin_false
+    symptom: |
+      curl http://127.0.0.1:8421/api/health reports picoclaw_bin:false
+      even though `which picoclaw` from an SSH shell works.
+    layer: backend
+    detect:
+      - curl -s http://127.0.0.1:8421/api/health | grep -F '"picoclaw_bin":false'
+    fix:
+      - sudo scripts/install_hosaka.sh         # regenerates /etc/hosaka/env with detected PICOCLAW_BIN
+      - sudo systemctl restart hosaka-webserver
+    prevention:
+      - install_hosaka.sh writes PICOCLAW_BIN / PICOCLAW_HOME / PATH into /etc/hosaka/env
+      - systemd units use EnvironmentFile=-/etc/hosaka/env
+    references:
+      - scripts/install_hosaka.sh
+      - docs/raspberry-pi-install.md#picoclaw_bin-false-in-backend-health
+
+  - id: picoclaw_config_unknown_api_key
+    symptom: |
+      picoclaw status emits:
+        "config.json contains unknown field(s): model_list[0].api_key"
+      Hosaka frontend becomes unable to reach the model.
+    layer: picoclaw
+    detect:
+      - grep -E '"api_keys?"[[:space:]]*:' "$HOME/.picoclaw/config.json"
+    fix:
+      - hosaka configure picoclaw      # strips api_key into ~/.picoclaw/.security.yml
+      - hosaka picoclaw doctor         # verify clean
+    prevention:
+      - hosaka/main_console.py _check_api_key writes to .security.yml only
+      - scripts/configure-picoclaw.sh removes api_key/api_keys during harden
+      - tests/test_picoclaw_security.py asserts config.json stays credential-free
+    references:
+      - hosaka/main_console.py
+      - scripts/configure-picoclaw.sh
+      - tests/test_picoclaw_security.py
+
+  - id: hosaka_repo_relative_path
+    symptom: |
+      Commands fail with "no such file" pointing at a relative path like
+      home/fsc/code/Hosaka (note the missing leading slash).
+    layer: cli
+    detect:
+      - echo "$HOSAKA_REPO" | grep -vE '^/'
+      - echo "$HOSAKA_DIRECTORY" | grep -vE '^/'
+    fix:
+      - export HOSAKA_DIRECTORY="$HOME/code/Hosaka"
+      - hosaka paths           # confirm the new value
+    prevention:
+      - scripts/hosaka rejects non-absolute HOSAKA_REPO with a one-line repair hint
+      - scripts/install_hosaka.sh validates HOSAKA_DIRECTORY/HOSAKA_REPO before touching anything
+    references:
+      - scripts/hosaka
+
+  - id: electron_sigtrap
+    symptom: |
+      Electron exits with SIGTRAP shortly after window creation on the Pi
+      display. `electron --version` smoke test passes; full app launch fails.
+    layer: display
+    detect:
+      - dmesg | grep -F 'electron'
+      - grep -F SIGTRAP "$HOME/.local/state/hosaka-wall.log"
+    fix:
+      - export HOSAKA_KIOSK_RENDERER=chromium
+      - hosaka wall restart
+    prevention:
+      - scripts/install_hosaka_display.sh defaults to --renderer chromium
+      - hosaka-wall warns on Electron and respects HOSAKA_KIOSK_RENDERER
+    references:
+      - scripts/hosaka-wall
+      - docs/deployment_updates.yaml
+
+  - id: xterm_closed_kills_gui
+    symptom: |
+      Operator closes the xterm window and the entire Chromium wall vanishes.
+    layer: display
+    detect:
+      - grep -F 'exec xterm' "$HOME/.xinitrc"
+      - grep -F 'exec chromium' "$HOME/.xinitrc"
+      - grep -F 'exec hosaka-wall' "$HOME/.xinitrc"
+    fix:
+      - cp dotfiles/xinitrc "$HOME/.xinitrc"
+      - chmod 0755 "$HOME/.xinitrc"
+    prevention:
+      - dotfiles/xinitrc anchors with `exec tail -f /dev/null`
+      - install_hosaka.sh (kiosk profile) overwrites ~/.xinitrc on every run
+    references:
+      - dotfiles/xinitrc
