@@ -57,12 +57,50 @@ else
   DEFAULT_REPO_ROOT="/home/operator/Hosaka"
 fi
 
-REPO_ROOT="${HOSAKA_REPO:-$DEFAULT_REPO_ROOT}"
+# REPO_ROOT precedence: HOSAKA_DIRECTORY (the soft-coded alias requested in
+# the Pi appliance hardening packet) → HOSAKA_REPO (legacy) → script-relative
+# detection → /etc/hosaka/repo_root → last-resort default. Whichever path
+# wins, it MUST be absolute. The HOSAKA_REPO=home/fsc/code/Hosaka bug (note
+# the missing leading slash) was the canonical failure this guard prevents.
+REPO_ROOT="${HOSAKA_DIRECTORY:-${HOSAKA_REPO:-}}"
+if [[ -z "$REPO_ROOT" && -f /etc/hosaka/repo_root ]]; then
+  REPO_ROOT="$(head -n1 /etc/hosaka/repo_root 2>/dev/null || true)"
+fi
+REPO_ROOT="${REPO_ROOT:-$DEFAULT_REPO_ROOT}"
+
 DEPLOY_ROOT="${HOSAKA_DEPLOY:-/opt/hosaka-field-terminal}"
 STATE_DIR="${HOSAKA_STATE_DIR:-/var/lib/hosaka}"
 RUNTIME_MODE_FILE="$STATE_DIR/mode"
 BOOT_MARKER="/boot/firmware/hosaka-build-mode"
 KIOSK_AUTOSTART="${HOME:-/home/operator}/.config/openbox/autostart"
+
+# Validate HOSAKA_REPO / HOSAKA_DIRECTORY is absolute. Single-shot bail with
+# a precise repair hint so the operator does not have to guess. Skipped for
+# the `paths` verb itself when it wants to *report* the bad value.
+_hosaka_validate_repo_root() {
+  local mode="${1:-strict}"  # strict | warn
+  case "$REPO_ROOT" in
+    /*) : ;;
+    *)
+      local hint="export HOSAKA_DIRECTORY=\"\$HOME/code/Hosaka\""
+      if [[ "$mode" == "warn" ]]; then
+        printf 'HOSAKA_REPO must be absolute (got: %s)\nRepair: %s\n' "$REPO_ROOT" "$hint" >&2
+        return 1
+      fi
+      printf 'HOSAKA_REPO must be absolute (got: %s)\n' "$REPO_ROOT" >&2
+      printf 'Repair:  %s\n' "$hint" >&2
+      printf '         hosaka paths    # confirm the new value\n' >&2
+      exit 2
+      ;;
+  esac
+}
+# Validate eagerly unless we are running a metadata verb that needs to *show*
+# the bad path (paths, doctor) — those handle validation themselves.
+case "${1:-}" in
+  paths|doctor|-h|--help|help|"") : ;;
+  *) _hosaka_validate_repo_root strict ;;
+esac
+
 
 WEB_UNIT="hosaka-webserver.service"
 KIOSK_UNIT="hosaka-kiosk.service"
@@ -1410,6 +1448,306 @@ USAGE
   esac
 }
 
+# ── paths / display doctor / wall / picoclaw doctor / seed ────────────────────
+# Added by the Pi appliance install hardening packet. These are read-only or
+# narrowly-scoped commands that help diagnose the most common appliance
+# failure modes (HOSAKA_REPO malformed, X server dead, Picoclaw misconfigured,
+# legacy api_key fields in config.json).
+
+_resolve_repo_paths() {
+  # Echoes "key=value" lines for the path tables. Used by both human and
+  # --json output of `hosaka paths`.
+  local hosaka_bin python_path picoclaw_home picoclaw_model display xauth
+  local x_alive chromium_path electron_path current_mode
+  hosaka_bin="$(command -v hosaka 2>/dev/null || true)"
+  python_path="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+  picoclaw_home="${PICOCLAW_HOME:-$HOME/.picoclaw}"
+  picoclaw_model="${PICOCLAW_MODEL:-}"
+  if [[ -z "$picoclaw_model" && -f "$picoclaw_home/config.json" ]]; then
+    picoclaw_model="$(sed -n 's/.*"model_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+      "$picoclaw_home/config.json" 2>/dev/null | head -n1)"
+  fi
+  display="${DISPLAY:-}"
+  xauth="${XAUTHORITY:-$HOME/.Xauthority}"
+  if [[ -n "$display" ]] && command -v xdpyinfo >/dev/null 2>&1 && \
+     xdpyinfo -display "$display" >/dev/null 2>&1; then
+    x_alive=true
+  else
+    x_alive=false
+  fi
+  chromium_path="$(command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null || true)"
+  electron_path="$(command -v electron 2>/dev/null || true)"
+  current_mode="$(read_runtime_mode 2>/dev/null || echo unknown)"
+  printf 'active_hosaka_binary=%s\n' "$hosaka_bin"
+  printf 'HOSAKA_REPO=%s\n' "$REPO_ROOT"
+  printf 'HOSAKA_DIRECTORY=%s\n' "${HOSAKA_DIRECTORY:-$REPO_ROOT}"
+  local resolved="$REPO_ROOT"
+  [[ -d "$REPO_ROOT" ]] && resolved="$(cd "$REPO_ROOT" 2>/dev/null && pwd)"
+  printf 'resolved_repo_root=%s\n' "$resolved"
+  printf 'deploy_root=%s\n' "$DEPLOY_ROOT"
+  printf 'state_dir=%s\n' "$STATE_DIR"
+  printf 'frontend_exists=%s\n' "$( [[ -f "$REPO_ROOT/frontend/package.json" ]] && echo true || echo false )"
+  printf 'kiosk_exists=%s\n' "$( [[ -f "$REPO_ROOT/kiosk/package.json" ]] && echo true || echo false )"
+  printf 'hosaka_pkg_exists=%s\n' "$( [[ -d "$REPO_ROOT/hosaka" ]] && echo true || echo false )"
+  printf 'scripts_hosaka_exists=%s\n' "$( [[ -f "$REPO_ROOT/scripts/hosaka" ]] && echo true || echo false )"
+  printf 'python_path=%s\n' "$python_path"
+  printf 'picoclaw_bin=%s\n' "$PICOCLAW_BIN"
+  printf 'picoclaw_home=%s\n' "$picoclaw_home"
+  printf 'picoclaw_model=%s\n' "$picoclaw_model"
+  printf 'display=%s\n' "$display"
+  printf 'xauthority=%s\n' "$xauth"
+  printf 'x_alive=%s\n' "$x_alive"
+  printf 'chromium_path=%s\n' "$chromium_path"
+  printf 'electron_path=%s\n' "$electron_path"
+  printf 'current_mode=%s\n' "$current_mode"
+}
+
+cmd_paths() {
+  local as_json=0
+  while (( $# )); do
+    case "$1" in
+      --json) as_json=1; shift ;;
+      -h|--help) printf 'usage: hosaka paths [--json]\n'; return 0 ;;
+      *) die "unknown arg: $1 (try: --json)" ;;
+    esac
+  done
+
+  # Run validation in WARN mode so we still print the table even when
+  # HOSAKA_REPO is malformed — the operator needs to see the bad value.
+  local repo_warning=""
+  if ! _hosaka_validate_repo_root warn 2>/tmp/.hosaka-paths-warn; then
+    repo_warning="$(cat /tmp/.hosaka-paths-warn 2>/dev/null || true)"
+    rm -f /tmp/.hosaka-paths-warn 2>/dev/null || true
+  fi
+
+  if (( as_json )); then
+    # Hand-rolled JSON emitter; we don't want to depend on jq being installed
+    # on a fresh Pi for a diagnostic verb.
+    printf '{\n'
+    local first=1 key val
+    while IFS='=' read -r key val; do
+      [[ -z "$key" ]] && continue
+      if (( first )); then first=0; else printf ',\n'; fi
+      printf '  "%s": "%s"' "$key" "${val//\"/\\\"}"
+    done < <(_resolve_repo_paths)
+    if [[ -n "$repo_warning" ]]; then
+      printf ',\n  "warnings": "%s"' "${repo_warning//$'\n'/ }"
+    fi
+    printf '\n}\n'
+    # Non-zero exit when validation failed — keeps the regression test honest.
+    [[ -n "$repo_warning" ]] && return 2
+    return 0
+  fi
+
+  printf '  %s\n' "$(c_cyan 'hosaka paths')"
+  while IFS='=' read -r key val; do
+    [[ -z "$key" ]] && continue
+    printf '    %-22s %s\n' "$key" "$val"
+  done < <(_resolve_repo_paths)
+  if [[ -n "$repo_warning" ]]; then
+    printf '\n  %s\n' "$(c_red '✗') $(c_amber 'HOSAKA_REPO validation failed')"
+    printf '%s\n' "$repo_warning" | sed 's/^/    /'
+    return 2
+  fi
+}
+
+cmd_picoclaw_doctor() {
+  local rc=0
+  local cfg="$HOME/.picoclaw/config.json"
+  local sec="$HOME/.picoclaw/.security.yml"
+  printf '  %s\n' "$(c_cyan 'hosaka picoclaw doctor')"
+
+  # 1. binary
+  if [[ -x "$PICOCLAW_BIN" ]]; then
+    ok "picoclaw binary: $PICOCLAW_BIN"
+  else
+    warn "picoclaw binary not found at $PICOCLAW_BIN"; rc=1
+  fi
+
+  # 2. status (smoke)
+  if [[ -x "$PICOCLAW_BIN" ]] && "$PICOCLAW_BIN" status >/tmp/.hosaka-pico-status 2>&1; then
+    ok "picoclaw status: OK"
+  else
+    warn "picoclaw status failed; see /tmp/.hosaka-pico-status"; rc=1
+  fi
+
+  # 3. config schema clean (no api_key fields)
+  if [[ -f "$cfg" ]]; then
+    if grep -Eq '"api_keys?"[[:space:]]*:' "$cfg" 2>/dev/null; then
+      warn "config.json contains api_key/api_keys field — Picoclaw v2 will reject it"
+      printf '    %s %s\n' "$(c_amber 'fix:')" "hosaka configure picoclaw    # strips legacy api_key into .security.yml"
+      rc=1
+    else
+      ok "config.json is credential-free (Picoclaw v2 compliant)"
+    fi
+  else
+    warn "no $cfg yet — run: hosaka configure picoclaw"; rc=1
+  fi
+
+  # 4. default model
+  if [[ -f "$cfg" ]]; then
+    local model
+    model="$(sed -n 's/.*"model_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" 2>/dev/null | head -n1)"
+    if [[ -n "$model" ]]; then
+      ok "default model: $model"
+    else
+      warn "no default model_name in config.json"; rc=1
+    fi
+  fi
+
+  # 5. security overlay (only required when an OpenAI-style model is default)
+  if [[ -f "$sec" ]]; then
+    local mode
+    mode="$(stat -c '%a' "$sec" 2>/dev/null || echo unknown)"
+    if [[ "$mode" == "600" ]]; then
+      ok ".security.yml present (0600)"
+    else
+      warn ".security.yml present but mode is $mode (should be 0600)"
+      chmod 0600 "$sec" 2>/dev/null && ok "chmod 0600 applied" || rc=1
+    fi
+    if grep -q 'api_keys' "$sec" 2>/dev/null; then
+      ok ".security.yml carries api_keys"
+    else
+      warn ".security.yml has no api_keys entry"
+    fi
+  else
+    warn "no $sec yet — needed for OpenAI provider; run: hosaka configure picoclaw"
+  fi
+
+  return $rc
+}
+
+cmd_display_doctor() {
+  local as_json=0
+  case "${1:-}" in
+    --json) as_json=1 ;;
+    -h|--help) printf 'usage: hosaka display doctor [--json]\n'; return 0 ;;
+  esac
+
+  local display="${DISPLAY:-:0}"
+  local xauth="${XAUTHORITY:-$HOME/.Xauthority}"
+  local results=()
+  _disp_check() {
+    local label="$1"; shift
+    if "$@" >/dev/null 2>&1; then
+      results+=("ok|$label")
+    else
+      results+=("fail|$label")
+    fi
+  }
+
+  _disp_check "DISPLAY is set"            test -n "$display"
+  _disp_check "XAUTHORITY exists"         test -f "$xauth"
+  _disp_check "xdpyinfo -display $display" sh -c "command -v xdpyinfo >/dev/null && xdpyinfo -display '$display'"
+  _disp_check "Xorg process"              pgrep -x Xorg
+  _disp_check "openbox process"           pgrep -x openbox
+  _disp_check "chromium installed"        sh -c "command -v chromium || command -v chromium-browser"
+  _disp_check "/tmp/.X0-lock absent or stale" sh -c "[ ! -e /tmp/.X0-lock ] || pgrep -x Xorg"
+  _disp_check "/tmp/.X11-unix/X0 socket"  test -S /tmp/.X11-unix/X0
+  _disp_check "/etc/X11/Xwrapper.config"  test -f /etc/X11/Xwrapper.config
+  _disp_check "DRM cards present"         sh -c "ls /sys/class/drm/card* >/dev/null 2>&1"
+
+  if (( as_json )); then
+    printf '{\n  "checks": [\n'
+    local first=1
+    for r in "${results[@]}"; do
+      local status="${r%%|*}" label="${r#*|}"
+      (( first )) && first=0 || printf ',\n'
+      printf '    {"status": "%s", "label": "%s"}' "$status" "${label//\"/\\\"}"
+    done
+    printf '\n  ],\n'
+    printf '  "display": "%s",\n' "$display"
+    printf '  "xauthority": "%s"\n' "$xauth"
+    printf '}\n'
+  else
+    printf '  %s (display=%s)\n' "$(c_cyan 'hosaka display doctor')" "$display"
+    for r in "${results[@]}"; do
+      local status="${r%%|*}" label="${r#*|}"
+      if [[ "$status" == "ok" ]]; then
+        ok "$label"
+      else
+        warn "$label"
+      fi
+    done
+    # Tail recent log files if present
+    for log in /var/log/Xorg.0.log "$HOME/.local/state/startx.log" "$HOME/.local/state/hosaka-wall.log"; do
+      if [[ -f "$log" ]]; then
+        printf '\n  %s (tail $log)\n' "$(c_dim "── $log ──")"
+        tail -n 5 "$log" 2>/dev/null | sed 's/^/    /'
+      fi
+    done
+  fi
+}
+
+cmd_wall() {
+  local sub="${1:-start}"
+  shift || true
+  local wall_bin
+  wall_bin="$(command -v hosaka-wall 2>/dev/null || true)"
+  if [[ -z "$wall_bin" && -x "$REPO_ROOT/scripts/hosaka-wall" ]]; then
+    wall_bin="$REPO_ROOT/scripts/hosaka-wall"
+  fi
+  [[ -n "$wall_bin" ]] || die "hosaka-wall not installed; run scripts/install_hosaka_display.sh"
+  case "$sub" in
+    start|stop|restart|status) exec "$wall_bin" "$sub" "$@" ;;
+    *) die "unknown wall verb: $sub (try: start|stop|restart|status)" ;;
+  esac
+}
+
+cmd_seed() {
+  # Seed-USB provisioning. Manifest-driven; we deliberately stay narrow here
+  # — full bundle import lives in scripts/configure-picoclaw.sh and the
+  # hosaka.secrets module. This verb just orchestrates them.
+  local sub="${1:-scan}"
+  shift || true
+  case "$sub" in
+    scan)
+      printf '  scanning for HOSAKA_SEED volumes…\n'
+      local found=0
+      for base in /media /mnt /run/media; do
+        [[ -d "$base" ]] || continue
+        while IFS= read -r path; do
+          [[ -d "$path/hosaka-seed" ]] || continue
+          printf '    %s %s\n' "$(c_green '✓')" "$path/hosaka-seed"
+          found=1
+        done < <(find "$base" -mindepth 1 -maxdepth 3 -type d 2>/dev/null)
+      done
+      (( found )) || warn "no hosaka-seed bundle found under /media, /mnt, /run/media"
+      ;;
+    import)
+      local path="${1:-}"
+      [[ -n "$path" ]] || die "usage: hosaka seed import <path-to-hosaka-seed>"
+      [[ -d "$path" ]] || die "no such directory: $path"
+      local manifest="$path/manifest.yaml"
+      [[ -f "$manifest" ]] || die "missing manifest: $manifest"
+      ok "found manifest: $manifest"
+      mkdir -p "$HOME/.picoclaw" "$HOME/.hosaka" "$HOME/.local/state"
+      if [[ -f "$path/secrets/picoclaw.security.yml" ]]; then
+        install -m 600 "$path/secrets/picoclaw.security.yml" "$HOME/.picoclaw/.security.yml"
+        ok "installed ~/.picoclaw/.security.yml (mode 0600, contents not printed)"
+      fi
+      if [[ -f "$path/secrets/hosaka.secrets.json" ]]; then
+        install -m 600 "$path/secrets/hosaka.secrets.json" "$HOME/.hosaka/secrets.json"
+        ok "installed ~/.hosaka/secrets.json (mode 0600, contents not printed)"
+      fi
+      if [[ -f "$path/config/hosaka.env" ]]; then
+        sudo install -m 644 "$path/config/hosaka.env" /etc/hosaka/env
+        ok "mirrored config/hosaka.env -> /etc/hosaka/env"
+      fi
+      date -Is > "$HOME/.local/state/hosaka-seed-imported.json"
+      printf 'cmd_seed: running post-import doctor…\n'
+      cmd_picoclaw_doctor || true
+      ;;
+    doctor)
+      cmd_picoclaw_doctor
+      ;;
+    -h|--help|help)
+      printf 'usage: hosaka seed scan | import <path> | doctor\n'
+      ;;
+    *) die "unknown seed verb: $sub (try: scan|import|doctor)" ;;
+  esac
+}
+
 # ── dispatch ──────────────────────────────────────────────────────────────────
 
 usage() {
@@ -1429,11 +1767,18 @@ hosaka — operator CLI for the Hosaka Field Terminal Pi
   Aliases (legacy): \`hosaka mode kiosk\` → console, \`hosaka mode build\` → device
 
   hosaka status                     what's running + memory snapshot
+  hosaka paths [--json]             print authoritative runtime paths + validation
   hosaka down [--port N] [--all]    stop local dev listeners/windows for this checkout
   hosaka dashboard                  print the device dashboard once and exit
   hosaka diag [--json] [--host URL] shared device/network/peripheral snapshot
   hosaka doctor [--json] [--strict] [--profile PROFILE] [--host URL]
                                     run structured diagnostics; future MCP-friendly
+  hosaka display doctor [--json]    diagnose X/Chromium/openbox/DRM failures
+  hosaka wall start|stop|restart|status
+                                    Chromium GUI supervisor (does not touch X)
+  hosaka picoclaw doctor            check picoclaw bin/config/.security.yml
+  hosaka seed scan|import <path>|doctor
+                                    USB seed bundle provisioning (manifest-driven)
   hosaka dev [--port N] [--no-open] [-fresh]
                                     local frontend dev without docker.
                                     default = vite + electron; reuses existing session if port is busy
@@ -1487,10 +1832,31 @@ main() {
       esac
       ;;
     status)    cmd_status "$@" ;;
+    paths)     cmd_paths "$@" ;;
     down)      cmd_down "$@" ;;
     dashboard) exec /usr/local/bin/hosaka-device-dashboard --once ;;
     diag)      cmd_diag "$@" ;;
     doctor)    cmd_doctor "$@" ;;
+    display)
+      # `hosaka display doctor` — drill into the X/Chromium layer alone.
+      local dsub="${1:-doctor}"
+      shift || true
+      case "$dsub" in
+        doctor) cmd_display_doctor "$@" ;;
+        *) die "unknown display verb: $dsub (try: doctor)" ;;
+      esac
+      ;;
+    wall)      cmd_wall "$@" ;;
+    picoclaw)
+      # `hosaka picoclaw doctor` — drill into the Picoclaw config/secrets layer.
+      local psub="${1:-doctor}"
+      shift || true
+      case "$psub" in
+        doctor) cmd_picoclaw_doctor "$@" ;;
+        *) die "unknown picoclaw verb: $psub (try: doctor)" ;;
+      esac
+      ;;
+    seed)      cmd_seed "$@" ;;
     dev)       cmd_dev "$@" ;;
     build)     cmd_build "$@" ;;
     update)    cmd_update "$@" ;;

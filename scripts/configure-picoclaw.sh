@@ -212,6 +212,9 @@ configure_model_from_key() {
   if [[ -n "$key" && "$key" != "ollama" ]]; then
     note "importing compatible API key into Hosaka secrets (key hidden)"
     save_key_into_hosaka_secrets "$key" || true
+    # Picoclaw v2: write the actual credential into ~/.picoclaw/.security.yml
+    # rather than letting `picoclaw model` stash it into config.json.
+    write_picoclaw_security_key "$MODEL" "$key" || true
   fi
 
   set +x
@@ -226,6 +229,77 @@ configure_model_from_key() {
     return "$rc"
   fi
   ok "Picoclaw model '$MODEL' configured"
+}
+
+# Write the provider credential into ~/.picoclaw/.security.yml — the v2
+# overlay file. config.json keeps structure/routing only; this file keeps
+# secrets and is chmod 0600. Preserves entries for other models so OpenAI
+# and Ollama can coexist.
+write_picoclaw_security_key() {
+  local model_name="$1"
+  local key="$2"
+  [[ -n "$model_name" && -n "$key" ]] || return 0
+  local py=""
+  for candidate in "$REPO_ROOT/.venv/bin/python" "$REPO_ROOT/.hosakavenv/bin/python" python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1 || [[ -x "$candidate" ]]; then
+      py="$candidate"
+      break
+    fi
+  done
+  [[ -n "$py" ]] || { warn "no python found; cannot write .security.yml"; return 0; }
+  note "writing Picoclaw v2 security overlay (~/.picoclaw/.security.yml) — key hidden"
+  HOME="$TARGET_HOME" "$py" - "$TARGET_HOME" "$model_name" "$key" <<'PY'
+import os, sys
+from pathlib import Path
+
+home = Path(sys.argv[1]).expanduser()
+model_name = sys.argv[2]
+key = sys.argv[3]
+path = home / ".picoclaw" / ".security.yml"
+path.parent.mkdir(parents=True, exist_ok=True)
+
+data = {}
+if path.exists():
+    try:
+        import yaml  # type: ignore
+        with path.open("r", encoding="utf-8") as fh:
+            loaded = yaml.safe_load(fh) or {}
+            if isinstance(loaded, dict):
+                data = loaded
+    except Exception:
+        data = {}
+
+ml = data.get("model_list")
+if not isinstance(ml, dict):
+    ml = {}
+entry = ml.get(model_name) if isinstance(ml.get(model_name), dict) else {}
+keys = entry.get("api_keys") if isinstance(entry.get("api_keys"), list) else []
+keys = [k for k in keys if isinstance(k, str) and k and k != key]
+keys.insert(0, key)
+entry["api_keys"] = keys
+ml[model_name] = entry
+data["model_list"] = ml
+
+try:
+    import yaml  # type: ignore
+    text = yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
+except Exception:
+    lines = ["model_list:"]
+    for name, ent in (data.get("model_list") or {}).items():
+        lines.append(f"  {name}:")
+        ks = (ent or {}).get("api_keys") or []
+        if ks:
+            lines.append("    api_keys:")
+            for k in ks:
+                lines.append(f"      - {k}")
+    text = "\n".join(lines) + "\n"
+
+path.write_text(text, encoding="utf-8")
+try:
+    os.chmod(path, 0o600)
+except Exception:
+    pass
+PY
 }
 
 # Mirror the same key into the Hosaka-native secrets store so the voice
@@ -300,6 +374,19 @@ try:
 except Exception:
     raise SystemExit(0)
 
+# ── Picoclaw v2 hard rule: config.json must contain NO secrets. ──
+# Any legacy api_key / api_keys field at the model_list level makes
+# `picoclaw status` reject the whole config with:
+#   "config.json contains unknown field(s): model_list[0].api_key"
+# Strip them silently so this migration is idempotent. Real secrets
+# live in ~/.picoclaw/.security.yml (an overlay, not a replacement).
+_existing_list = data.get("model_list")
+if isinstance(_existing_list, list):
+    for _entry in _existing_list:
+        if isinstance(_entry, dict):
+            _entry.pop("api_key", None)
+            _entry.pop("api_keys", None)
+
 local_first = os.environ.get("HOSAKA_LOCAL_FIRST", "1").strip().lower() in ("1", "true", "yes", "on")
 workspace = str(home / ".picoclaw" / "workspace")
 defaults = data.setdefault("agents", {}).setdefault("defaults", {})
@@ -330,6 +417,19 @@ if isinstance(model_list, list):
         target_model = str((target_entry or {}).get("model") or "")
         if not target_model.startswith("ollama/"):
             defaults["model_name"] = model
+
+    # Per deployment_updates.yaml.known_good_runtime_files.picoclaw_config:
+    # config.json should always carry a gpt-4.1-mini OpenAI entry so the
+    # operator can switch defaults without re-editing structure. Credential-free.
+    if not any(
+        isinstance(entry, dict) and entry.get("model_name") == "gpt-4.1-mini"
+        for entry in model_list
+    ):
+        model_list.append({
+            "model_name": "gpt-4.1-mini",
+            "model": "openai/gpt-4.1-mini",
+            "api_base": "https://api.openai.com/v1",
+        })
 
 tools = data.setdefault("tools", {})
 tools["allow_read_paths"] = ["/"]

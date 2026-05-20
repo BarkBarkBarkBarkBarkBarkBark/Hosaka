@@ -865,66 +865,202 @@ def _draw_ascii(subject: str, current_dir: Path) -> None:
 
 
 def _check_api_key() -> None:
-    """If no API key is configured, prompt the user to enter one."""
+    """Ensure an OpenAI API key is reachable for Picoclaw without corrupting config.json.
+
+    Picoclaw v2 rejects any ``model_list[*].api_key`` field inside
+    ``~/.picoclaw/config.json`` with::
+
+        config.json contains unknown field(s): model_list[0].api_key
+
+    That single line is what kept knocking the appliance frontend offline
+    after a fresh Hosaka onboarding. Config is structure; secrets are an
+    overlay. So this function:
+
+      1. Looks for an OpenAI key in (priority order):
+           - ``OPENAI_API_KEY`` env var
+           - Hosaka secrets store (``~/.hosaka/secrets.json``)
+           - Picoclaw security file (``~/.picoclaw/.security.yml``)
+      2. If none is present and we have a TTY, prompts hidden (``getpass``).
+      3. Writes the key into ``~/.picoclaw/.security.yml`` against whichever
+         model the user is actually defaulting to (or ``gpt-4.1-mini``), and
+         mirrors it into the Hosaka secrets store so the webserver and voice
+         daemon can resolve it too.
+      4. Never touches ``model_list[*].api_key`` in ``config.json``. If a
+         legacy ``api_key`` field is found there, it is stripped (with a
+         one-time notice) so Picoclaw stops rejecting the file.
+
+    This is intentionally silent on the happy path so re-entry into the TUI
+    after onboarding doesn't re-prompt the operator.
+    """
+    import getpass
     import json
+    import os
+    import sys
 
     cfg_path = Path.home() / ".picoclaw" / "config.json"
-    if not cfg_path.exists():
-        return  # picoclaw not set up yet — onboard handles this
+    security_path = Path.home() / ".picoclaw" / ".security.yml"
 
-    try:
-        cfg = json.loads(cfg_path.read_text())
-    except Exception:
+    # ── 1. Strip illegal api_key fields from config.json (idempotent migration) ──
+    cfg: dict = {}
+    if cfg_path.exists():
+        try:
+            cfg = json.loads(cfg_path.read_text())
+        except Exception:
+            cfg = {}
+        model_list = cfg.get("model_list") if isinstance(cfg.get("model_list"), list) else []
+        stripped = False
+        for entry in model_list:
+            if isinstance(entry, dict):
+                for bad in ("api_key", "api_keys"):
+                    if bad in entry:
+                        entry.pop(bad, None)
+                        stripped = True
+        if stripped:
+            try:
+                cfg["model_list"] = model_list
+                cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
+                print(f"  {GRAY}Migrated legacy api_key out of ~/.picoclaw/config.json "
+                      f"into ~/.picoclaw/.security.yml schema.{R}")
+            except Exception:
+                pass
+
+    # ── 2. Resolve a key from existing sources ──
+    def _key_from_env() -> str:
+        for name in ("OPENAI_API_KEY", "HOSAKA_OPENAI_API_KEY"):
+            val = (os.environ.get(name) or "").strip().strip('"').strip("'")
+            if val:
+                return val
+        return ""
+
+    def _key_from_hosaka_secrets() -> str:
+        try:
+            from hosaka import secrets as hosaka_secrets  # type: ignore
+            val = hosaka_secrets.get("OPENAI_API_KEY") or ""
+            return val.strip() if val else ""
+        except Exception:
+            return ""
+
+    def _key_from_picoclaw_security() -> str:
+        if not security_path.exists():
+            return ""
+        try:
+            from hosaka.secrets.store import import_from_picoclaw_security
+            key, _ = import_from_picoclaw_security()
+            return (key or "").strip()
+        except Exception:
+            return ""
+
+    for resolver in (_key_from_env, _key_from_hosaka_secrets, _key_from_picoclaw_security):
+        if resolver():
+            return  # already configured somewhere safe
+
+    # ── 3. Prompt the user (only if interactive) ──
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        # Non-interactive (systemd, browser terminal, CI). Just say where to put it.
+        print(f"  {AMBER}No OpenAI API key configured.{R}")
+        print(f"  {GRAY}Set OPENAI_API_KEY in the env, run "
+              f"`hosaka secrets set OPENAI_API_KEY ...`, or write it into "
+              f"~/.picoclaw/.security.yml.{R}")
         return
 
-    # Check if any model in model_list has an api_key set
-    model_list = cfg.get("model_list", [])
-    has_key = any(m.get("api_key") for m in model_list)
-    if has_key:
-        return
-
-    # Also check the default model
-    defaults = cfg.get("agents", {}).get("defaults", {})
-    model_name = defaults.get("model_name", "")
-
-    print(f"  {AMBER}No API key found in ~/.picoclaw/config.json{R}")
-    print(f"  {GRAY}Hosaka needs an OpenAI API key to talk to the AI.{R}")
+    print(f"  {AMBER}No OpenAI API key configured for Picoclaw.{R}")
+    print(f"  {GRAY}Hosaka stores the key in ~/.picoclaw/.security.yml "
+          f"(structure stays in config.json, secrets stay separate).{R}")
     print()
     try:
-        key = input(f"  {CYAN}Paste your OpenAI API key (or Enter to skip): {R}").strip()
+        key = getpass.getpass(f"  {CYAN}Paste your OpenAI API key (hidden, Enter to skip): {R}").strip()
     except (EOFError, KeyboardInterrupt):
         print()
         return
 
     if not key:
-        print(f"  {GRAY}Skipped. You can add it later to ~/.picoclaw/config.json{R}")
+        print(f"  {GRAY}Skipped. Add it later with `hosaka secrets set OPENAI_API_KEY ...`.{R}")
         return
 
-    # Find the active model entry or create one
-    target_entry = None
-    for m in model_list:
-        if m.get("model_name") == model_name:
-            target_entry = m
-            break
+    # ── 4. Write to .security.yml (Picoclaw v2 overlay schema) ──
+    defaults = (cfg.get("agents") or {}).get("defaults") or {}
+    model_name = defaults.get("model_name") or "gpt-4.1-mini"
 
-    if target_entry:
-        target_entry["api_key"] = key
-    else:
-        # Add a default gpt-4o-mini entry
-        model_list.append({
-            "model_name": "gpt-4o-mini",
-            "model": "openai/gpt-4o-mini",
-            "api_key": key,
-            "api_base": "https://api.openai.com/v1",
-        })
-        if not model_name:
-            defaults["model_name"] = "gpt-4o-mini"
-            cfg.setdefault("agents", {}).setdefault("defaults", defaults)
+    try:
+        _write_picoclaw_security_key(security_path, model_name, key)
+    except Exception as exc:
+        print(f"  {err_style('Could not write ~/.picoclaw/.security.yml:')} {exc}")
+        return
 
-    cfg["model_list"] = model_list
-    cfg_path.write_text(json.dumps(cfg, indent=2))
-    print(f"  {ok_style('API key saved.')} You're ready to go.")
+    # ── 5. Mirror into Hosaka secrets store (best effort) ──
+    try:
+        from hosaka import secrets as hosaka_secrets  # type: ignore
+        hosaka_secrets.set("OPENAI_API_KEY", key)
+    except Exception:
+        pass
+
+    print(f"  {ok_style('API key saved to ~/.picoclaw/.security.yml.')} "
+          f"config.json was not touched.")
     print()
+
+
+def _write_picoclaw_security_key(path: Path, model_name: str, key: str) -> None:
+    """Write Picoclaw v2 ``.security.yml`` with the OpenAI key for ``model_name``.
+
+    Schema (from Picoclaw v2 docs)::
+
+        model_list:
+          <model_name>:
+            api_keys:
+              - <key>
+
+    Preserves existing entries for other models (e.g. Ollama coexistence).
+    Falls back to a hand-written emitter if PyYAML is unavailable so this
+    never blocks the TUI on a fresh Pi.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data: dict = {}
+    if path.exists():
+        try:
+            import yaml  # type: ignore
+            with path.open("r", encoding="utf-8") as fh:
+                loaded = yaml.safe_load(fh) or {}
+                if isinstance(loaded, dict):
+                    data = loaded
+        except Exception:
+            data = {}
+
+    model_list = data.get("model_list")
+    if not isinstance(model_list, dict):
+        model_list = {}
+    entry = model_list.get(model_name)
+    if not isinstance(entry, dict):
+        entry = {}
+    api_keys = entry.get("api_keys")
+    if not isinstance(api_keys, list):
+        api_keys = []
+    # Replace any prior key for this model (don't accumulate stale keys).
+    api_keys = [k for k in api_keys if isinstance(k, str) and k and k != key]
+    api_keys.insert(0, key)
+    entry["api_keys"] = api_keys
+    model_list[model_name] = entry
+    data["model_list"] = model_list
+
+    try:
+        import yaml  # type: ignore
+        text = yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
+    except Exception:
+        # Minimal hand-rolled emitter — only need the model_list shape.
+        lines = ["model_list:"]
+        for name, ent in (data.get("model_list") or {}).items():
+            lines.append(f"  {name}:")
+            keys = (ent or {}).get("api_keys") or []
+            if keys:
+                lines.append("    api_keys:")
+                for k in keys:
+                    lines.append(f"      - {k}")
+        text = "\n".join(lines) + "\n"
+
+    path.write_text(text, encoding="utf-8")
+    try:
+        os.chmod(path, 0o600)
+    except Exception:
+        pass
 
 
 def run_main_console() -> None:

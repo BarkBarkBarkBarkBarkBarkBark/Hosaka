@@ -1,0 +1,246 @@
+#!/usr/bin/env bash
+# hosaka-wall — Chromium GUI supervisor for the Hosaka appliance display.
+#
+# Goal: never have a chain of failures where "the backend is fine, the X
+# server is fine, but the wall is black because Chromium crashed once and
+# nothing brought it back." Equally: never have a chain where Chromium is
+# happily running but pointing at a dead vite that came up after it.
+#
+# Behavior (mirrors deployment_updates.yaml hosaka-wall block):
+#   - Source /etc/hosaka/env so PATH/PICOCLAW_BIN/HOSAKA_REPO are sane even
+#     when invoked from .xinitrc or systemd (no SSH PATH inheritance).
+#   - Wait for backend health (HOSAKA_BACKEND_URL or 127.0.0.1:8421) before
+#     launching Chromium so the wall never shows the vite proxy error.
+#   - Optionally bring up the frontend if it isn't already listening (dev
+#     mode only — appliance builds serve the SPA from the backend itself).
+#   - Verify X is alive (xdpyinfo). If not, refuse to launch Chromium and
+#     emit a clear message so `hosaka display doctor` has something to chew
+#     on. We do not start X here — that's hosaka-startx's job.
+#   - Launch Chromium with the stable Pi flag set from the packet:
+#       --kiosk or --app  (configurable via HOSAKA_CHROMIUM_MODE)
+#       --no-sandbox --disable-gpu --disable-dev-shm-usage
+#       --disable-crash-reporter --disable-breakpad
+#       --user-data-dir=$HOME/.cache/hosaka-chromium-kiosk
+#   - If Chromium exits, log and respawn after a short backoff. Never kill
+#     X — closing a browser window must not blank the wall.
+#
+# All paths are resolved from $HOME (and optionally $HOSAKA_DIRECTORY), so
+# this script is portable across operator accounts and devices.
+
+set -u
+# Note: we deliberately do NOT use `set -e` — this is a supervisor and a
+# single curl/xdpyinfo non-zero must not exit the whole loop.
+
+# ── soft-coded env ─────────────────────────────────────────────────────
+if [[ -f /etc/hosaka/env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  . /etc/hosaka/env
+  set +a
+fi
+if [[ -f "$HOME/.hosaka/env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$HOME/.hosaka/env"
+  set +a
+fi
+
+HOSAKA_DIRECTORY="${HOSAKA_DIRECTORY:-${HOSAKA_REPO:-$HOME/code/Hosaka}}"
+HOSAKA_BACKEND_URL="${HOSAKA_BACKEND_URL:-http://127.0.0.1:8421}"
+HOSAKA_FRONTEND_URL="${HOSAKA_FRONTEND_URL:-http://127.0.0.1:5173}"
+HOSAKA_CHROMIUM_URL="${HOSAKA_CHROMIUM_URL:-$HOSAKA_BACKEND_URL}"
+HOSAKA_CHROMIUM_MODE="${HOSAKA_CHROMIUM_MODE:-kiosk}"   # kiosk|app_window|debug_window
+HOSAKA_KIOSK_RENDERER="${HOSAKA_KIOSK_RENDERER:-chromium}"
+
+LOG_DIR="$HOME/.local/state"
+LOG_FILE="$LOG_DIR/hosaka-wall.log"
+mkdir -p "$LOG_DIR"
+
+log()  { printf '[hosaka-wall %s] %s\n' "$(date -Is)" "$*" | tee -a "$LOG_FILE" >&2; }
+info() { log "$*"; }
+warn() { log "WARN: $*"; }
+die()  { log "FATAL: $*"; exit 1; }
+
+# ── chromium discovery ────────────────────────────────────────────────
+find_chromium() {
+  if [[ -n "${HOSAKA_CHROMIUM_BIN:-}" && -x "$HOSAKA_CHROMIUM_BIN" ]]; then
+    echo "$HOSAKA_CHROMIUM_BIN"
+    return 0
+  fi
+  for name in chromium chromium-browser /usr/bin/chromium /usr/bin/chromium-browser; do
+    if command -v "$name" >/dev/null 2>&1; then
+      command -v "$name"
+      return 0
+    elif [[ -x "$name" ]]; then
+      echo "$name"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# ── health probes ─────────────────────────────────────────────────────
+url_ok() {
+  local url="$1"
+  curl --silent --max-time 2 --output /dev/null --fail "$url" 2>/dev/null
+}
+
+backend_ok()  { url_ok "$HOSAKA_BACKEND_URL/api/health" || url_ok "$HOSAKA_BACKEND_URL"; }
+frontend_ok() { url_ok "$HOSAKA_FRONTEND_URL"; }
+x_alive() {
+  local disp="${DISPLAY:-:0}"
+  command -v xdpyinfo >/dev/null 2>&1 || return 1
+  xdpyinfo -display "$disp" >/dev/null 2>&1
+}
+
+wait_for_backend() {
+  local tries=60
+  while (( tries-- > 0 )); do
+    backend_ok && return 0
+    sleep 1
+  done
+  return 1
+}
+
+# ── chromium flags ────────────────────────────────────────────────────
+chromium_flags() {
+  # Stable Pi flags from deployment_updates.yaml.hosaka-wall block.
+  local user_data_dir="$HOME/.cache/hosaka-chromium-kiosk"
+  mkdir -p "$user_data_dir"
+  local -a base=(
+    --no-sandbox
+    --disable-gpu
+    --disable-dev-shm-usage
+    --disable-crash-reporter
+    --disable-breakpad
+    --noerrdialogs
+    --disable-translate
+    --disable-features=TranslateUI
+    "--user-data-dir=$user_data_dir"
+  )
+  case "$HOSAKA_CHROMIUM_MODE" in
+    app_window)
+      base+=(
+        "--app=$HOSAKA_CHROMIUM_URL"
+        --window-size=800,480
+        --window-position=0,0
+      )
+      ;;
+    debug_window)
+      base+=(
+        "--app=$HOSAKA_CHROMIUM_URL"
+        --auto-open-devtools-for-tabs
+      )
+      ;;
+    kiosk|*)
+      base+=(--kiosk "--app=$HOSAKA_CHROMIUM_URL")
+      ;;
+  esac
+  printf '%s\n' "${base[@]}"
+}
+
+# ── lifecycle: start / stop / status ──────────────────────────────────
+PIDFILE="$LOG_DIR/hosaka-wall.pid"
+
+cmd_start() {
+  if [[ "$HOSAKA_KIOSK_RENDERER" != "chromium" ]]; then
+    warn "HOSAKA_KIOSK_RENDERER=$HOSAKA_KIOSK_RENDERER (not chromium) — hosaka-wall is a no-op."
+    return 0
+  fi
+  info "starting hosaka-wall; renderer=chromium mode=$HOSAKA_CHROMIUM_MODE url=$HOSAKA_CHROMIUM_URL"
+
+  if ! wait_for_backend; then
+    die "backend health check failed at $HOSAKA_BACKEND_URL — refusing to launch Chromium (run: hosaka doctor)"
+  fi
+  info "backend OK"
+
+  if ! x_alive; then
+    die "X server not alive on ${DISPLAY:-:0} — refusing to launch Chromium (run: hosaka display doctor)"
+  fi
+  info "X OK"
+
+  local chromium
+  if ! chromium="$(find_chromium)"; then
+    die "no chromium binary found in PATH or HOSAKA_CHROMIUM_BIN"
+  fi
+  info "using chromium: $chromium"
+
+  # Respawn loop. If Chromium dies, restart after backoff. Never touch X.
+  local mapped_flags
+  mapfile -t mapped_flags < <(chromium_flags)
+
+  echo $$ > "$PIDFILE"
+  trap 'rm -f "$PIDFILE"; exit 0' INT TERM
+
+  local backoff=1
+  while :; do
+    info "launching chromium ($chromium ${mapped_flags[*]:0:3} ...)"
+    "$chromium" "${mapped_flags[@]}" >>"$LOG_FILE" 2>&1 || true
+    warn "chromium exited; respawning in ${backoff}s (X not touched)"
+    sleep "$backoff"
+    backoff=$(( backoff < 30 ? backoff * 2 : 30 ))
+  done
+}
+
+cmd_stop() {
+  if [[ -f "$PIDFILE" ]]; then
+    local pid
+    pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      info "stopping hosaka-wall pid=$pid"
+      kill "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PIDFILE"
+  fi
+  # Also stop any stray chromium kiosk instance launched by this user.
+  if command -v pgrep >/dev/null 2>&1; then
+    local pids
+    pids="$(pgrep -u "$(id -u)" -f 'chromium.*hosaka-chromium-kiosk' || true)"
+    if [[ -n "$pids" ]]; then
+      info "stopping chromium pids: $pids"
+      # shellcheck disable=SC2086
+      kill $pids 2>/dev/null || true
+    fi
+  fi
+}
+
+cmd_restart() {
+  cmd_stop
+  sleep 1
+  cmd_start
+}
+
+cmd_status() {
+  printf 'backend  : %s\n' "$(backend_ok && echo ok || echo down)"
+  printf 'frontend : %s\n' "$(frontend_ok && echo ok || echo down)"
+  printf 'x_alive  : %s\n' "$(x_alive && echo ok || echo down)"
+  printf 'chromium : %s\n' "$(find_chromium 2>/dev/null || echo missing)"
+  printf 'pidfile  : %s\n' "$PIDFILE"
+  if [[ -f "$PIDFILE" ]]; then
+    printf 'wall_pid : %s\n' "$(cat "$PIDFILE" 2>/dev/null)"
+  fi
+}
+
+case "${1:-start}" in
+  start)   cmd_start ;;
+  stop)    cmd_stop ;;
+  restart) cmd_restart ;;
+  status)  cmd_status ;;
+  -h|--help|help)
+    cat <<USAGE
+hosaka-wall — Chromium GUI supervisor
+
+  hosaka-wall start    verify backend+X, launch Chromium with stable flags
+  hosaka-wall stop     stop chromium kiosk (does not touch X server)
+  hosaka-wall restart  stop then start
+  hosaka-wall status   one-line health summary
+
+Environment:
+  HOSAKA_BACKEND_URL    default http://127.0.0.1:8421
+  HOSAKA_CHROMIUM_URL   default \$HOSAKA_BACKEND_URL
+  HOSAKA_CHROMIUM_MODE  kiosk | app_window | debug_window
+  HOSAKA_KIOSK_RENDERER chromium | electron  (electron handled elsewhere)
+USAGE
+    ;;
+  *) die "unknown command: $1 (try: start|stop|restart|status)" ;;
+esac

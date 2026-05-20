@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# hosaka-startx — robust X launcher for the Hosaka appliance.
+#
+# Why a wrapper instead of inline `startx`?
+#
+# The previous appliance boot was running startx via a long autologin one-liner
+# with nested quoting that periodically corrupted DISPLAY/XAUTHORITY when it
+# was edited. The Pi appliance hardening packet asked for a stable wrapper
+# that:
+#   - exports an absolute runtime env (PATH, XAUTHORITY, DISPLAY)
+#   - calls startx with explicit .xinitrc, :0 vt1 -nolisten tcp
+#   - logs to ~/.local/state/startx.log
+#
+# This file is that wrapper. It is invoked from .bash_profile / autologin in
+# the display_kiosk install profile (see scripts/install_hosaka_display.sh).
+
+set -u
+
+# Soft-coded env (no hardcoded /home/<user>; everything lives under $HOME).
+if [[ -f /etc/hosaka/env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  . /etc/hosaka/env
+  set +a
+fi
+if [[ -f "$HOME/.hosaka/env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$HOME/.hosaka/env"
+  set +a
+fi
+
+# Only run on the foreground console (vt1). Prevents accidental startx from
+# inside an SSH session that would fight the real graphical user.
+TTY="$(tty 2>/dev/null || echo unknown)"
+case "$TTY" in
+  /dev/tty1) : ;;
+  *)
+    echo "hosaka-startx: refusing to run on $TTY (must be /dev/tty1)" >&2
+    exit 0
+    ;;
+esac
+
+# Re-entry guard. If an X server is already up on :0 we do nothing — the
+# operator probably just logged into a second tty1 by mistake.
+if [[ -e /tmp/.X0-lock ]] || [[ -e /tmp/.X11-unix/X0 ]]; then
+  echo "hosaka-startx: X already running on :0 — not starting another." >&2
+  exit 0
+fi
+
+export DISPLAY="${DISPLAY:-:0}"
+export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+export PATH="$HOME/.local/bin:${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}"
+
+mkdir -p "$HOME/.local/state"
+LOG_FILE="$HOME/.local/state/startx.log"
+
+XINITRC="$HOME/.xinitrc"
+if [[ ! -f "$XINITRC" ]]; then
+  echo "hosaka-startx: $XINITRC missing; falling back to /etc/X11/xinit/xinitrc" >&2
+  XINITRC=/etc/X11/xinit/xinitrc
+fi
+
+# Absolute path to startx — autologin shells often have a stripped PATH.
+STARTX_BIN="$(command -v startx 2>/dev/null || true)"
+STARTX_BIN="${STARTX_BIN:-/usr/bin/startx}"
+if [[ ! -x "$STARTX_BIN" ]]; then
+  echo "hosaka-startx: startx not found (looked in PATH and /usr/bin/startx)" >&2
+  exit 127
+fi
+
+printf '\n[hosaka-startx %s] launching: %s %s -- :0 vt1 -nolisten tcp\n' \
+  "$(date -Is)" "$STARTX_BIN" "$XINITRC" >>"$LOG_FILE"
+
+exec "$STARTX_BIN" "$XINITRC" -- :0 vt1 -nolisten tcp >>"$LOG_FILE" 2>&1

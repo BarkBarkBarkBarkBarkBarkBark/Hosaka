@@ -1,17 +1,46 @@
 #!/usr/bin/env bash
+# Hosaka appliance installer.
+#
+# Hard rule: NEVER hardcode per-device paths (no /home/fsc, no /home/pi,
+# no /home/operator). Resolve everything from the invoking user's $HOME,
+# optionally overridden by $HOSAKA_DIRECTORY for the repo location and
+# $HOSAKA_DEPLOY for the deploy root. That keeps the installer portable
+# from a Pi to a Jetson to a workstation without re-templating files.
 set -euo pipefail
 
-APP_ROOT="/opt/hosaka-field-terminal"
+APP_ROOT="${HOSAKA_DEPLOY:-/opt/hosaka-field-terminal}"
 SERVICE_CONSOLE="hosaka-field-terminal.service"
 SERVICE_HEADLESS="hosaka-field-terminal-headless.service"
 SERVICE_WEBSERVER="hosaka-webserver.service"
 SERVICE_KIOSK="hosaka-kiosk.service"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# REPO_ROOT precedence: explicit $HOSAKA_DIRECTORY → $HOSAKA_REPO → script-relative.
+# $HOSAKA_DIRECTORY is the user-facing alias requested in the install hardening
+# packet; $HOSAKA_REPO is preserved for backward compatibility with the runtime
+# CLI. Whichever is used, it MUST be absolute.
+REPO_ROOT="${HOSAKA_DIRECTORY:-${HOSAKA_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
+case "$REPO_ROOT" in
+  /*) : ;;
+  *)
+    echo "[install] ERROR: HOSAKA_DIRECTORY/HOSAKA_REPO must be an absolute path, got: $REPO_ROOT" >&2
+    echo "[install]        try: HOSAKA_DIRECTORY=\"\$HOME/code/Hosaka\" $0" >&2
+    exit 2
+    ;;
+esac
+
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 INSTALL_TAILSCALE="${INSTALL_TAILSCALE:-1}"    # default ON for appliance
 INSTALL_CADDY="${INSTALL_CADDY:-0}"
 INSTALL_DOCKER="${INSTALL_DOCKER:-0}"
 HOSAKA_BOOT_MODE="${HOSAKA_BOOT_MODE:-kiosk}"  # kiosk | console | headless
+
+# Resolve the *runtime* account whose $HOME owns ~/.picoclaw, ~/.hosaka,
+# ~/.config/openbox. If invoked with sudo, prefer SUDO_USER's HOME so the
+# operator account (not root) ends up owning the dotfiles. This is what
+# replaces every hardcoded /home/fsc/... reference in the runtime env.
+TARGET_USER="${SUDO_USER:-$(id -un)}"
+TARGET_HOME="$(getent passwd "$TARGET_USER" 2>/dev/null | cut -d: -f6)"
+TARGET_HOME="${TARGET_HOME:-${HOME:-/root}}"
 
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
 info() { echo -e "${CYAN}[install]${NC} $*"; }
@@ -40,6 +69,14 @@ sudo rsync -a           "$REPO_ROOT/requirements-hosaka.txt" "$APP_ROOT/"
 
 sudo install -m 755 "$REPO_ROOT/scripts/kiosk-chromium.sh"   /usr/local/bin/hosaka-kiosk-chromium
 sudo install -m 755 "$REPO_ROOT/scripts/kiosk-electron.sh"   /usr/local/bin/hosaka-kiosk-electron
+# Display supervisor + X wrapper (Pi appliance hardening packet).
+# These ride alongside the kiosk launchers above. They are no-ops in the
+# headless profile because nothing invokes them without an X stack.
+for helper in hosaka-wall hosaka-startx; do
+  if [[ -f "$REPO_ROOT/scripts/$helper" ]]; then
+    sudo install -m 755 "$REPO_ROOT/scripts/$helper" "/usr/local/bin/$helper"
+  fi
+done
 # Operator CLI (build/kiosk mode toggle, deploy, status) and the boot-mode
 # arbiter that the hosaka-mode.service runs at startup. Both are optional —
 # older repo snapshots may not ship them yet, so don't fail the install.
@@ -167,7 +204,37 @@ fi
 
 # ── state directories ─────────────────────────────────────────────────────────
 sudo install -d -m 755 /var/lib/hosaka
-mkdir -p "$HOME/.hosaka"
+# Use TARGET_HOME so `sudo ./install_hosaka.sh` still drops state in the
+# operator's home directory, not root's. This is the soft-coded equivalent
+# of the old hardcoded /home/fsc/.hosaka path.
+sudo install -d -o "$TARGET_USER" -g "$TARGET_USER" -m 755 "$TARGET_HOME/.hosaka"
+
+# ── /etc/hosaka/env — persisted runtime environment for systemd services ─────
+# Pre-deployment hardening packet hard_lesson #3: the systemd webserver did
+# not inherit the SSH shell's PATH/PICOCLAW_BIN, so backend health reported
+# picoclaw_bin:false even though the binary was installed for the user.
+# Writing these here means /etc/hosaka/env is the single source of truth and
+# any system service can `EnvironmentFile=-/etc/hosaka/env` to pick them up.
+PICOCLAW_BIN_DETECTED=""
+if [[ -x "$TARGET_HOME/.local/bin/picoclaw" ]]; then
+  PICOCLAW_BIN_DETECTED="$TARGET_HOME/.local/bin/picoclaw"
+elif command -v picoclaw >/dev/null 2>&1; then
+  PICOCLAW_BIN_DETECTED="$(command -v picoclaw)"
+fi
+info "Writing /etc/hosaka/env (runtime env for systemd services)"
+sudo tee /etc/hosaka/env >/dev/null <<ENV
+# Managed by scripts/install_hosaka.sh — regenerated on each install.
+# All paths are derived from the invoking user's \$HOME / \$HOSAKA_DIRECTORY,
+# never hardcoded to a particular machine.
+HOSAKA_REPO=$REPO_ROOT
+HOSAKA_DIRECTORY=$REPO_ROOT
+HOSAKA_DEPLOY=$APP_ROOT
+PICOCLAW_HOME=$TARGET_HOME/.picoclaw
+PICOCLAW_BIN=${PICOCLAW_BIN_DETECTED:-$TARGET_HOME/.local/bin/picoclaw}
+PICOCLAW_MODEL=${PICOCLAW_MODEL:-gpt-4.1-mini}
+PATH=$TARGET_HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV
+sudo chmod 0644 /etc/hosaka/env
 
 # ── systemd units ─────────────────────────────────────────────────────────────
 info "Installing systemd units..."
@@ -186,9 +253,10 @@ for unit in alsa-restore.service alsa-state.service; do
   sudo systemctl mask "$unit" 2>/dev/null || true
 done
 
-# Patch picoclaw service user to match whoever is running the install
-CURRENT_USER="$(id -un)"
-CURRENT_HOME="$(getent passwd "$CURRENT_USER" | cut -d: -f6)"
+# Patch picoclaw service user to match the operator account (NOT root, even
+# under sudo). Falls back to whoever invoked the script.
+CURRENT_USER="$TARGET_USER"
+CURRENT_HOME="$TARGET_HOME"
 sudo sed -i "s/^User=operator/User=${CURRENT_USER}/" "/etc/systemd/system/$PICOCLAW_SERVICE_NAME" 2>/dev/null || true
 
 # Openbox owns the actual X11 kiosk session on the appliance. Keep the
@@ -197,6 +265,14 @@ sudo sed -i "s/^User=operator/User=${CURRENT_USER}/" "/etc/systemd/system/$PICOC
 if [[ -n "$CURRENT_HOME" && -f "$REPO_ROOT/dotfiles/openbox/autostart" ]]; then
   sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
     "$REPO_ROOT/dotfiles/openbox/autostart" "$CURRENT_HOME/.config/openbox/autostart"
+fi
+
+# .xinitrc for the appliance display profile. Anchored with `exec tail -f
+# /dev/null` so that closing xterm (or any other panel) never kills the X
+# session. See dotfiles/xinitrc for the rationale.
+if [[ -n "$CURRENT_HOME" && -f "$REPO_ROOT/dotfiles/xinitrc" && "$HOSAKA_BOOT_MODE" == "kiosk" ]]; then
+  sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    "$REPO_ROOT/dotfiles/xinitrc" "$CURRENT_HOME/.xinitrc"
 fi
 
 # Kiosk Chromium must run as the graphical-session user (X11 cookie path).
