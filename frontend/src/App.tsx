@@ -78,6 +78,9 @@ const AppStorePanel = lazy(() =>
 const MusicPanel = lazy(() =>
   import("./panels/MusicPanel").then((m) => ({ default: m.MusicPanel })),
 );
+const VisualizerPanel = lazy(() =>
+  import("./panels/VisualizerPanel").then((m) => ({ default: m.VisualizerPanel })),
+);
 const HelpPanel = lazy(() =>
   import("./panels/HelpPanel").then((m) => ({ default: m.HelpPanel })),
 );
@@ -483,6 +486,8 @@ export function App() {
         return <AppStorePanel />;
       case "music":
         return <MusicPanel />;
+      case "visualizer":
+        return <VisualizerPanel active={activeAppId === "visualizer"} />;
       case "voice":
         return <VoicePanel active={activeAppId === "voice"} />;
       case "nodes":

@@ -20,6 +20,7 @@ export type AppId =
   | "tool_directory"
   | "workbench"
   | "music"
+  | "visualizer"
   | "gps"
   | "app_store"
   | "spotify"
@@ -378,6 +379,24 @@ export const APP_REGISTRY: AppDefinition[] = [
     embedPolicy: "allow_escape",
     maintainerNote: "Prefer Electron for device audio and radio integrations; browser fallback can cover local/public-domain playback only.",
     agentNote: "Use Electron when present; otherwise launch the browser-safe path without assuming native desktop capabilities.",
+  },
+  {
+    id: "visualizer",
+    title: "cascade",
+    description: "audio visualizer · 90s vector geometry, fft fractals, 11-fold mandalas. low/high cpu profiles.",
+    glyph: "≈",
+    aliases: ["visualizer", "viz", "cascade", "fft", "spectrum", "oscilloscope", "lissajous", "fractal"],
+    family: "integration",
+    backgroundCapable: true,
+    showInLauncher: true,
+    status: "shipping",
+    preferredHost: "web",
+    fallbackHosts: ["electron"],
+    installStrategy: "builtin",
+    hostScope: "any",
+    embedPolicy: "prefer_embed",
+    maintainerNote: "Iframes the standalone cascade-visualizer Vite app. VITE_VISUALIZER_URL overrides the embed source; defaults to http://localhost:5174 in dev.",
+    agentNote: "Open when the operator asks to visualize audio, watch the music, or wants a screensaver-like surface.",
   },
   {
     id: "gps",

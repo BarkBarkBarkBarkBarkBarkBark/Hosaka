@@ -5356,3 +5356,88 @@ html, body, #root {
   color: var(--fg-2);
   letter-spacing: 0.04em;
 }
+
+/* ── VisualizerPanel ─────────────────────────────────────────────────────
+   Iframes the standalone cascade visualizer. Chrome lives here; the
+   visualizer itself is run in `?host=hosaka` mode which hides its HUD. */
+.visualizer-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #05060a;
+  color: var(--fg, #c8d6cf);
+}
+.visualizer-panel__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(200, 214, 207, 0.14);
+  font-size: 11px;
+  text-transform: lowercase;
+}
+.visualizer-panel__title {
+  letter-spacing: 0.2em;
+  color: #7be3c4;
+}
+.visualizer-panel__controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.visualizer-panel__controls label {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+  color: rgba(200, 214, 207, 0.6);
+}
+.visualizer-panel__controls select {
+  background: transparent;
+  color: inherit;
+  border: 1px solid rgba(200, 214, 207, 0.24);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font: inherit;
+  text-transform: lowercase;
+}
+.visualizer-panel__pop {
+  color: rgba(200, 214, 207, 0.6);
+  text-decoration: none;
+  border: 1px solid rgba(200, 214, 207, 0.24);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.visualizer-panel__stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  transition: opacity 200ms ease;
+}
+.visualizer-panel__stage iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #05060a;
+}
+.visualizer-panel__loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: rgba(200, 214, 207, 0.55);
+  text-align: center;
+  pointer-events: none;
+  font-size: 11px;
+}
+.visualizer-panel__loading code {
+  color: #7be3c4;
+  background: rgba(123, 227, 196, 0.08);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
