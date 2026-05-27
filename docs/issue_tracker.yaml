@@ -1,0 +1,338 @@
+agent_task:
+  title: "Implement persistent Hosaka issue tracking CLI"
+  priority: "high"
+  repo_context:
+    project_name: "Hosaka"
+    product_identity: "terminal-first cyberdeck OS / console"
+    primary_user_goal: >
+      Add a persistent issue/goal tracking workflow that a human user and coding agent
+      can both use from the terminal. Issues should be created, listed, commented on,
+      worked, and closed as Hosaka development proceeds.
+    recommended_default_backend: "github_issues_via_gh_cli"
+    future_backends:
+      - "git-bug for distributed/offline-first issue tracking embedded in git"
+      - "Taskwarrior for local personal daily task queue"
+      - "Forgejo/Gitea Tea CLI if Hosaka later self-hosts git"
+
+  decision:
+    default_behavior: >
+      Implement a small Hosaka issue wrapper over GitHub CLI `gh issue`.
+      Do not build a full custom tracker yet. Keep the backend abstracted so
+      git-bug or Tea can be added later.
+    rationale:
+      - "Hosaka already uses git/GitHub workflows."
+      - "GitHub CLI already supports issue create/list/view/comment/close."
+      - "Agents can safely use a narrow wrapper instead of hand-writing arbitrary gh commands."
+      - "Persistent issues create durable project memory across sessions."
+      - "Backend abstraction protects against future migration to git-bug or Forgejo/Gitea."
+
+  user_experience:
+    command_namespace: "hosaka issue"
+    desired_commands:
+      - command: "hosaka issue new \"Fix boot auth recovery\""
+        behavior: "Create a new persistent development issue."
+      - command: "hosaka issue list"
+        behavior: "List open Hosaka issues."
+      - command: "hosaka issue show 12"
+        behavior: "Show issue details."
+      - command: "hosaka issue note 12 \"Agent reproduced the bug.\""
+        behavior: "Add a comment/update to the issue."
+      - command: "hosaka issue start 12"
+        behavior: "Mark issue as in-progress using labels/comment if possible."
+      - command: "hosaka issue done 12 \"Fixed and verified on Pi 5.\""
+        behavior: "Close issue with a final comment."
+      - command: "hosaka issue doctor"
+        behavior: "Check whether gh is installed, authenticated, and inside a git repo."
+
+  core_rule:
+    name: "No issue, no work"
+    policy: >
+      Any non-trivial bug, feature, UX problem, hardware integration problem,
+      install problem, or agent-discovered task must become an issue before work begins.
+      The agent should comment progress and close the issue only after verification.
+
+  implementation_requirements:
+    language_preference:
+      primary: "Python"
+      reason: "Portable, easy to call subprocess, likely compatible with Hosaka tooling."
+    cli_entrypoint:
+      preferred_names:
+        - "hosaka issue"
+        - "python -m hosaka.issue"
+      fallback_name: "scripts/hosaka_issue.py"
+    backend_architecture:
+      required: true
+      interface_name: "IssueBackend"
+      default_backend: "GhIssueBackend"
+      future_backend_stubs:
+        - "GitBugIssueBackend"
+        - "TaskwarriorBackend"
+        - "TeaIssueBackend"
+    safety:
+      - "Never delete issues."
+      - "Never close an issue without a closing comment unless explicitly requested."
+      - "Never require network access for `doctor`; report missing network/auth clearly."
+      - "Never hardcode repo owner/name; infer from git remote or accept --repo."
+      - "Never store GitHub tokens in project files."
+      - "Use subprocess with argument arrays, not shell=True."
+    compatibility:
+      - "Work on Debian/Raspberry Pi OS."
+      - "Gracefully handle missing gh binary."
+      - "Gracefully handle unauthenticated gh."
+      - "Gracefully handle running outside a git repository."
+      - "Support --repo OWNER/REPO override."
+    output_style:
+      default: "human-readable terminal output"
+      machine_mode:
+        flag: "--json"
+        behavior: "Emit structured JSON for agent consumption."
+
+  suggested_file_changes:
+    inspect_first:
+      - "Inspect repo tree."
+      - "Find existing CLI framework, Python package layout, pyproject.toml, package.json, Makefile, or scripts directory."
+      - "Prefer integrating with existing command structure over creating duplicate CLI patterns."
+    possible_files:
+      - path: "hosaka/issues/__init__.py"
+        purpose: "Issue tracking package marker."
+      - path: "hosaka/issues/backend.py"
+        purpose: "Backend interface and dataclasses."
+      - path: "hosaka/issues/gh_backend.py"
+        purpose: "GitHub CLI implementation."
+      - path: "hosaka/issues/cli.py"
+        purpose: "Argument parser and command handlers."
+      - path: "scripts/hosaka_issue.py"
+        purpose: "Fallback executable if package CLI does not exist."
+      - path: "docs/issue-tracking.md"
+        purpose: "Human usage guide."
+      - path: "tests/test_issue_cli.py"
+        purpose: "Unit tests using mocked subprocess calls."
+
+  data_model:
+    issue:
+      fields:
+        - "number"
+        - "title"
+        - "state"
+        - "labels"
+        - "url"
+        - "updated_at"
+        - "assignees"
+    create_issue_input:
+      fields:
+        - "title"
+        - "body"
+        - "labels"
+        - "repo"
+    comment_input:
+      fields:
+        - "issue_number"
+        - "body"
+        - "repo"
+
+  command_mapping:
+    gh_backend:
+      doctor:
+        checks:
+          - command: ["gh", "--version"]
+            failure_message: "GitHub CLI is not installed."
+          - command: ["gh", "auth", "status"]
+            failure_message: "GitHub CLI is not authenticated. Run `gh auth login`."
+          - command: ["git", "rev-parse", "--is-inside-work-tree"]
+            failure_message: "Not inside a git repository."
+      new:
+        gh_equivalent:
+          - "gh"
+          - "issue"
+          - "create"
+          - "--title"
+          - "$TITLE"
+          - "--body"
+          - "$BODY"
+      list:
+        gh_equivalent:
+          - "gh"
+          - "issue"
+          - "list"
+          - "--state"
+          - "open"
+          - "--json"
+          - "number,title,state,labels,assignees,updatedAt,url"
+      show:
+        gh_equivalent:
+          - "gh"
+          - "issue"
+          - "view"
+          - "$NUMBER"
+      note:
+        gh_equivalent:
+          - "gh"
+          - "issue"
+          - "comment"
+          - "$NUMBER"
+          - "--body"
+          - "$BODY"
+      done:
+        sequence:
+          - "Add closing comment with evidence."
+          - "Close issue with reason completed."
+        gh_equivalent:
+          - "gh"
+          - "issue"
+          - "close"
+          - "$NUMBER"
+          - "--comment"
+          - "$BODY"
+          - "--reason"
+          - "completed"
+
+  labels:
+    preferred:
+      - "hosaka"
+      - "agent"
+      - "bug"
+      - "feature"
+      - "hardware"
+      - "install"
+      - "ux"
+      - "in-progress"
+      - "blocked"
+      - "needs-human"
+    behavior:
+      - "When creating an issue, apply `hosaka` and `agent` labels if possible."
+      - "If labels do not exist, continue without failing."
+      - "Do not require label creation for MVP."
+
+  issue_templates:
+    default_body: |
+      ## Context
+      Created from Hosaka terminal issue workflow.
+
+      ## Problem / Goal
+      {problem_or_goal}
+
+      ## Expected outcome
+      {expected_outcome}
+
+      ## Evidence / Logs
+      {evidence}
+
+      ## Agent notes
+      - Status: opened
+      - Next action: triage
+
+    bug_body: |
+      ## Bug
+      {bug_summary}
+
+      ## Environment
+      - Device:
+      - OS:
+      - Branch:
+      - Commit:
+
+      ## Reproduction
+      1.
+      2.
+      3.
+
+      ## Expected behavior
+      {expected_behavior}
+
+      ## Actual behavior
+      {actual_behavior}
+
+      ## Logs / screenshots
+      {logs}
+
+      ## Verification plan
+      {verification_plan}
+
+    feature_body: |
+      ## Feature
+      {feature_summary}
+
+      ## Why it matters
+      {why_it_matters}
+
+      ## Proposed behavior
+      {proposed_behavior}
+
+      ## Acceptance criteria
+      - [ ] CLI command exists
+      - [ ] Works from repo root
+      - [ ] Agent can call it safely
+      - [ ] Human-readable output exists
+      - [ ] JSON output exists where useful
+      - [ ] Docs updated
+
+  agent_workflow:
+    before_work:
+      - "Run `hosaka issue doctor`."
+      - "Search existing open issues before creating a duplicate."
+      - "If no matching issue exists, create one."
+      - "Comment that work is beginning."
+    during_work:
+      - "Comment meaningful discoveries, blockers, and verification evidence."
+      - "Reference relevant files and commands in comments."
+    after_work:
+      - "Run tests or verification command."
+      - "Comment verification result."
+      - "Close only if the issue is actually resolved."
+      - "Use commit messages like `Fix boot auth recovery. Closes #12` when appropriate."
+
+  mvp_acceptance_criteria:
+    required:
+      - "A terminal user can create an issue using `hosaka issue new`."
+      - "A terminal user can list open issues using `hosaka issue list`."
+      - "A terminal user can comment using `hosaka issue note <number> <body>`."
+      - "A terminal user can close using `hosaka issue done <number> <closing_comment>`."
+      - "`hosaka issue doctor` explains missing gh/auth/repo problems clearly."
+      - "All subprocess calls avoid shell=True."
+      - "The code has tests or a documented manual test script."
+      - "Docs include setup and examples."
+    nice_to_have:
+      - "`--json` output for list/show."
+      - "`hosaka issue start <number>` adds an in-progress comment or label."
+      - "Duplicate detection by searching issue titles."
+      - "Config file for default labels."
+
+  manual_test_plan:
+    setup:
+      - "Install GitHub CLI if missing."
+      - "Run `gh auth login`."
+      - "Run commands from the Hosaka repo root."
+    tests:
+      - command: "hosaka issue doctor"
+        expected: "Reports gh installed, auth status, and repo detection."
+      - command: "hosaka issue new \"Test Hosaka issue workflow\" --body \"Testing CLI wrapper.\""
+        expected: "Creates an issue and prints number/url."
+      - command: "hosaka issue list"
+        expected: "Shows the new issue."
+      - command: "hosaka issue note <number> \"Testing comment path.\""
+        expected: "Adds comment successfully."
+      - command: "hosaka issue done <number> \"Verified issue workflow works.\""
+        expected: "Closes issue with comment."
+
+  documentation_requirements:
+    create_or_update: "docs/issue-tracking.md"
+    include_sections:
+      - "Why Hosaka uses persistent issues"
+      - "Setup: install gh and authenticate"
+      - "Daily workflow"
+      - "Agent workflow"
+      - "Command reference"
+      - "Troubleshooting"
+      - "Future backend: git-bug/offline mode"
+
+  final_response_required_from_agent:
+    include:
+      - "Summary of files changed"
+      - "Commands added"
+      - "How to test"
+      - "Known limitations"
+      - "Recommended next issue to create"
+    do_not_include:
+      - "Secrets"
+      - "GitHub tokens"
+      - "Unverified claims"

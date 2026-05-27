@@ -1246,6 +1246,17 @@ cmd_doctor() {
   ( cd "$REPO_ROOT" && exec "$py" -m hosaka.doctor "$@" )
 }
 
+# ── issues (github tracker) ──────────────────────────────────────────────────
+#
+# Persistent dev tracking via `gh issue`. The agent contract is
+# "no issue, no work" — any non-trivial task becomes an issue first.
+# See `hosaka/issues/` and `docs/issue-tracking.md`.
+cmd_issue() {
+  local py
+  py="$(_hosaka_python)"
+  ( cd "$REPO_ROOT" && exec "$py" -m hosaka.issues "$@" )
+}
+
 cmd_diag() {
   local json=0
   local host="${HOSAKA_DIAG_HOST:-http://127.0.0.1:${BACKEND_PORT_DEFAULT}}"
@@ -1568,6 +1579,16 @@ hosaka — operator CLI for the Hosaka Field Terminal Pi
   hosaka message [-s session] TEXT  one-shot message into agent session
   hosaka tui                        launch full Hosaka console (python -m hosaka)
 
+  hosaka issue doctor               check gh install/auth/repo detection
+  hosaka issue new "TITLE" [-b BODY] [-t bug|feature|default] [-l LABEL]
+                                    create a tracked dev issue on GitHub
+  hosaka issue list [--state open|closed|all]
+                                    list issues (default: open)
+  hosaka issue show N               show issue details
+  hosaka issue note N "TEXT"        comment on an issue
+  hosaka issue start N              mark issue in-progress
+  hosaka issue done N "CLOSING"     close issue with a final comment
+
 Typical SSH-then-deploy flow:
   hosaka mode device                 # frees RAM
   cd ~/Hosaka && hosaka update
@@ -1621,6 +1642,7 @@ main() {
     chat|agent|repl) cmd_chat "$@" ;;
     message|msg|say) cmd_message "$@" ;;
     tui|console-ui)  cmd_tui "$@" ;;
+    issue|issues|track) cmd_issue "$@" ;;
     -h|--help|help) usage ;;
     *) usage; die "unknown command: $cmd" ;;
   esac

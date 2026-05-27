@@ -342,6 +342,7 @@ hosaka build [--check]         # cd frontend && npm run build (--check runs tsc 
 hosaka deploy [--check]        # build + rsync into /opt + restart webserver
 hosaka logs [web|pico|<unit>]  # tail journalctl
 hosaka reboot                  # safe sync + reboot
+hosaka issue <verb>            # GitHub-backed dev tracking (see docs/issue-tracking.md)
 ```
 
 ### Why "build mode"?

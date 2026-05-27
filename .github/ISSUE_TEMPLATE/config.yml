@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Hosaka issue workflow docs
+    url: https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/docs/issue-tracking.md
+    about: How issues are created/tracked from the terminal via `hosaka issue`.
