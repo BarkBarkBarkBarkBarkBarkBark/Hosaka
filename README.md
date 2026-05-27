@@ -284,12 +284,21 @@ prompts you automatically:
 
 - **Environment variables** (appliance / advanced):
   ```bash
-  export OPENAI_API_KEY=sk-...
-  export OPENAI_MODEL=gpt-4o-mini            # optional, default
-  export OPENAI_BASE_URL=http://localhost:11434/v1  # for Ollama etc.
+  export OPENAI_API_KEY=ollama
+  export OPENAI_MODEL=qwen2.5:0.5b
+  export OPENAI_BASE_URL=http://100.78.174.79:11434/v1
   ```
 
 Any of these approaches works — mix and match.
+
+For the Jetson-hosted Ollama path, smoke test the OpenAI-compatible API with:
+
+```bash
+curl --silent --show-error --max-time 10 http://100.78.174.79:11434/v1/models
+curl --silent --show-error --max-time 30 http://100.78.174.79:11434/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen2.5:0.5b","messages":[{"role":"user","content":"Reply with exactly: Jetson chat API works."}],"stream":false}'
+```
 
 > **Privacy**: the API key is stored on-device only. It is never sent
 > to Hosaka's servers, never logged, and never included in chat context.
@@ -573,9 +582,9 @@ the **inline terminal prompt** on first keystroke, or via env vars:
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPENAI_API_KEY` | — | Required for OpenAI (and most compatible endpoints) |
-| `OPENAI_MODEL` | `gpt-4o-mini` | Model name |
-| `OPENAI_BASE_URL` | `https://api.openai.com` | Override for Ollama, LM Studio, etc. |
+| `OPENAI_API_KEY` | `ollama` | Required for OpenAI; placeholder accepted by Ollama |
+| `OPENAI_MODEL` | `qwen2.5:0.5b` | Model name |
+| `OPENAI_BASE_URL` | `http://100.78.174.79:11434/v1` | OpenAI-compatible endpoint for Ollama, LM Studio, etc. |
 
 Persisted config lives in `/var/lib/hosaka/llm.json` (or
 `~/.hosaka/llm.json` for non-root installs) and is applied on startup.

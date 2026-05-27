@@ -1,0 +1,200 @@
+project:
+  name: hosaka_local_inference_bridge
+  phase: proof_of_concept
+  objective: >
+    Route Hosaka/PicoClaw inference requests to a remote Jetson-hosted
+    Ollama server over Tailscale with minimal code changes.
+
+current_state:
+  jetson:
+    hostname: jetson-desktop
+    tailscale_ip: 100.78.174.79
+    ollama:
+      installed: true
+      port: 11434
+      api_style: openai_compatible
+      test_model: qwen2.5:0.5b
+      smoke_test:
+        checked_from: hosaka
+        status: passed
+        models_seen:
+          - qwen2.5:0.5b
+          - llama3.2:1b
+        note: >
+          Chat completions are reachable over Tailscale. The small Qwen model
+          may not strictly follow exact-output prompts, so connectivity and
+          model quality should be evaluated separately.
+
+  hosaka:
+    repo: https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka
+    current_provider: openai
+    desired_mode: local_first
+
+architecture:
+  philosophy:
+    - preserve existing OpenAI SDK usage
+    - avoid large refactors
+    - use Ollama OpenAI compatibility layer
+    - implement smallest successful integration first
+    - maintain OpenAI fallback
+
+  target_flow: |
+    Hosaka Terminal
+      -> PicoClaw
+      -> OpenAI-compatible client
+      -> Ollama on Jetson
+      -> Response
+      -> Hosaka terminal UI
+
+ollama_api:
+  compatibility:
+    enabled: true
+    docs:
+      - https://docs.ollama.com/api/openai-compatibility
+      - https://ollama.com/blog/openai-compatibility
+
+  base_url: http://100.78.174.79:11434/v1
+
+  endpoints:
+    chat_completions: /v1/chat/completions
+    models: /v1/models
+
+  auth:
+    api_key_required_but_unused: true
+    recommended_value: ollama
+
+implementation_strategy:
+  approach: >
+    Reuse the existing OpenAI SDK/client codepath and only modify:
+    - base_url
+    - api_key
+    - model name
+
+  avoid:
+    - custom inference abstractions
+    - provider registries
+    - plugin systems
+    - websocket token streaming
+    - orchestration layers
+    - major architecture rewrites
+
+search_targets:
+  - OpenAI(
+  - AsyncOpenAI(
+  - chat.completions.create
+  - responses.create
+  - api_key=
+  - model=
+  - gpt-4o
+  - gpt-4
+  - openai
+
+expected_existing_pattern:
+  python_example: |
+    from openai import OpenAI
+
+    client = OpenAI(
+        api_key=os.getenv("OPENAI_API_KEY")
+    )
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=messages,
+    )
+
+required_modification:
+  python_example: |
+    from openai import OpenAI
+
+    client = OpenAI(
+        base_url="http://100.78.174.79:11434/v1",
+        api_key="ollama",
+    )
+
+    response = client.chat.completions.create(
+        model="qwen2.5:0.5b",
+        messages=messages,
+    )
+
+environment_variables:
+  preferred:
+    OPENAI_BASE_URL: http://100.78.174.79:11434/v1
+    OPENAI_API_KEY: ollama
+    OPENAI_MODEL: qwen2.5:0.5b
+    HOSAKA_LOCAL_FIRST: "1"
+
+  future:
+    INFERENCE_MODE: local_first
+
+agent_tasks:
+  - name: locate_openai_client
+    objective: >
+      Find where Hosaka or PicoClaw initializes the OpenAI SDK client.
+
+  - name: patch_base_url
+    objective: >
+      Replace default OpenAI endpoint with Jetson Ollama endpoint.
+
+  - name: patch_model
+    objective: >
+      Replace cloud model references with qwen2.5:0.5b.
+
+  - name: preserve_fallback
+    objective: >
+      Preserve ability to switch back to OpenAI later.
+
+  - name: implement_env_config
+    objective: >
+      Make provider configurable through environment variables.
+
+  - name: verify_remote_inference
+    objective: >
+      Confirm Hosaka receives responses from Jetson-hosted Ollama.
+
+manual_validation:
+  jetson_direct:
+    command: |
+      curl http://100.78.174.79:11434/v1/chat/completions \
+        -H "Content-Type: application/json" \
+        -d '{
+          "model":"qwen2.5:0.5b",
+          "messages":[
+            {
+              "role":"user",
+              "content":"Reply with exactly: Jetson chat API works."
+            }
+          ]
+        }'
+
+  expected_result_contains:
+    - Jetson chat API works.
+
+acceptance_criteria:
+  - Hosaka launches normally
+  - prompts generate responses through Jetson
+  - no OpenAI cloud dependency required
+  - inference works over Tailscale
+  - code changes remain minimal
+  - switching providers only requires config/env changes
+
+future_work:
+  phase_2:
+    - streaming token support
+    - provider health checks
+    - Whisper STT on Jetson
+    - direct ethernet fallback
+    - model selector UI
+
+  phase_3:
+    - provider routing
+    - node discovery
+    - distributed inference
+    - websocket streaming
+    - local vector memory
+
+important_notes:
+  - Ollama supports OpenAI-compatible APIs
+  - use /v1/chat/completions
+  - avoid rewriting PicoClaw prematurely
+  - architecture validation is more important than model quality right now
+  - local models may behave worse than GPT-4o initially

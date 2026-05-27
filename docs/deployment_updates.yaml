@@ -1,0 +1,622 @@
+hosaka_copilot_context_packet:
+  packet_name: hosaka_pi_appliance_install_hardening
+  repo: BarkBarkBarkBarkBarkBarkBark/Hosaka
+  default_branch: main
+  implementation_goal: >
+    Codify the successful Raspberry Pi Hosaka install into a reliable,
+    repeatable appliance onboarding flow. Future installs should boot directly
+    into the Hosaka GUI, preserve a shell escape path, configure Picoclaw/OpenAI
+    correctly, and avoid fragile manual X/Chromium/Picoclaw steps.
+
+  field_test_summary:
+    final_status:
+      - Hosaka TUI works.
+      - Picoclaw agent works.
+      - OpenAI API key works through Picoclaw.
+      - Backend health reports picoclaw_bin:true, picoclaw_gateway:true, openai_key:true.
+      - Chromium GUI can run on the attached Pi display.
+      - GitHub auth and push to main succeeded.
+      - Tailscale is installed/running for remote access.
+    target_device:
+      hostname: S3raspberrypi
+      user: fsc
+      repo_path: /home/fsc/code/Hosaka
+      architecture: arm64/aarch64
+      display_type: Raspberry Pi attached DSI/touch screen
+      gui_host: Chromium kiosk/app window
+      llm_default: gpt-4.1-mini via OpenAI/Picoclaw
+      future_remote_inference_target: Jetson over Tailscale/Ollama-compatible endpoint
+
+  hard_lessons:
+    - issue: HOSAKA_REPO path can be malformed.
+      observed_bad_value: home/fsc/code/Hosaka
+      correct_value: /home/fsc/code/Hosaka
+      desired_fix:
+        - Validate HOSAKA_REPO is absolute.
+        - Validate repo contains frontend/package.json, kiosk/package.json, hosaka/, scripts/hosaka.
+        - Add `hosaka paths` command.
+        - Print exact repair command if invalid.
+
+    - issue: Picoclaw v2 rejects API keys inside config.json.
+      observed_error: "config.json contains unknown field(s): model_list[0].api_key"
+      correct_secret_location: ~/.picoclaw/.security.yml
+      desired_fix:
+        - Never write model_list[*].api_key into ~/.picoclaw/config.json.
+        - Store model routing only in config.json.
+        - Store provider credentials in .security.yml.
+        - Update Hosaka TUI onboarding prompt to use .security.yml.
+        - Add regression test that config.json contains no api_key fields.
+
+    - issue: Hosaka GUI/backend did not initially see Picoclaw.
+      observed_backend_health_before:
+        picoclaw_bin: false
+        picoclaw_gateway: true
+        openai_key: true
+      fixed_backend_health_after:
+        picoclaw_bin: true
+        picoclaw_gateway: true
+        openai_key: true
+      root_cause: systemd service did not inherit SSH shell PATH/PICOCLAW_BIN.
+      desired_fix:
+        - Persist PICOCLAW_BIN=/home/fsc/.local/bin/picoclaw or detected absolute path.
+        - Persist PICOCLAW_HOME.
+        - Persist PICOCLAW_MODEL.
+        - Persist PATH including ~/.local/bin.
+        - Write these into /etc/hosaka/env for system services.
+
+    - issue: X/Chromium failed because no X server was alive.
+      observed_error:
+        - "Missing X server or $DISPLAY"
+        - "The platform failed to initialize. Exiting."
+      desired_fix:
+        - Add display doctor that checks xdpyinfo, Xorg, DISPLAY, XAUTHORITY, DRM cards, and Chromium.
+        - Do not launch Chromium until X is verified alive.
+        - Add clearer user-facing message: backend ok, display down.
+
+    - issue: Xorg refused non-console launch.
+      observed_error: "Xorg.wrap: only console users are allowed to run the X server"
+      working_fix:
+        file: /etc/X11/Xwrapper.config
+        content:
+          allowed_users: anybody
+          needs_root_rights: yes
+      desired_fix:
+        - Installer should detect Pi appliance mode and write Xwrapper.config when kiosk mode enabled.
+        - Keep this opt-in for appliance/display builds, not generic desktop installs.
+
+    - issue: X session died when xterm was closed.
+      root_cause: .xinitrc used xterm as the session anchor via exec.
+      working_fix:
+        - xterm should be optional/convenience only.
+        - X session anchor should be noninteractive keepalive, e.g. `exec tail -f /dev/null`.
+      desired_fix:
+        - Closing shell window must never kill Hosaka GUI.
+        - Provide explicit shell escape separately.
+
+    - issue: Electron SIGTRAP on Pi.
+      observed_behavior:
+        - Electron binary existed.
+        - Electron direct version smoke test worked.
+        - Electron app window launch crashed/SIGTRAP.
+        - Chromium GUI worked reliably.
+      desired_fix:
+        - Chromium should be the default Pi display host.
+        - Electron should remain optional.
+        - Add HOSAKA_KIOSK_RENDERER=chromium|electron.
+        - If Electron crashes, fall back to Chromium.
+
+  required_new_commands:
+    - command: hosaka paths
+      purpose: Print authoritative runtime paths and validation results.
+      output_fields:
+        - active_hosaka_binary
+        - HOSAKA_REPO
+        - resolved_repo_root
+        - deploy_root
+        - state_dir
+        - frontend_exists
+        - kiosk_exists
+        - python_path
+        - picoclaw_bin
+        - picoclaw_home
+        - picoclaw_model
+        - display
+        - xauthority
+        - x_alive
+        - chromium_path
+        - electron_path
+        - current_mode
+
+    - command: hosaka display doctor
+      purpose: Diagnose display startup failures.
+      checks:
+        - DISPLAY is set
+        - XAUTHORITY exists
+        - xdpyinfo -display :0 works
+        - Xorg process exists
+        - openbox process exists
+        - Chromium exists
+        - /tmp/.X0-lock status
+        - /tmp/.X11-unix/X0 status
+        - /etc/X11/Xwrapper.config contents
+        - /etc/X11/xorg.conf.d contents
+        - DRM cards listed
+        - DSI/HDMI status from /sys/class/drm
+        - recent /var/log/Xorg.0.log errors
+        - recent ~/.local/state/startx.log
+        - recent ~/.local/state/hosaka-wall.log
+      output_modes:
+        - human
+        - json
+
+    - command: hosaka wall start
+      purpose: Start X/Chromium Hosaka GUI safely.
+      behavior:
+        - Verify backend health.
+        - Verify frontend health.
+        - Verify X alive.
+        - If X not alive, start X through robust wrapper.
+        - Launch Chromium app/kiosk window.
+        - Do not use xterm as the session anchor.
+
+    - command: hosaka wall stop
+      purpose: Stop Chromium/Openbox/X session cleanly.
+
+    - command: hosaka wall restart
+      purpose: Restart display side only, without disturbing backend/Picoclaw if healthy.
+
+    - command: hosaka picoclaw doctor
+      purpose: Diagnose Picoclaw install/config/secrets.
+      checks:
+        - picoclaw binary exists
+        - picoclaw status works
+        - config.json schema clean
+        - no api_key fields in config.json
+        - .security.yml exists if OpenAI is selected
+        - default model points to intended provider
+        - agent smoke test optional
+
+    - command: hosaka seed import <path>
+      purpose: Import customer/operator provisioning USB bundle.
+      behavior:
+        - Validate manifest.
+        - Copy Picoclaw security file to ~/.picoclaw/.security.yml.
+        - Copy Hosaka secrets to ~/.hosaka/secrets.json.
+        - Mirror /etc/hosaka/env.
+        - Never print secrets.
+        - Run doctor checks after import.
+
+  install_profiles:
+    headless:
+      description: SSH/TUI only. No X/Chromium boot.
+      installs:
+        - python runtime
+        - picoclaw
+        - hosaka cli
+        - backend service
+      does_not_install:
+        - xinit
+        - openbox
+        - chromium autostart
+
+    display_manual:
+      description: Installs display dependencies but does not autostart GUI.
+      installs:
+        - xinit
+        - xserver-xorg
+        - xserver-xorg-legacy
+        - openbox
+        - xterm
+        - x11-utils
+        - x11-xserver-utils
+        - dbus-x11
+        - unclutter
+        - chromium
+      behavior:
+        - user can run `hosaka wall start`
+
+    display_kiosk:
+      description: Appliance mode. Boot directly into Hosaka GUI.
+      installs:
+        - all display_manual packages
+      writes:
+        - ~/.xinitrc
+        - ~/.local/bin/hosaka-wall
+        - ~/.local/bin/hosaka-startx
+        - /etc/X11/Xwrapper.config
+        - /etc/hosaka/env
+        - optional getty@tty1 autologin override
+      behavior:
+        - boot -> tty1 autologin -> startx -> openbox -> chromium Hosaka app
+        - xterm shell is optional, closing it does not kill GUI
+        - Ctrl+Alt+F2 provides shell escape
+        - Ctrl+Alt+F1 returns to GUI
+
+  file_changes_requested:
+    - path: hosaka/main_console.py
+      changes:
+        - Replace old _check_api_key implementation.
+        - Do not check model_list[*].api_key.
+        - Do not write api_key into config.json.
+        - Check OpenAI key in:
+            - env OPENAI_API_KEY
+            - ~/.hosaka/secrets.json
+            - ~/.picoclaw/.security.yml
+        - If missing, prompt hidden and write Picoclaw v2 security schema.
+        - Mirror to Hosaka secrets when possible.
+      acceptance:
+        - Hosaka TUI does not corrupt config.json.
+        - Hosaka TUI does not repeatedly ask for key once .security.yml exists.
+        - Picoclaw agent still works after TUI launch.
+
+    - path: scripts/hosaka
+      changes:
+        - Add `hosaka paths`.
+        - Add `hosaka display doctor`.
+        - Add `hosaka wall start|stop|restart`.
+        - Add validation for HOSAKA_REPO.
+        - Improve error when repo root is invalid.
+      acceptance:
+        - Invalid relative HOSAKA_REPO fails clearly.
+        - Valid /home/fsc/code/Hosaka path works.
+        - `hosaka paths --json` is machine-readable.
+
+    - path: scripts/configure-picoclaw.sh
+      changes:
+        - Write valid Picoclaw v2 config.
+        - Keep config.json credential-free.
+        - Write credentials to .security.yml only.
+        - Remove illegal api_key fields during migration.
+        - Preserve Ollama and OpenAI entries.
+      acceptance:
+        - Re-running script is idempotent.
+        - OpenAI and Ollama can coexist.
+        - Default model can be switched intentionally.
+
+    - path: scripts/install_hosaka_display.sh
+      action: create
+      purpose: Install and configure X/Openbox/Chromium appliance display.
+      flags:
+        - --profile display-manual
+        - --profile display-kiosk
+        - --renderer chromium
+        - --renderer electron
+        - --enable-tty1-autologin
+        - --no-autologin
+      acceptance:
+        - Fresh Pi OS Lite can install display stack.
+        - Xwrapper.config is written only for appliance display mode.
+        - Closing xterm does not kill GUI.
+
+    - path: scripts/hosaka-wall
+      action: create_or_update
+      purpose: GUI launch supervisor.
+      behavior:
+        - Source persisted env.
+        - Start frontend if missing.
+        - Use existing backend if healthy.
+        - Verify X alive before launching Chromium.
+        - Launch Chromium with stable Pi flags.
+        - Do not kill X if Chromium exits.
+        - Log to ~/.local/state/hosaka-wall.log.
+      chromium_flags:
+        - --kiosk or --app configurable
+        - --no-sandbox
+        - --disable-gpu
+        - --disable-dev-shm-usage
+        - --disable-crash-reporter
+        - --disable-breakpad
+        - --user-data-dir=$HOME/.cache/hosaka-chromium-kiosk
+
+    - path: scripts/hosaka-startx
+      action: create
+      purpose: Wrapper to launch X without fragile inline shell quoting.
+      behavior:
+        - Export absolute runtime env.
+        - Run startx with explicit .xinitrc.
+        - Use :0 vt1 -nolisten tcp.
+        - Log to ~/.local/state/startx.log.
+
+    - path: dotfiles/xinitrc
+      action: create_or_update
+      content_requirements:
+        - Export Hosaka/Picoclaw env.
+        - Start openbox-session in background.
+        - Optionally start xterm in background.
+        - Start hosaka-wall in background.
+        - Anchor session with `exec tail -f /dev/null`.
+      must_not:
+        - "exec xterm"
+        - "exec chromium"
+        - "exec hosaka-wall"
+
+    - path: docs/raspberry-pi-install.md
+      action: create
+      sections:
+        - known-good architecture
+        - install profiles
+        - Picoclaw v2 secrets
+        - X/Chromium kiosk boot
+        - shell escape keys
+        - Tailscale/remote inference
+        - troubleshooting: relay sleeping
+        - troubleshooting: missing X server
+        - troubleshooting: picoclaw_bin false
+        - troubleshooting: Electron SIGTRAP
+        - making SD card images
+        - seed USB provisioning
+
+    - path: docs/install-troubleshooting.yaml
+      action: create
+      purpose: Machine-readable known failures and fixes.
+      include_failures:
+        - missing_x_server
+        - xorg_only_console_users
+        - xorg_drm_device_busy
+        - picoclaw_bin_false
+        - picoclaw_config_unknown_api_key
+        - hosaka_repo_relative_path
+        - electron_sigtrap
+        - xterm_closed_kills_gui
+
+  known_good_runtime_files:
+    etc_hosaka_env:
+      path: /etc/hosaka/env
+      required_entries:
+        HOSAKA_REPO: /home/fsc/code/Hosaka
+        PICOCLAW_HOME: /home/fsc/.picoclaw
+        PICOCLAW_BIN: /home/fsc/.local/bin/picoclaw
+        PICOCLAW_MODEL: gpt-4.1-mini
+        PATH: /home/fsc/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    xwrapper:
+      path: /etc/X11/Xwrapper.config
+      content:
+        allowed_users: anybody
+        needs_root_rights: yes
+
+    picoclaw_config:
+      path: ~/.picoclaw/config.json
+      rules:
+        - Must not contain api_key.
+        - Must not contain api_keys.
+        - Must contain model_list entry for gpt-4.1-mini.
+        - May contain Ollama model entries.
+      openai_entry:
+        model_name: gpt-4.1-mini
+        model: openai/gpt-4.1-mini
+        api_base: https://api.openai.com/v1
+
+    picoclaw_security:
+      path: ~/.picoclaw/.security.yml
+      permissions: "0600"
+      schema:
+        model_list:
+          gpt-4.1-mini:
+            api_keys:
+              - "<hidden>"
+
+  expected_health_checks:
+    backend_health:
+      command: curl -s http://127.0.0.1:8421/api/health
+      required_json:
+        web: ok
+        picoclaw_bin: true
+        picoclaw_gateway: true
+        openai_key: true
+    frontend_health:
+      command: curl -I http://127.0.0.1:5173
+      expected: HTTP 200
+    picoclaw_health:
+      command: picoclaw agent -m "Say exactly: hosaka online" --model gpt-4.1-mini
+      expected_contains: hosaka online
+    display_health:
+      command: xdpyinfo -display :0
+      expected: exit_code_0
+    gui_health:
+      command: pgrep -a "chromium|Xorg|openbox"
+      expected_contains:
+        - Xorg
+        - openbox
+        - chromium
+
+  usability_requirements:
+    end_user_experience:
+      - Device should boot directly into Hosaka GUI.
+      - User should not need to know Xorg, startx, Chromium flags, or Picoclaw config.
+      - If GUI fails, backend/TUI should still be usable over SSH.
+      - Shell access should remain easy and familiar.
+      - Chromium popup/app-window mode should be available on all Hosaka builds, not just Pi.
+      - Electron should not be required for appliance usability.
+      - Closing a shell window must not break the GUI.
+      - Reboot should recover the working display state automatically.
+    operator_experience:
+      - `hosaka doctor` should identify exact failure layer.
+      - `hosaka display doctor` should say whether X, Chromium, backend, or Picoclaw is broken.
+      - `hosaka wall restart` should fix the common GUI failure without reboot.
+      - `hosaka install report` should generate a redacted support bundle.
+
+  chromium_window_option:
+    product_decision: "Make Chromium app/window mode a first-class renderer."
+    reason:
+      - Familiar browser behavior.
+      - Stable on Raspberry Pi.
+      - Easier debugging than Electron.
+      - Works with hosted/local frontend.
+      - Good fallback for all builds.
+    modes:
+      app_window:
+        flags:
+          - --app=http://127.0.0.1:5173
+          - --window-size=800,480
+          - --window-position=0,0
+      kiosk:
+        flags:
+          - --kiosk
+          - --app=http://127.0.0.1:5173
+      debug_window:
+        flags:
+          - --app=http://127.0.0.1:5173
+          - --auto-open-devtools-for-tabs optional
+    config_env:
+      HOSAKA_KIOSK_RENDERER: chromium
+      HOSAKA_CHROMIUM_MODE: app_window|kiosk|debug_window
+      HOSAKA_CHROMIUM_URL: http://127.0.0.1:5173
+
+  tailscale_remote_inference_plan:
+    current_status: Tailscale is up.
+    next_target: Jetson remote inference host.
+    desired_behavior:
+      - Hosaka can use local OpenAI/Picoclaw now.
+      - Later Hosaka can route to Jetson Ollama over Tailscale.
+      - Provide a provider switch:
+          - openai
+          - ollama_local
+          - ollama_tailscale
+          - openai_compatible_custom
+    config_requirements:
+      - Store remote inference base URL separately from OpenAI secrets.
+      - Test connectivity before switching default.
+      - Keep OpenAI fallback available.
+    example_env:
+      HOSAKA_OLLAMA_BASE_URL: http://<jetson-tailscale-ip>:11434/v1
+      PICOCLAW_MODEL: gpt-4.1-mini
+
+  customer_seed_usb_plan:
+    goal: "Ship a USB seed directory that can provision API keys, model config, Tailscale, and profile."
+    volume_label: HOSAKA_SEED
+    directory_layout:
+      hosaka-seed:
+        manifest.yaml: required
+        secrets:
+          picoclaw.security.yml: optional
+          hosaka.secrets.json: optional
+          openai.env: optional
+          tailscale.authkey: optional
+        config:
+          hosaka.env: optional
+          install-profile.yaml: optional
+        docs:
+          customer-readme.md: optional
+    manifest_example:
+      version: 1
+      device_id: hosaka-demo-001
+      install_profile: display_kiosk
+      renderer: chromium
+      chromium_mode: app_window
+      default_provider: openai
+      default_model: gpt-4.1-mini
+      boot_to_gui: true
+      shell_escape: true
+      tailscale:
+        enabled: true
+        authkey_file: secrets/tailscale.authkey
+      budget:
+        included_openai_credit_usd: 10
+    import_rules:
+      - Never print secrets.
+      - Set permissions 0600 on secret files.
+      - Use per-device/customer API keys only.
+      - Strongly prefer limited budget/revocable keys.
+      - Write import marker to ~/.local/state/hosaka-seed-imported.json.
+      - Idempotent unless --force.
+    command_to_add:
+      - hosaka seed scan
+      - hosaka seed import <path>
+      - hosaka seed doctor
+
+  installer_supervisor_plan:
+    goal: "Optional AI-assisted install supervisor for operator builds."
+    product_boundary:
+      - Operator/dev convenience, not required for customer use.
+      - Must not block base install.
+      - Must redact secrets before sending logs to any AI service.
+    command_to_add: hosaka install-supervisor
+    modes:
+      - log_only
+      - openai_assisted
+      - copilot_cli_assisted
+    behavior:
+      - Run install stages step-by-step.
+      - Capture commands, exit codes, timings, log tails.
+      - Run doctors after each stage.
+      - Generate install report markdown and JSON.
+      - Suggest exact repair commands.
+      - Store redacted transcript in ~/.local/state/hosaka-install-report.md.
+    redaction_rules:
+      - "sk-[A-Za-z0-9_-]+ -> sk-REDACTED"
+      - "OPENAI_API_KEY=.* -> OPENAI_API_KEY=REDACTED"
+      - "api_keys list values -> REDACTED"
+      - "Authorization: Bearer .* -> Authorization: Bearer REDACTED"
+      - "tailscale authkey -> REDACTED"
+
+  regression_tests_to_add:
+    shell_tests:
+      - name: reject_relative_hosaka_repo
+        command: HOSAKA_REPO=home/fsc/code/Hosaka hosaka paths
+        expect_exit_nonzero: true
+        expect_stderr_contains: "HOSAKA_REPO must be absolute"
+      - name: clean_picoclaw_config_has_no_api_key
+        command: grep -R "api_key" ~/.picoclaw/config.json
+        expect_exit_nonzero: true
+      - name: backend_sees_picoclaw
+        command: curl -s http://127.0.0.1:8421/api/health
+        expect_json:
+          picoclaw_bin: true
+          openai_key: true
+      - name: display_x_alive
+        command: xdpyinfo -display :0
+        expect_exit_zero: true
+
+    python_tests:
+      - name: picoclaw_security_schema_written
+        assert:
+          - .security.yml contains model_list
+          - .security.yml contains active model
+          - .security.yml contains api_keys
+          - config.json does not contain api_key
+      - name: hosaka_main_console_does_not_corrupt_config
+        flow:
+          - start with valid Picoclaw v2 security file
+          - run _check_api_key
+          - assert no api_key in config.json
+          - assert no prompt needed
+
+    integration_tests:
+      - name: pi_display_kiosk_boot
+        environment: Raspberry Pi OS Lite arm64
+        flow:
+          - run installer with display_kiosk profile
+          - reboot
+          - expect X alive
+          - expect Chromium running
+          - expect backend health ok
+          - expect picoclaw health ok
+
+  copilot_execution_instructions:
+    - Start with a branch named fix/pi-appliance-onboarding.
+    - Implement Picoclaw v2 onboarding fix first.
+    - Add path validation and `hosaka paths`.
+    - Add display doctor before changing boot behavior.
+    - Add Chromium renderer/wall supervisor.
+    - Add docs and troubleshooting YAML.
+    - Keep changes idempotent and rerunnable.
+    - Do not commit secrets or machine-local generated files.
+    - Do not make Electron mandatory.
+    - Do not remove headless mode.
+    - Preserve shell escape path.
+    - Use clear comments explaining why Xwrapper.config is needed in Pi appliance mode.
+    - After changes, run shellcheck where available and basic Python import tests.
+    - Produce a final install report summarizing what changed.
+
+  final_definition_of_done:
+    - Fresh Raspberry Pi OS Lite install can boot directly into Hosaka Chromium GUI.
+    - TUI works even if GUI fails.
+    - GUI/backend sees Picoclaw without manual PATH hacks.
+    - Picoclaw/OpenAI config survives reboot.
+    - Hosaka never writes api_key into Picoclaw config.json.
+    - Closing xterm does not kill the GUI.
+    - `hosaka wall restart` recovers the display without reboot.
+    - `hosaka display doctor` identifies X/display failures clearly.
+    - Headless install profile still works.
+    - Chromium popup/app-window mode is supported as a first-class option across Hosaka builds.

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import sys
+from pathlib import Path
 from typing import Generator
 
 from hosaka.llm import picoclaw_adapter
@@ -11,6 +14,29 @@ from hosaka.llm import openai_adapter
 from hosaka.offline.assist import classify_intent
 
 log = logging.getLogger("hosaka.router")
+
+
+def _picoclaw_default_model() -> str:
+    """Read the active Picoclaw default model (e.g. 'ollama/qwen2.5:0.5b')."""
+    config_path = os.getenv("PICOCLAW_CONFIG_PATH", "").strip()
+    path = Path(config_path).expanduser() if config_path else Path.home() / ".picoclaw" / "config.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    default_alias = str(
+        data.get("agents", {}).get("defaults", {}).get("model_name") or ""
+    ).strip()
+    if not default_alias:
+        return ""
+    model_list = data.get("model_list")
+    if isinstance(model_list, list):
+        for entry in model_list:
+            if isinstance(entry, dict) and entry.get("model_name") == default_alias:
+                return str(entry.get("model") or "").strip()
+    return ""
 
 
 class LLMBackend:
@@ -96,8 +122,16 @@ def _last_user_msg(messages: list[dict[str, str]]) -> str:
 
 
 def backend_display_name(backend: str) -> str:
-    return {
-        LLMBackend.PICOCLAW: "Picoclaw agent",
-        LLMBackend.OPENAI: "OpenAI API",
-        LLMBackend.OFFLINE: "Offline assist",
-    }.get(backend, backend)
+    if backend == LLMBackend.PICOCLAW:
+        model = _picoclaw_default_model()
+        if model.startswith("ollama/"):
+            return "Picoclaw -> Ollama"
+        return "Picoclaw agent"
+    if backend == LLMBackend.OPENAI:
+        base = (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/")
+        if base and base != "https://api.openai.com":
+            return "OpenAI-compatible (Ollama)"
+        return "OpenAI API"
+    if backend == LLMBackend.OFFLINE:
+        return "Offline assist"
+    return backend

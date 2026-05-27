@@ -58,6 +58,11 @@ import {
   type HosakaAppHostResponse,
 } from "../apps/flatpakBackend";
 import { populateLibrary } from "../apps/library";
+import {
+  OLLAMA_DEFAULT_API_KEY,
+  OLLAMA_DEFAULT_BASE_URL,
+  OLLAMA_DEFAULT_MODEL,
+} from "../llm/llmProvider";
 
 // ANSI helpers
 const ESC = "\x1b[";
@@ -374,12 +379,12 @@ export class HosakaShell {
 
     // Provider
     this.writeln(`  ${DARK_GRAY}providers: ${CYAN}openai${R}${DARK_GRAY} / ${CYAN}openai-compatible${R}${DARK_GRAY} (Ollama, local, etc.)${R}`);
-    this.write(`  ${GRAY}provider${R} ${DARK_GRAY}[openai]${R}: `);
+    this.write(`  ${GRAY}provider${R} ${DARK_GRAY}[openai-compatible]${R}: `);
     const providerRaw = await this.readLine();
-    const provider = providerRaw.trim() || "openai";
+    const provider = providerRaw.trim() || "openai-compatible";
 
     // Model
-    const defaultModel = provider === "openai" ? "gpt-4o-mini" : "llama3";
+    const defaultModel = provider === "openai" ? "gpt-4o-mini" : OLLAMA_DEFAULT_MODEL;
     this.write(`  ${GRAY}model${R} ${DARK_GRAY}[${defaultModel}]${R}: `);
     const modelRaw = await this.readLine();
     const model = modelRaw.trim() || defaultModel;
@@ -387,16 +392,19 @@ export class HosakaShell {
     // Base URL (openai-compatible only)
     let base_url = "";
     if (provider === "openai-compatible") {
-      this.write(`  ${GRAY}base url${R} ${DARK_GRAY}[http://localhost:11434/v1]${R}: `);
+      this.write(`  ${GRAY}base url${R} ${DARK_GRAY}[${OLLAMA_DEFAULT_BASE_URL}]${R}: `);
       const urlRaw = await this.readLine();
-      base_url = urlRaw.trim() || "http://localhost:11434/v1";
+      base_url = urlRaw.trim() || OLLAMA_DEFAULT_BASE_URL;
     }
 
     // API key (masked — never touches llmHistory or chat context)
-    this.write(`  ${GRAY}api key${R} ${DARK_GRAY}(input hidden)${R}: `);
+    const defaultApiKey = provider === "openai-compatible" ? OLLAMA_DEFAULT_API_KEY : "";
+    const keyHint = defaultApiKey ? `[${defaultApiKey}]` : "(input hidden)";
+    this.write(`  ${GRAY}api key${R} ${DARK_GRAY}${keyHint}${R}: `);
     const api_key = await this.readLine(true);
+    const savedApiKey = api_key.trim() || defaultApiKey;
 
-    if (!api_key.trim()) {
+    if (!savedApiKey.trim()) {
       this.writeln(`  ${RED}no key entered — skipping.${R} ${GRAY}use ${CYAN}/settings${R}${GRAY} to configure later.${R}`);
       this.writeln("");
       this.busy = false;
@@ -407,7 +415,7 @@ export class HosakaShell {
     // Send to server
     this.write(`  ${DARK_GRAY}saving…${R}`);
     try {
-      const body = { provider, model, base_url, api_key };
+      const body = { provider, model, base_url, api_key: savedApiKey };
       const r = await fetch("/api/llm-key", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

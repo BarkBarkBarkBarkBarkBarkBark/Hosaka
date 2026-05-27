@@ -41,3 +41,5 @@ kiosk/dist/
 # keys
 *.pem
 .env
+logs/
+kiosk/Singleton*

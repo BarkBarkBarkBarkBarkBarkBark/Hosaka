@@ -13,8 +13,9 @@
 set -euo pipefail
 
 PREFIX="${PICOCLAW_PREFIX:-$HOME/.local}"
-MODEL="${PICOCLAW_MODEL:-gpt-4o-mini}"
-API_BASE="${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+MODEL="${PICOCLAW_MODEL:-qwen2.5}"
+MODEL_TARGET="${PICOCLAW_MODEL_TARGET:-qwen2.5:0.5b}"
+API_BASE="${OPENAI_BASE_URL:-${HOSAKA_OLLAMA_BASE_URL:-http://100.78.174.79:11434/v1}}"
 RUN_ONBOARD="auto"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET_HOME="${PICOCLAW_ACCOUNT_HOME:-}"
@@ -37,8 +38,8 @@ Usage:
 Options:
   --onboard       run interactive 'picoclaw onboard' after install/config if TTY is available
   --no-onboard    skip interactive onboarding; use non-interactive model setup only
-  --model MODEL   model id/alias to set for Picoclaw (default: gpt-4o-mini)
-  --api-base URL  OpenAI-compatible API base (default: https://api.openai.com/v1)
+  --model MODEL   model alias to register with Picoclaw (default: qwen2.5)
+  --api-base URL  OpenAI-compatible API base (default: http://100.78.174.79:11434/v1)
 
 This command is safe to run from Hosaka's browser terminal. If an interactive
 TTY is required, it prints the exact follow-up command instead of hanging.
@@ -123,7 +124,7 @@ install_if_missing() {
 }
 
 bootstrap_runtime() {
-  local py="${PYTHON:-python3}"
+  local py="${PYTHON:-python}"
   if [[ -x "$REPO_ROOT/../.venv/bin/python" ]]; then
     py="$REPO_ROOT/../.venv/bin/python"
   elif [[ -x "$REPO_ROOT/.venv/bin/python" ]]; then
@@ -136,7 +137,7 @@ bootstrap_runtime() {
 
 read_openai_key() {
   # Prints the key to stdout for command substitution only. Callers must not log it.
-  python3 - "$REPO_ROOT" "$TARGET_HOME" <<'PY'
+  python - "$REPO_ROOT" "$TARGET_HOME" <<'PY'
 import json
 import os
 import shlex
@@ -208,32 +209,19 @@ has_picoclaw_model() {
 
 configure_model_from_key() {
   local key="$1"
-  if [[ -z "$key" ]]; then
-    return 1
+  if [[ -n "$key" && "$key" != "ollama" ]]; then
+    note "importing compatible API key into Hosaka secrets (key hidden)"
+    save_key_into_hosaka_secrets "$key" || true
   fi
-  note "importing OpenAI key into Hosaka secrets and setting Picoclaw model (key hidden)"
-  save_key_into_hosaka_secrets "$key" || true
 
-  # Picoclaw 0.2.4 changed `model` from the older `model add --api-key ...`
-  # shape to `picoclaw model <name>`, while API keys are supplied from env.
-  # Prefer the newer CLI, then fall back for older installs.
   set +x
   set +e
   HOME="$TARGET_HOME" PICOCLAW_HOME="$PICOCLAW_HOME" \
     "$PICOCLAW_BIN" model "$MODEL" >/tmp/hosaka-picoclaw-model-add.log 2>&1
   local rc=$?
-  if (( rc != 0 )); then
-    HOME="$TARGET_HOME" PICOCLAW_HOME="$PICOCLAW_HOME" \
-      "$PICOCLAW_BIN" model add \
-    --api-base "$API_BASE" \
-    --api-key "$key" \
-    --model "$MODEL" \
-    --name "$MODEL" >/tmp/hosaka-picoclaw-model-add.log 2>&1
-    rc=$?
-  fi
   set -e
   if (( rc != 0 )); then
-    warn "picoclaw model setup failed; last output:"
+    warn "picoclaw model select failed; last output:"
     sed -n '1,80p' /tmp/hosaka-picoclaw-model-add.log
     return "$rc"
   fi
@@ -248,7 +236,7 @@ save_key_into_hosaka_secrets() {
   [[ -n "$key" ]] || return 0
 
   local py=""
-  for candidate in "$REPO_ROOT/.venv/bin/python" "$REPO_ROOT/.hosakavenv/bin/python" python python3; do
+  for candidate in "$REPO_ROOT/.venv/bin/python" "$REPO_ROOT/.hosakavenv/bin/python" python; do
     if command -v "$candidate" >/dev/null 2>&1 || [[ -x "$candidate" ]]; then
       py="$candidate"
       break
@@ -292,13 +280,17 @@ save_key_into_hosaka_secrets() {
 }
 
 harden_picoclaw_config() {
-  python3 - "$REPO_ROOT" "$TARGET_HOME" <<'PY'
+  python - "$REPO_ROOT" "$TARGET_HOME" "$MODEL" "$API_BASE" "$MODEL_TARGET" <<'PY'
 import json
+import os
 import sys
 from pathlib import Path
 
 repo = Path(sys.argv[1]).resolve()
 home = Path(sys.argv[2]).expanduser().resolve()
+model = sys.argv[3]
+api_base = sys.argv[4]
+model_target = sys.argv[5]
 path = home / ".picoclaw" / "config.json"
 if not path.exists():
     raise SystemExit(0)
@@ -308,14 +300,36 @@ try:
 except Exception:
     raise SystemExit(0)
 
+local_first = os.environ.get("HOSAKA_LOCAL_FIRST", "1").strip().lower() in ("1", "true", "yes", "on")
 workspace = str(home / ".picoclaw" / "workspace")
 defaults = data.setdefault("agents", {}).setdefault("defaults", {})
 defaults["workspace"] = workspace
 defaults["restrict_to_workspace"] = False
 defaults["allow_read_outside_workspace"] = True
-defaults.setdefault("model_name", "gpt-4o-mini")
+defaults.setdefault("model_name", model)
 defaults["max_tokens"] = 4096
 defaults.setdefault("max_tool_iterations", 50)
+
+model_list = data.setdefault("model_list", [])
+if isinstance(model_list, list):
+    if not any(
+        isinstance(entry, dict) and entry.get("model_name") == model
+        for entry in model_list
+    ):
+        model_list.insert(0, {
+            "model_name": model,
+            "model": f"ollama/{model_target}",
+            "api_base": api_base,
+        })
+    if local_first and defaults.get("model_name") != model:
+        current = str(defaults.get("model_name") or "")
+        target_entry = next(
+            (e for e in model_list if isinstance(e, dict) and e.get("model_name") == current),
+            None,
+        )
+        target_model = str((target_entry or {}).get("model") or "")
+        if not target_model.startswith("ollama/"):
+            defaults["model_name"] = model
 
 tools = data.setdefault("tools", {})
 tools["allow_read_paths"] = ["/"]
@@ -367,14 +381,24 @@ main() {
   note "checking Picoclaw status"
   picoclaw_status | sed -n '1,80p'
 
-  if has_openai_key_in_picoclaw; then
+  local local_first="no"
+  if [[ "$API_BASE" != https://api.openai.com* ]]; then
+    local_first="yes"
+  fi
+
+  if [[ "$local_first" == "yes" ]]; then
+    note "local-first mode: pointing Picoclaw at $API_BASE ($MODEL -> ollama/$MODEL_TARGET)"
+    harden_picoclaw_config
+    configure_model_from_key "ollama"
+  elif has_openai_key_in_picoclaw; then
     ok "Picoclaw config exists; checking model setup is complete enough to run"
+    harden_picoclaw_config
   else
     local key=""
     key="$(read_openai_key || true)"
     if [[ -n "$key" ]]; then
       if has_picoclaw_model; then
-        ok "Hosaka OpenAI key is available and Picoclaw already has a default model"
+        ok "Hosaka compatible API key is available and Picoclaw already has a default model"
         save_key_into_hosaka_secrets "$key" || true
       else
         configure_model_from_key "$key"
@@ -384,9 +408,8 @@ main() {
       echo "  In Hosaka, use /settings or the inline key prompt first."
       echo "  Then rerun: hosaka configure picoclaw"
     fi
+    harden_picoclaw_config
   fi
-
-  harden_picoclaw_config
 
   # If this script was launched from the root-owned webserver shell, Picoclaw
   # can rewrite /home/operator/.picoclaw/config.json as root. Hand ownership

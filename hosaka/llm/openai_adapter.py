@@ -10,20 +10,45 @@ from typing import Generator
 import httpx
 
 _OPENAI_DEFAULT_BASE = "https://api.openai.com"
+OLLAMA_DEFAULT_BASE_URL = "http://100.78.174.79:11434/v1"
+OLLAMA_DEFAULT_API_KEY = "ollama"
+OLLAMA_DEFAULT_MODEL = "qwen2.5:0.5b"
 REQUEST_TIMEOUT = float(os.getenv("HOSAKA_CHAT_TIMEOUT", "120"))
 TRANSCRIBE_TIMEOUT = float(os.getenv("HOSAKA_TRANSCRIBE_TIMEOUT", "120"))
 
 
+def _stored_llm_config() -> dict:
+    try:
+        from hosaka.llm import llm_config
+
+        cfg = llm_config.load()
+    except Exception:
+        return {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
 def _base_url() -> str:
-    return os.getenv("OPENAI_BASE_URL", _OPENAI_DEFAULT_BASE).rstrip("/")
+    raw = os.getenv("OPENAI_BASE_URL", "").strip()
+    if not raw:
+        raw = str(_stored_llm_config().get("base_url") or "").strip()
+    return (raw or _OPENAI_DEFAULT_BASE).rstrip("/")
+
+
+def _api_base_url() -> str:
+    base = _base_url()
+    return base if base.endswith("/v1") else f"{base}/v1"
+
+
+def _is_openai_compatible_base() -> bool:
+    return _base_url() != _OPENAI_DEFAULT_BASE
 
 
 def _chat_url() -> str:
-    return f"{_base_url()}/v1/chat/completions"
+    return f"{_api_base_url()}/chat/completions"
 
 
 def _transcriptions_url() -> str:
-    return f"{_base_url()}/v1/audio/transcriptions"
+    return f"{_api_base_url()}/audio/transcriptions"
 
 
 def _picoclaw_config_path() -> Path:
@@ -198,7 +223,12 @@ def resolve_api_key() -> tuple[str | None, str | None]:
         cfg = {}
     key = str(cfg.get("api_key") or "").strip() if isinstance(cfg, dict) else ""
     if key:
-        return key, "llm.json"
+        is_default_compatible = (
+            key == OLLAMA_DEFAULT_API_KEY
+            and str(cfg.get("provider") or "") == "openai-compatible"
+            and str(cfg.get("base_url") or "").rstrip("/") == OLLAMA_DEFAULT_BASE_URL
+        )
+        return key, "openai-compatible default" if is_default_compatible else "llm.json"
 
     pico_cfg = _load_picoclaw_config()
     key = _picoclaw_api_key(pico_cfg) or ""
@@ -209,6 +239,9 @@ def resolve_api_key() -> tuple[str | None, str | None]:
     if key:
         return key, "~/.picoclaw/.security.yml"
 
+    if _is_openai_compatible_base():
+        return OLLAMA_DEFAULT_API_KEY, "openai-compatible default"
+
     return None, None
 
 
@@ -218,7 +251,15 @@ def _api_key() -> str | None:
 
 
 def _model() -> str:
-    return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    model = os.getenv("OPENAI_MODEL", "").strip()
+    if model:
+        return model
+    model = str(_stored_llm_config().get("model") or "").strip()
+    if model:
+        return model
+    if _is_openai_compatible_base():
+        return os.getenv("HOSAKA_OLLAMA_MODEL", OLLAMA_DEFAULT_MODEL)
+    return "gpt-4o-mini"
 
 
 def is_available() -> bool:

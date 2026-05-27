@@ -1,0 +1,429 @@
+# Neurodeck — Scientific Workstation Charter (machine-readable)
+# Companion to scientific_workstation.md. Source of truth for extraction map,
+# host adapters, phase graph, verification, and decisions.
+
+schema_version: 1
+charter:
+  id: neurodeck
+  name: Neurodeck Scientific Workstation
+  authored_in_repo: Hosaka
+  target_monorepo: neurodeck
+  decision: option_c_new_monorepo
+  authored_on: 2026-05-08
+
+purpose:
+  - Live and replay Neuralynx / DHN acquisition (Pegasus / SSH bridge to DHN_Acq)
+  - NRD UDP packet emission and probing on port 26090 (ATLAS subnet 192.168.3.0/24)
+  - Real-time spike sorting and control output (SNNeuro)
+  - Offline feature and unit-separation benchmarking (spike_discrim)
+  - Inline embedding of each tool's existing dashboard via Electron <webview>
+  - Network capture: Wireshark / tshark / tcpdump on UDP 26090
+  - Local agent assistance (Picoclaw -> Copilot -> OpenAI -> offline)
+  - Headless rig operation via TUI
+
+options_considered:
+  - id: A
+    name: Extend SAW
+    pros: [low_upfront_cost, plugin_runtime_already_exists, postgres_pgvector_present]
+    cons:
+      - browser_only_shell
+      - external_tab_only_embedding
+      - no_native_networking
+      - no_terminal_first_mode
+    chosen: false
+  - id: B
+    name: Extend Hosaka
+    pros: [electron_webview_inline_embed, networking_built_in, picoclaw_router, tui_present]
+    cons:
+      - no_persistent_artifact_store
+      - no_plugin_runtime_with_caps_gating
+      - flatpak_only_app_model_wrong_for_neuro_repos
+      - no_subprocess_supervisor
+    chosen: false
+  - id: C
+    name: New neurodeck monorepo
+    pros:
+      - lowest_vestigial_code_risk
+      - cleanly_picks_one_winner_per_concern
+      - both_apps_already_share_stack_so_merge_is_mostly_file_moves
+      - submodule_neuro_repos_preserve_independent_cadence
+    cons:
+      - highest_upfront_cost
+      - two_extractions_before_first_neuro_feature
+      - requires_disciplined_cut_lines
+    chosen: true
+
+canonical_seams:
+  shell:
+    source: Hosaka
+    files: [kiosk/main.js, kiosk/preload.js, kiosk/package.json]
+    target: apps/kiosk/
+  spa:
+    source: Hosaka
+    files: [frontend/src/App.tsx, frontend/src/ui/appRegistry.ts, frontend/src/shell/, frontend/src/panels/, frontend/src/apps/]
+    target: apps/web/
+  plugin_runtime:
+    source: SAW
+    files:
+      - services/saw_api/app/plugins_runtime.py
+      - services/saw_api/app/service_manager.py
+      - services/saw_api/app/run_manager.py
+    target: services/api/app/
+    extension_points:
+      - add_field: host_adapter
+      - add_field: embed_policy
+      - add_field: arches
+      - add_field: preferred_host
+      - add_field: install_strategy
+  llm_router:
+    source: Hosaka
+    files: [hosaka/llm/router.py, hosaka/llm/picoclaw_adapter.py, hosaka/llm/openai_adapter.py]
+    target: packages/llm-router/
+    add_adapter: copilot_adapter
+    cascade_order: [picoclaw, copilot, openai, offline]
+  networking:
+    source: Hosaka
+    files: [hosaka/network/]
+    target: packages/networking/
+    new_modules: [capture.py]
+  identity:
+    source: Hosaka
+    files: [identity/AGENT.md, identity/SOUL.md, identity/USER.md, skills/, manager/charter.yaml]
+    target: packages/identity/
+  tui:
+    source: Hosaka
+    files: [hosaka/tui/, hosaka/main_console.py]
+    target: apps/console/
+    first_class: true
+  persistence_artifacts:
+    source: SAW
+    files: [services/saw_api/app/embeddings.py]
+    target: services/api/app/embeddings.py
+    backend: postgres_pgvector
+  persistence_observability:
+    source: Hosaka
+    target: services/api/app/observability.py
+    backend: sqlite_24h_ring_buffer
+  agent_gating:
+    source: SAW
+    target: packages/plugin-runtime/caps.py
+    file: caps.json
+  manifest_schema:
+    source: Hosaka
+    files: [hosaka-apps/manifest.schema.yaml, hosaka-apps/registry.yaml]
+    target: packages/plugin-runtime/manifest.schema.yaml
+
+host_adapters:
+  interface:
+    methods:
+      - prepare()
+      - start(ctx) -> {pid, port, url}
+      - healthcheck() -> {ok, detail}
+      - embed_url() -> str | None
+      - stop()
+  implementations:
+    - id: subprocess
+      source_pattern: SAW service_manager
+      use_for:
+        - dhn_stream CLI
+        - SNNeuro start.sh
+        - spike_discrim spike-api
+        - dhn_client Django webapp
+        - Wireshark GUI
+    - id: flatpak
+      source_pattern: Hosaka kiosk IPC
+      use_for: [Spotify, Firefox, VS Code, Discord, operator_tools]
+    - id: webview
+      source_pattern: Hosaka <webview>
+      use_for: [embed_any_returned_url_inline_as_panel]
+    - id: external_tab
+      source_pattern: SAW external_tab
+      use_for: [browser_only_fallback_when_kiosk_not_running]
+
+repo_layout:
+  root: neurodeck/
+  workspaces:
+    node: pnpm
+    python: uv
+  tree:
+    apps:
+      kiosk: electron_host_lifted_from_hosaka_kiosk
+      web: react_spa_lifted_from_hosaka_frontend
+      console: optional_tui_lifted_from_hosaka
+    services:
+      api: fastapi_saw_runtime_plus_hosaka_v1
+    packages:
+      plugin-runtime: saw_plugins_runtime_plus_caps
+      host-adapters: subprocess_flatpak_webview_external_tab
+      llm-router: hosaka_router_plus_copilot_adapter
+      networking: nmcli_tailscale_discovery_capture
+      identity: agent_soul_user_skills_charter
+    neuro:
+      dhn_stream: submodule
+      dhn_client: submodule
+      SNNeuro: submodule
+      spike_discrim: submodule
+    machine-specs: yaml_charters_including_this_file
+
+neuro_repos:
+  integration_mode: git_submodule
+  rationale: independent_ci_releases_owners
+  pinning: commit_sha
+  members:
+    - id: dhn_stream
+      path: neuro/dhn_stream/
+      role: emit_and_probe_nrd_udp
+      ports: [26090]
+      cli: [dhn-stream, dhn-probe]
+    - id: dhn_client
+      path: neuro/dhn_client/
+      role: orchestrate_pegasus_acquisition_and_diagnostics
+      surfaces: [django_webapp, ssh_bridge_netcom]
+      key_modules:
+        - src/darkhorse_neuralynx/orchestrator/run.py
+        - src/darkhorse_neuralynx/dhn_client/diagnose.py
+        - configs/example_session.yaml
+    - id: SNNeuro
+      path: neuro/SNNeuro/
+      role: realtime_spike_sorting_and_control_output
+      ports: {dashboard: 8000, ws: 8765}
+      key_modules: [start.sh, src/snn_agent/server/app.py, dashboard/api.py]
+    - id: spike_discrim
+      path: neuro/spike_discrim/
+      role: offline_feature_and_unit_separation_benchmarking
+      ports: [8099]
+      key_modules: [api/main.py, scripts/run_benchmark.py]
+
+llm_router:
+  cascade: [picoclaw, copilot, openai, offline]
+  rationale: local_first_then_strongest_tool_surface_then_broadest_fallback_then_resilient
+  picoclaw:
+    gateway_ws: ws://127.0.0.1:18790
+    binary: /usr/local/bin/picoclaw
+    optional: true
+  copilot:
+    source: SAW services/saw_api/app/copilot_agent.py
+    requires: copilot_sdk
+  openai:
+    requires_env: OPENAI_API_KEY
+  offline:
+    behavior: intent_classification_stub
+
+networking:
+  primitives:
+    - nmcli_wifi
+    - tailscale
+    - peer_discovery
+    - bridge_gateway_design
+  capture:
+    new_module: packages/networking/capture.py
+    targets: [wireshark, tshark, tcpdump, dumpcap]
+    fixed_filter: udp port 26090
+    interface_allowlist_env: NEURODECK_CAPTURE_ALLOWED_IFACES
+    profiles:
+      - id: local_gui
+        argv_template: [wireshark, -k, -i, "{iface}", -f, "udp port 26090"]
+      - id: background_pcap
+        argv_template: [tshark, -i, "{iface}", -f, "udp port 26090", -w, "{pcap_path}"]
+      - id: remote_ssh
+        requires: [ssh_host, ssh_user, remote_iface]
+        gating: live_lab_profile_explicit_start
+
+profiles:
+  - id: simulated
+    description: synthetic flows, no hardware, safe defaults
+    auto_startable: true
+  - id: live-lab
+    description: dhn_client diagnostics, ssh into DHN box, real acquisition
+    auto_startable: false
+    requires_explicit_start: true
+
+persistence:
+  artifacts:
+    backend: postgres_pgvector
+    use_for: [embeddings, plugin_artifacts, session_records, capture_metadata]
+  observability:
+    backend: sqlite_24h_ring
+    use_for: [service_lifecycle_events, packet_health_samples, capture_session_events]
+
+data_contracts:
+  timebase:
+    canonical: nrd_microsecond_timestamp
+    derived:
+      snn: decimated_sample_index
+      spike_discrim: trough_aligned_snippet_index
+  event_records:
+    - service_lifecycle
+    - packet_health
+    - capture_session
+    - snn_spike_or_control
+    - spike_discrim_benchmark_summary
+
+phases:
+  - id: 0
+    name: charter_and_extraction_map
+    deliverables:
+      - Hosaka/scientific_workstation.md
+      - Hosaka/scientific_workstation.yaml
+    status: in_progress
+  - id: 1
+    name: repo_skeleton
+    creates: [neurodeck/]
+    decisions: [submodule_vs_workspace_per_neuro_repo]
+    depends_on: [0]
+  - id: 2
+    name: lift_hosaka_shell
+    moves: [kiosk, frontend, llm, network, tui, identity]
+    depends_on: [1]
+    parallel_with: [3]
+  - id: 3
+    name: lift_saw_runtime
+    moves: [plugins_runtime, service_manager, run_manager, embeddings]
+    extends_manifest: [host_adapter, embed_policy, arches, preferred_host, install_strategy]
+    adds: [copilot_adapter_in_llm_router]
+    depends_on: [1]
+    parallel_with: [2]
+  - id: 4
+    name: host_adapter_unification
+    creates: [packages/host-adapters/]
+    implements: [SubprocessAdapter, FlatpakAdapter, WebviewAdapter, ExternalTabAdapter]
+    depends_on: [2, 3]
+  - id: 5
+    name: neuro_plugins
+    plugins:
+      - id: neuro.snn_dashboard
+        host_adapter: subprocess
+        embed_policy: prefer_embed
+        wraps: [SNNeuro/start.sh, "python manage.py run_all"]
+      - id: neuro.spike_discrim_workbench
+        host_adapter: subprocess
+        embed_policy: prefer_embed
+        wraps: [spike-api]
+        port: 8099
+      - id: neuro.dhn_pipeline_dashboard
+        host_adapter: subprocess
+        embed_policy: prefer_embed
+        wraps: [dhn_client/webapp/manage.py runserver]
+      - id: neuro.dhn_stream_control
+        host_adapter: subprocess
+        ui: schema
+        wraps: [dhn-stream, dhn-probe]
+      - id: neuro.station_control
+        host_adapter: native
+        ui: bundle
+        surfaces: [profile_selector, packet_rate, service_status, capture_buttons]
+    depends_on: [4]
+  - id: 6
+    name: wireshark_and_capture
+    creates: [packages/networking/capture.py, plugin:neuro.capture]
+    depends_on: [4]
+  - id: 7
+    name: live_lab_orchestration
+    wraps:
+      - dhn_client.SessionOrchestrator.from_yaml
+      - dhn_client.SessionOrchestrator.run
+      - dhn_client.Diagnostics.run_all
+    gating: explicit_start_required
+    template_config: dhn_client/configs/example_session.yaml
+    depends_on: [5]
+  - id: 8
+    name: integration_data_contracts
+    normalizes: [service_lifecycle, packet_health, capture_session, snn_spike_or_control, spike_discrim_benchmark_summary]
+    depends_on: [5]
+  - id: 9
+    name: verification
+    depends_on: [5, 6, 7, 8]
+
+verification:
+  - id: kiosk_boots
+    check: apps/kiosk loads apps/web and embeds a placeholder URL via <webview>
+  - id: api_health_and_plugins
+    check: services/api /api/health and /api/plugins/list return new neuro utilities
+  - id: neuro_plugin_lifecycle
+    check: each neuro plugin starts via SubprocessAdapter, healthcheck passes, URL embeds inline
+  - id: llm_cascade
+    check: force picoclaw down -> copilot; force copilot down -> openai; force all down -> offline
+  - id: wireshark_launch
+    check: GUI launches with fixed UDP 26090 filter on chosen interface, PID tracked
+  - id: live_lab_readiness
+    check: Diagnostics.run_all + dumpcap perms + interface enumeration without starting acquisition
+  - id: per_repo_tests
+    check: dhn_stream pytest, spike_discrim pytest, SNN smoke launch
+  - id: legacy_shells_still_build
+    check: SAW and Hosaka original repos still build and boot
+
+risks:
+  - id: two_extractions_before_neuro_feature_ships
+    mitigation: phases_2_and_3_run_in_parallel_and_legacy_shells_remain_buildable
+  - id: opinionated_pieces_clash
+    mitigation: pick_canonical_owners_up_front_saw_runtime_hosaka_router
+  - id: picoclaw_absent
+    mitigation: cascade_falls_through_to_copilot_and_openai
+  - id: submodule_churn
+    mitigation: pin_commit_sha_and_run_per_submodule_ci
+  - id: footprint_on_field_rigs
+    mitigation: tui_console_kept_first_class_kiosk_opt_in
+  - id: wireshark_permissions
+    mitigation: capture_service_probes_and_reports_remediation_steps
+
+open_questions:
+  - id: neuro_repo_integration_mode
+    default: submodule
+    override_to: workspace_package_if_lockstep_versioning_required
+  - id: tui_scope
+    default: first_class_apps_console
+    override_to: demote_to_tools_dir
+  - id: picoclaw_present_on_workstation
+    default: assume_absent_cascade_handles_it
+    confirm_before_phase_2: true
+
+decisions:
+  - openclaw_reinterpreted_as_picoclaw
+  - option_c_new_monorepo
+  - charter_lives_in_hosaka_repo
+  - neuro_repos_as_submodules
+  - saw_and_hosaka_kept_buildable_through_phase_5
+  - llm_cascade_picoclaw_then_copilot_then_openai_then_offline
+  - tui_first_class
+
+relevant_files:
+  hosaka_to_lift:
+    - Hosaka/kiosk/main.js
+    - Hosaka/kiosk/preload.js
+    - Hosaka/kiosk/package.json
+    - Hosaka/frontend/src/App.tsx
+    - Hosaka/frontend/src/ui/appRegistry.ts
+    - Hosaka/frontend/src/shell/
+    - Hosaka/frontend/src/panels/
+    - Hosaka/frontend/src/apps/
+    - Hosaka/hosaka/llm/router.py
+    - Hosaka/hosaka/llm/picoclaw_adapter.py
+    - Hosaka/hosaka/llm/openai_adapter.py
+    - Hosaka/hosaka/network/
+    - Hosaka/hosaka/tui/
+    - Hosaka/hosaka/main_console.py
+    - Hosaka/hosaka-apps/manifest.schema.yaml
+    - Hosaka/hosaka-apps/registry.yaml
+    - Hosaka/identity/
+    - Hosaka/skills/
+    - Hosaka/manager/charter.yaml
+  saw_to_lift:
+    - Scientific-A.I.-Workstation/services/saw_api/app/plugins_runtime.py
+    - Scientific-A.I.-Workstation/services/saw_api/app/service_manager.py
+    - Scientific-A.I.-Workstation/services/saw_api/app/run_manager.py
+    - Scientific-A.I.-Workstation/services/saw_api/app/embeddings.py
+    - Scientific-A.I.-Workstation/services/saw_api/app/main.py
+    - Scientific-A.I.-Workstation/saw-workspace/plugins/saw.utility.file_browser/
+    - Scientific-A.I.-Workstation/src/components/TopBar.tsx
+  neuro_submodules:
+    - dhn_stream/src/darkhorse_neuralynx/cli.py
+    - dhn_stream/src/darkhorse_neuralynx/udp_raw/probe.py
+    - dhn_client/src/darkhorse_neuralynx/orchestrator/run.py
+    - dhn_client/src/darkhorse_neuralynx/dhn_client/diagnose.py
+    - dhn_client/webapp/manage.py
+    - dhn_client/configs/example_session.yaml
+    - SNNeuro/start.sh
+    - SNNeuro/src/snn_agent/server/app.py
+    - SNNeuro/dashboard/api.py
+    - spike_discrim/api/main.py
+    - spike_discrim/scripts/run_benchmark.py

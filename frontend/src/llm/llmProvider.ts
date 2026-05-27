@@ -11,9 +11,13 @@ import { getStore } from "../sync/store";
 
 export type LlmProvider = "openai" | "openai-compatible";
 
+export const OLLAMA_DEFAULT_BASE_URL = "http://100.78.174.79:11434/v1";
+export const OLLAMA_DEFAULT_MODEL = "qwen2.5:0.5b";
+export const OLLAMA_DEFAULT_API_KEY = "ollama";
+
 export const PROVIDERS: { id: LlmProvider; label: string; defaultModel: string }[] = [
   { id: "openai",            label: "OpenAI",                         defaultModel: "gpt-4o-mini" },
-  { id: "openai-compatible", label: "OpenAI-compatible (Ollama, etc)", defaultModel: "llama3"      },
+  { id: "openai-compatible", label: "OpenAI-compatible (Ollama, etc)", defaultModel: OLLAMA_DEFAULT_MODEL },
 ];
 
 export type ProviderConfig = {
@@ -34,9 +38,9 @@ type LlmDoc = Partial<ProviderConfig> & {
 const LLM_DOC_DEFAULTS: LlmDoc = {};
 
 export const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
-  provider: "openai",
-  model:    "gpt-4o-mini",
-  base_url: "",
+  provider: "openai-compatible",
+  model:    OLLAMA_DEFAULT_MODEL,
+  base_url: OLLAMA_DEFAULT_BASE_URL,
 };
 
 export function loadProviderConfig(): ProviderConfig {
