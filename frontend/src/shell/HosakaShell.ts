@@ -41,7 +41,7 @@ import {
 import { executeHosakaUiCommand } from "../ui/hosakaUi";
 import { THEMES, applyTheme, setOrbColor, setOrbOrbit, type ThemeId } from "../ui/theme";
 import { appendConversationEntry } from "../chat/conversationLog";
-import { APP_REGISTRY, resolveAppId } from "../ui/appRegistry";
+import { APP_REGISTRY, getAppDefinition, isTrueStateSurface, resolveAppId } from "../ui/appRegistry";
 import {
   formatHosakaAppCommand,
   getHosakaAppById,
@@ -80,6 +80,29 @@ const BLUE = `${ESC}34m`;
 const PROMPT_HOST = "hosaka";
 const PROMPT_CWD = "/operator";
 
+// Input mode replaces the old "! prefix means shell" muscle memory with an
+// explicit, persisted toggle. In "llm" mode plain text talks to the agent; in
+// "code" mode plain text runs as a shell command. `!` and `/` still work as
+// one-off overrides in either mode.
+export type InputMode = "llm" | "code";
+const INPUT_MODE_KEY = "hosaka.shell.inputMode";
+
+function loadInputMode(): InputMode {
+  try {
+    return localStorage.getItem(INPUT_MODE_KEY) === "code" ? "code" : "llm";
+  } catch {
+    return "llm";
+  }
+}
+
+function saveInputMode(mode: InputMode): void {
+  try {
+    localStorage.setItem(INPUT_MODE_KEY, mode);
+  } catch {
+    /* private mode / storage disabled — mode just won't persist */
+  }
+}
+
 function sameOriginHint(): string {
   try {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -89,8 +112,11 @@ function sameOriginHint(): string {
   }
 }
 
-function prompt(): string {
-  return `${CYAN}${PROMPT_HOST}${R}:${BLUE}${PROMPT_CWD}${R} ${AMBER}›${R} `;
+function prompt(mode: InputMode = "llm"): string {
+  const tag = mode === "code"
+    ? `${GREEN}code${R}`
+    : `${VIOLET}llm${R}`;
+  return `${CYAN}${PROMPT_HOST}${R}:${BLUE}${PROMPT_CWD}${R} ${DARK_GRAY}[${tag}${DARK_GRAY}]${R} ${AMBER}›${R} `;
 }
 
 function pad(s: string, n: number): string {
@@ -121,6 +147,7 @@ export class HosakaShell {
   private thinkingTimer: number | null = null;
   private netscanTimer: number | null = null;
   private suggestion: string | null = null;
+  private inputMode: InputMode = loadInputMode();
 
   // Inline LLM config flow
   private llmConfigured = true;   // optimistic until checked
@@ -198,21 +225,9 @@ export class HosakaShell {
     this.term.write(s);
   }
   private writePrompt(): void {
-    const rows = this.term.rows ?? 24;
-    // Center the prompt cursor near the middle of the viewport — but only
-    // pad *down* from where the cursor already is. Naively writing rows/2
-    // blank lines scrolls the boot banner off the top on small terminals
-    // (Pi kiosk especially). Reading the live cursor row keeps the banner
-    // visible on first prompt while still centering on subsequent prompts
-    // after short output.
-    const buf = this.term.buffer.active;
-    const currentRow = typeof buf?.cursorY === "number" ? buf.cursorY : rows - 1;
-    const targetRow = Math.floor(rows / 2);
-    const padRows = Math.max(0, targetRow - currentRow);
-    for (let i = 0; i < padRows; i++) this.writeln("");
     this.term.scrollToBottom();
-    if (padRows > 0) this.write(`\x1b[${padRows}A`);
-    this.write(prompt());
+    this.write(R);
+    this.write(prompt(this.inputMode));
 
     if (this.suggestion) {
       this.write(`${DARK_GRAY}${this.suggestion}${R}`);
@@ -260,6 +275,15 @@ export class HosakaShell {
     // Config flow takes full control of input
     if (this.inConfigFlow) {
       this.handleConfigInput(data);
+      return;
+    }
+
+    // Ctrl+T toggles llm ⇄ code input mode when the line is empty.
+    if (data === "\x14" && !this.busy && this.buffer.length === 0) {
+      this.clearSuggestion();
+      this.writeln("");
+      this.setInputMode(this.inputMode === "llm" ? "code" : "llm");
+      this.writePrompt();
       return;
     }
 
@@ -494,7 +518,7 @@ export class HosakaShell {
     this.replaceBuffer(v);
   }
   private replaceBuffer(next: string): void {
-    this.write("\r" + prompt() + "\x1b[K");
+    this.write("\r" + prompt(this.inputMode) + "\x1b[K");
     this.write(next);
     this.buffer = next;
     this.cursor = next.length;
@@ -563,6 +587,9 @@ export class HosakaShell {
       }
       if (!agentCfg.enabled) {
         this.channelClosed();
+      } else if (this.inputMode === "code") {
+        // Code mode: plain text is a shell command (same path as `!`).
+        await this.shellPassthrough(raw.trim(), agentCfg);
       } else {
         await this.askAgent(raw, agentCfg);
       }
@@ -815,6 +842,9 @@ export class HosakaShell {
       case "/agent":
         await this.handleAgent(arg);
         break;
+      case "/llm":
+        await this.handleLlm(arg);
+        break;
       case "/configure":
         await this.handleConfigure(arg);
         break;
@@ -841,6 +871,16 @@ export class HosakaShell {
       return;
     }
     this.writePrompt();
+  }
+
+  private setInputMode(mode: InputMode): void {
+    this.inputMode = mode;
+    saveInputMode(mode);
+    const label = mode === "code" ? `${GREEN}code${R}` : `${VIOLET}llm${R}`;
+    const hint = mode === "code"
+      ? `plain text now runs as shell. ${CYAN}/llm${R}${GRAY} returns to agent chat.`
+      : `plain text now goes to the agent. ${CYAN}/code${R}${GRAY} switches to shell.`;
+    this.writeln(`  ${GRAY}input mode →${R} ${label} ${GRAY}${hint}${R}`);
   }
 
   private cancelCurrent(): void {
@@ -1237,13 +1277,26 @@ export class HosakaShell {
       await this.shellPassthrough(cmd, localAgentConfig());
       return;
     }
-    this.writeln(`  ${CYAN}/code${R} ${GRAY}is shell mode in the browser build.${R}`);
-    this.writeln(`  ${GRAY}Use ${CYAN}!<command>${R}${GRAY} for one-shot commands against the Mac/dev backend.${R}`);
-    this.writeln(`  ${GRAY}Examples:${R}`);
-    this.writeln(`    ${CYAN}!pwd${R}`);
-    this.writeln(`    ${CYAN}!ls -la${R}`);
-    this.writeln(`    ${CYAN}!command -v picoclaw && picoclaw --version${R}`);
-    this.writeln(`  ${DARK_GRAY}For a fully interactive TTY, use the real macOS Terminal pane/window. This web terminal is non-interactive per command.${R}`);
+    this.setInputMode("code");
+    this.writeln(`  ${DARK_GRAY}one-shot override still works: ${CYAN}!pwd${R}${DARK_GRAY}. toggle with Ctrl+T.${R}`);
+  }
+
+  private async handleLlm(arg: string): Promise<void> {
+    const sub = arg.trim();
+    if (!sub) {
+      this.setInputMode("llm");
+      this.writeln(`  ${DARK_GRAY}one-shot shell override still works: ${CYAN}!pwd${R}${DARK_GRAY}. toggle with Ctrl+T.${R}`);
+      return;
+    }
+    if (sub === "config" || sub === "configure") {
+      await this.handleConfigure("");
+      return;
+    }
+    if (sub === "model" || sub === "models") {
+      this.handleModel("");
+      return;
+    }
+    await this.askLlm(sub);
   }
 
   private async handleConfigure(arg: string): Promise<void> {
@@ -1753,8 +1806,7 @@ export class HosakaShell {
   private async handleLaunch(arg: string): Promise<void> {
     const target = arg.trim();
     if (!target) {
-      this.writeln(`  ${GRAY}usage: /launch <app>${R}`);
-      this.writeln(`  ${DARK_GRAY}try: ${CYAN}/launch list${R}${DARK_GRAY} for every launchable Hosaka + Flatpak target.${R}`);
+      await this.handleLaunchList();
       return;
     }
     if (["list", "ls", "apps"].includes(target.toLowerCase())) {
@@ -1780,6 +1832,12 @@ export class HosakaShell {
     const appId = resolveAppId(target);
     if (!appId) {
       this.writeln(`  ${RED}app not found:${R} ${target}`);
+      await this.handleLaunchList();
+      return;
+    }
+    const definition = getAppDefinition(appId);
+    if (!definition || !isTrueStateSurface(definition)) {
+      this.writeln(`  ${GRAY}${target} is deactivated here; use a Flatpak manifest or ${CYAN}/launch list${R}${GRAY}.${R}`);
       return;
     }
     const result = executeHosakaUiCommand({ id: "ui.open_surface", target: appId, preferredContainer: "window" });
@@ -1800,7 +1858,7 @@ export class HosakaShell {
 
   private async handleLaunchList(): Promise<void> {
     const nativeApps = APP_REGISTRY
-      .filter((app) => app.status !== "planned" && app.preferredHost !== "external-app")
+      .filter((app) => isTrueStateSurface(app) && app.status !== "planned" && app.preferredHost !== "external-app")
       .sort((a, b) => a.title.localeCompare(b.title));
 
     this.writeln(`  ${CYAN}launchable apps${R}`);

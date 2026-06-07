@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -u
+
+xml_escape() {
+  sed \
+    -e 's/&/\&amp;/g' \
+    -e 's/"/\&quot;/g' \
+    -e "s/'/\&apos;/g" \
+    -e 's/</\&lt;/g' \
+    -e 's/>/\&gt;/g'
+}
+
+printf '%s\n' '<openbox_pipe_menu>'
+
+if ! command -v flatpak >/dev/null 2>&1; then
+  printf '%s\n' '  <item label="Flatpak is not installed" />'
+  printf '%s\n' '</openbox_pipe_menu>'
+  exit 0
+fi
+
+items="$(flatpak list --app --columns=application,name 2>/dev/null | sort -f -k2 || true)"
+
+if [ -z "$items" ]; then
+  printf '%s\n' '  <item label="No Flatpak apps installed" />'
+  printf '%s\n' '</openbox_pipe_menu>'
+  exit 0
+fi
+
+while IFS=$'\t' read -r app_id app_name; do
+  [ -n "${app_id:-}" ] || continue
+  [ -n "${app_name:-}" ] || app_name="$app_id"
+  label="$(printf '%s' "$app_name" | xml_escape)"
+  command_text="$(printf 'flatpak run %s' "$app_id" | xml_escape)"
+  printf '  <item label="%s">\n' "$label"
+  printf '    <action name="Execute"><command>%s</command></action>\n' "$command_text"
+  printf '%s\n' '  </item>'
+done <<EOF
+$items
+EOF
+
+printf '%s\n' '</openbox_pipe_menu>'

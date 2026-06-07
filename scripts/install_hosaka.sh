@@ -40,6 +40,13 @@ sudo rsync -a           "$REPO_ROOT/requirements-hosaka.txt" "$APP_ROOT/"
 
 sudo install -m 755 "$REPO_ROOT/scripts/kiosk-chromium.sh"   /usr/local/bin/hosaka-kiosk-chromium
 sudo install -m 755 "$REPO_ROOT/scripts/kiosk-electron.sh"   /usr/local/bin/hosaka-kiosk-electron
+# LXQt autostart supervisor — keeps the Hosaka SPA fullscreen on top of the
+# LXQt desktop (see dotfiles/autostart/hosaka-kiosk.desktop).
+sudo install -m 755 "$REPO_ROOT/scripts/hosaka-lxqt-kiosk.sh" /usr/local/bin/hosaka-lxqt-kiosk
+# Desktop substrate branding for the explicit "go to desktop" path.
+sudo install -m 755 "$REPO_ROOT/scripts/hosaka-apply-desktop-branding.sh" /usr/local/bin/hosaka-apply-desktop-branding
+# "Open favorite" target used by the Hosaka right-click menu (desktop + SPA).
+sudo install -m 755 "$REPO_ROOT/scripts/hosaka-favorite.sh"   /usr/local/bin/hosaka-favorite
 # Operator CLI (build/kiosk mode toggle, deploy, status) and the boot-mode
 # arbiter that the hosaka-mode.service runs at startup. Both are optional —
 # older repo snapshots may not ship them yet, so don't fail the install.
@@ -197,6 +204,41 @@ sudo sed -i "s/^User=operator/User=${CURRENT_USER}/" "/etc/systemd/system/$PICOC
 if [[ -n "$CURRENT_HOME" && -f "$REPO_ROOT/dotfiles/openbox/autostart" ]]; then
   sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
     "$REPO_ROOT/dotfiles/openbox/autostart" "$CURRENT_HOME/.config/openbox/autostart"
+fi
+
+# LXQt is the base desktop; the Hosaka SPA rides on top of it as an XDG
+# autostart entry. Also refresh the Openbox root menu (the "deck out the
+# right-click" menu) and teach pcmanfm-qt to forward desktop right-clicks to
+# the WM so that menu actually appears on the LXQt desktop.
+if [[ -n "$CURRENT_HOME" ]]; then
+  if [[ -f "$REPO_ROOT/dotfiles/autostart/hosaka-kiosk.desktop" ]]; then
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/dotfiles/autostart/hosaka-kiosk.desktop" \
+      "$CURRENT_HOME/.config/autostart/hosaka-kiosk.desktop"
+  fi
+  if [[ -f "$REPO_ROOT/dotfiles/wallpaper/hosaka-desktop.png" ]]; then
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/dotfiles/wallpaper/hosaka-desktop.png" \
+      "$CURRENT_HOME/.local/share/hosaka/desktop-background.png"
+  fi
+  if [[ -f "$REPO_ROOT/dotfiles/openbox/menu.xml" ]]; then
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/dotfiles/openbox/menu.xml" "$CURRENT_HOME/.config/openbox/menu.xml"
+  fi
+  if [[ -f "$REPO_ROOT/scripts/hosaka-openbox-flatpak-menu" ]]; then
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/scripts/hosaka-openbox-flatpak-menu" \
+      "$CURRENT_HOME/.local/bin/hosaka-openbox-flatpak-menu"
+  fi
+  if [[ -f "$REPO_ROOT/dotfiles/pcmanfm-qt/settings.conf" ]]; then
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/dotfiles/pcmanfm-qt/settings.conf" \
+      "$CURRENT_HOME/.config/pcmanfm-qt/lxqt/settings.conf"
+  fi
+  # Make LXQt the default X session so boot lands on the desktop-with-apps with
+  # Hosaka on top, rather than the bare openbox kiosk.
+  sudo mkdir -p /var/lib/hosaka 2>/dev/null || true
+  echo "lxqt" | sudo tee /var/lib/hosaka/x-session >/dev/null 2>&1 || true
 fi
 
 # Kiosk Chromium must run as the graphical-session user (X11 cookie path).

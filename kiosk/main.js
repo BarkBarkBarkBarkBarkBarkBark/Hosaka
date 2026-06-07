@@ -25,11 +25,21 @@
  *   HOSAKA_KIOSK_HEIGHT      window height when not fullscreen (default 600)
  *   HOSAKA_KIOSK_DEVTOOLS    "1" → open devtools on launch (dev only)
  */
-const { app, BrowserWindow, net, session, shell, ipcMain } = require("electron");
+const { app, BrowserWindow, net, session, shell, ipcMain, globalShortcut } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const YAML = require("yaml");
+
+// The one canonical kiosk window. Tracked at module scope so the
+// to-desktop / to-hosaka toggles (IPC, Unix signals, global shortcut) can
+// reach it without walking BrowserWindow.getAllWindows() every time.
+let mainWindow = null;
+
+// Where we record our PID so `hosaka mode desktop|kiosk` over SSH can signal
+// the running kiosk (SIGUSR1 → drop to desktop, SIGUSR2 → return to Hosaka)
+// without guessing which of Electron's child processes is the main one.
+const KIOSK_PID_FILE = "/run/hosaka/kiosk.pid";
 
 // ── Pi 3B+ tuned Chromium switches ──
 // Set HOSAKA_KIOSK_PI_FLAGS=0 to opt out (e.g. on a developer x86 box where
@@ -37,15 +47,16 @@ const YAML = require("yaml");
 // Chromium's GPU blocklist by default, smooth scrolling reflows the whole
 // SPA on every gesture, and Translate/InterestFeed eat memory we don't have.
 if (String(process.env.HOSAKA_KIOSK_PI_FLAGS ?? "1") !== "0") {
-  app.commandLine.appendSwitch("use-gl", "egl");
-  app.commandLine.appendSwitch("enable-gpu-rasterization");
-  app.commandLine.appendSwitch("enable-zero-copy");
-  app.commandLine.appendSwitch("ignore-gpu-blocklist");
+  // Pi 3B/1GB survival mode: prefer predictable software compositing over
+  // chasing GPU paths that can white-screen under memory pressure.
+  app.commandLine.appendSwitch("disable-gpu");
+  app.commandLine.appendSwitch("disable-dev-shm-usage");
   app.commandLine.appendSwitch("disable-smooth-scrolling");
   app.commandLine.appendSwitch(
     "disable-features",
-    "Translate,InterestFeedContentSuggestions,CalculateNativeWinOcclusion,HardwareMediaKeyHandling",
+    "Translate,InterestFeedContentSuggestions,CalculateNativeWinOcclusion,HardwareMediaKeyHandling,BackForwardCache",
   );
+  app.commandLine.appendSwitch("js-flags", "--max-old-space-size=128");
 }
 
 const APPS_ROOT = path.resolve(__dirname, "..", "hosaka-apps");
@@ -469,6 +480,25 @@ async function spawnDetached(file, args) {
   });
 }
 
+function nudgeExternalWindowFullScreen() {
+  // Best-effort only. After a Flatpak starts, let LXQt/Openbox make whichever
+  // window is active fill the screen. This avoids keeping Hosaka on top and
+  // keeps the operator in a one-surface-at-a-time flow.
+  try {
+    const child = spawn("sh", [
+      "-lc",
+      "sleep 1; command -v wmctrl >/dev/null 2>&1 && wmctrl -r :ACTIVE: -b add,maximized_vert,maximized_horz || true",
+    ], {
+      shell: false,
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+  } catch {
+    /* optional ergonomic hint only */
+  }
+}
+
 async function launchApp(appId) {
   const manifest = resolveManifest(appId);
   if (!manifest) {
@@ -523,6 +553,11 @@ async function launchApp(appId) {
       details: [`launch command: ${manifest.launchCommand.join(" ")}`, String(launched.error?.message || launched.error || "unknown error")],
     };
   }
+  // Show the LXQt desktop so the launched flatpak window is not trapped behind
+  // an always-on-top kiosk. Hosaka stays alive but hidden/throttled; Super+H
+  // or `hosaka mode kiosk` returns to it.
+  goToDesktop();
+  nudgeExternalWindowFullScreen();
   return {
     ok: true,
     appId: manifest.id,
@@ -740,6 +775,48 @@ function focusWindow(win) {
   win.focus();
 }
 
+function getMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
+  const [win] = BrowserWindow.getAllWindows();
+  return win || null;
+}
+
+// Drop to the LXQt desktop without tearing down the kiosk. We just hide the
+// always-on-top window so the panel + flatpak apps underneath become usable;
+// the SPA keeps running so returning is instant and stateful.
+function goToDesktop() {
+  const win = getMainWindow();
+  if (!win) return false;
+  win.setAlwaysOnTop(false);
+  win.webContents.setAudioMuted(true);
+  win.webContents.send("hosaka-window:visibility", "desktop");
+  win.hide();
+  return true;
+}
+
+// Bring Hosaka back to the foreground (Super+H, `hosaka mode kiosk`, or the
+// in-SPA "return to Hosaka" action). This is also where we land after a
+// launched flatpak app is closed.
+function goToHosaka() {
+  const win = getMainWindow();
+  if (!win) return false;
+  if (FULLSCREEN) win.setAlwaysOnTop(true);
+  win.webContents.setAudioMuted(false);
+  win.webContents.send("hosaka-window:visibility", "hosaka");
+  focusWindow(win);
+  return true;
+}
+
+function writeKioskPidFile() {
+  try {
+    fs.mkdirSync(path.dirname(KIOSK_PID_FILE), { recursive: true });
+    fs.writeFileSync(KIOSK_PID_FILE, String(process.pid));
+  } catch {
+    // /run/hosaka may be root-owned on some installs; the desktop toggle then
+    // falls back to wmctrl/xdotool in scripts/hosaka. Non-fatal.
+  }
+}
+
 function loadKioskUrl(win, url) {
   // The Pi kiosk keeps Chromium's HTTP cache across Electron restarts. After a
   // local deploy, that can leave the window pointed at an old index.html and
@@ -781,6 +858,9 @@ function createWindow(startUrl = currentStartUrl) {
     minHeight: 320,
     fullscreen: FULLSCREEN,
     kiosk: FULLSCREEN,
+    // Sit above the LXQt panel/desktop so booting lands in Hosaka. The
+    // to-desktop toggle flips this off (and hides) to reveal the desktop.
+    alwaysOnTop: FULLSCREEN,
     autoHideMenuBar: true,
     backgroundColor: "#0b0d10",
     title: "Hosaka",
@@ -792,12 +872,14 @@ function createWindow(startUrl = currentStartUrl) {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
-      // Save ~20-40 MB of RAM on the Pi by disabling the background throttler's
-      // cache for invisible frames — the kiosk only has one window anyway.
-      backgroundThrottling: false,
+      // Let Chromium throttle timers/painting while the kiosk is hidden behind
+      // LXQt. On a 1 GB Pi this matters more than keeping offscreen animations
+      // perfectly smooth.
+      backgroundThrottling: true,
     },
   });
 
+  mainWindow = win;
   win.once("ready-to-show", () => win.show());
   loadKioskUrl(win, startUrl);
   if (DEVTOOLS) win.webContents.openDevTools({ mode: "detach" });
@@ -833,9 +915,49 @@ app.whenReady().then(() => {
   session.fromPartition("persist:hosaka-browser");
   createWindow();
 
+  // ── Hosaka ⇄ LXQt desktop toggle ──────────────────────────────────────────
+  // Three ways to drive it, all funneling into goToDesktop / goToHosaka:
+  //   1. In-SPA button / context menu  → preload bridge → these IPC channels.
+  //   2. `hosaka mode desktop|kiosk`   → SIGUSR1 / SIGUSR2 to our PID.
+  //   3. Super+H global shortcut       → re-summon Hosaka from anywhere.
+  ipcMain.handle("hosaka-window:to-desktop", async () => goToDesktop());
+  ipcMain.handle("hosaka-window:to-hosaka", async () => goToHosaka());
+  ipcMain.handle("hosaka-window:toggle", async () => {
+    const win = getMainWindow();
+    if (win && win.isVisible()) return goToDesktop() ? "desktop" : "hosaka";
+    return goToHosaka() ? "hosaka" : "desktop";
+  });
+  ipcMain.handle("hosaka-window:state", async () => {
+    const win = getMainWindow();
+    return win && win.isVisible() ? "hosaka" : "desktop";
+  });
+
+  writeKioskPidFile();
+  process.on("SIGUSR1", () => goToDesktop());
+  process.on("SIGUSR2", () => goToHosaka());
+
+  // Super+H always brings Hosaka back to the front (e.g. after closing a
+  // flatpak app on the desktop). Best-effort: a minimal WM may not grant it.
+  try {
+    globalShortcut.register("Super+H", () => goToHosaka());
+  } catch {
+    /* non-fatal */
+  }
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on("will-quit", () => {
+  globalShortcut.unregisterAll();
+  try {
+    if (fs.readFileSync(KIOSK_PID_FILE, "utf8").trim() === String(process.pid)) {
+      fs.rmSync(KIOSK_PID_FILE, { force: true });
+    }
+  } catch {
+    /* nothing to clean up */
+  }
 });
 
 app.on("window-all-closed", () => {

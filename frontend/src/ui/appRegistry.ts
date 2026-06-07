@@ -93,6 +93,24 @@ export type AppDefinition = {
   agentNote?: string;
 };
 
+const TRUE_STATE_SURFACES = new Set<AppId>([
+  "home",
+  "tool_directory",
+  "terminal",
+  "docs",
+  "diagnostics",
+  "voice",
+  "nodes",
+  "inbox",
+  "messages",
+  "todo",
+  "app_store",
+  "help",
+  "device_mic",
+  "device_cam",
+  "device_spk",
+]);
+
 export const HOST_LABELS: Record<PreferredHost, string> = {
   electron: "Electron",
   web: "Web",
@@ -175,7 +193,7 @@ export const APP_REGISTRY: AppDefinition[] = [
   {
     id: "tool_directory",
     title: "apps",
-    description: "directory of launchable surfaces and planned modules.",
+    description: "directory of true Hosaka surfaces and Flatpak app manifests.",
     glyph: "☰",
     aliases: ["apps", "tools", "directory", "tool-directory", "app-directory"],
     family: "core",
@@ -894,7 +912,12 @@ export function isHostScopeAllowed(scope: HostScope | undefined, platform: strin
   return true;
 }
 
+export function isTrueStateSurface(app: AppDefinition): boolean {
+  return TRUE_STATE_SURFACES.has(app.id);
+}
+
 export function isAppEnabled(app: AppDefinition, flags: AppFlags, platform: string | null = null): boolean {
+  if (!isTrueStateSurface(app)) return false;
   if (!isHostScopeAllowed(app.hostScope, platform)) return false;
   if (!app.requires) return app.status !== "planned";
   return flags[app.requires] && app.status !== "planned";

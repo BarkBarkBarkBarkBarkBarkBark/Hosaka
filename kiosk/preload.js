@@ -27,3 +27,16 @@ contextBridge.exposeInMainWorld("hosakaAppHost", {
   flathubMeta: async (flatpakId) => ipcRenderer.invoke("hosaka-apps:flathub-meta", flatpakId),
   stageManifest: async (payload) => ipcRenderer.invoke("hosaka-apps:stage-manifest", payload),
 });
+
+// Hosaka ⇄ LXQt desktop toggle. The SPA calls these to drop to the flatpak
+// desktop and to come back; the kiosk host hides/shows its always-on-top
+// window rather than tearing anything down, so state is preserved.
+contextBridge.exposeInMainWorld("hosakaWindow", {
+  // True only inside the Electron kiosk — the SPA uses this to decide whether
+  // to offer the desktop toggle (a plain browser tab has nothing to hide).
+  isKiosk: true,
+  toDesktop: async () => ipcRenderer.invoke("hosaka-window:to-desktop"),
+  toHosaka: async () => ipcRenderer.invoke("hosaka-window:to-hosaka"),
+  toggle: async () => ipcRenderer.invoke("hosaka-window:toggle"),
+  state: async () => ipcRenderer.invoke("hosaka-window:state"),
+});

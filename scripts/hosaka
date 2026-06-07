@@ -15,6 +15,7 @@
 # Convenience verbs:
 #
 #   hosaka status                  what's running, RAM/CPU snapshot
+#   hosaka launch [app]            list/launch Flatpak-backed Hosaka apps
 #   hosaka doctor [flags]          end-to-end diagnostics (runtime, tailscale, drift)
 #   hosaka dev                     local repo dev: backend (:8421) + vite + electron
 #   hosaka dev --web              browser-only fallback dev mode
@@ -68,10 +69,14 @@ KIOSK_AUTOSTART="${HOME:-/home/operator}/.config/openbox/autostart"
 # "kiosk") = openbox-session hosting the Hosaka kiosk; "lxqt" = full LXQt
 # desktop. Switched by `hosaka mode lxqt|kiosk`.
 X_SESSION_FILE="$STATE_DIR/x-session"
-# Transient in-session marker — when present, the openbox autostart skips
-# the kiosk respawn and leaves you on a usable desktop with a tint2 panel.
-# Cleared by `hosaka mode kiosk`; set by Alt+F4 / `hosaka mode desktop`.
+# Transient in-session marker — legacy, only consulted by older openbox-only
+# kiosk autostart. Under the LXQt model the desktop toggle hides/shows the
+# Electron window instead (see KIOSK_PID_FILE), so this is no longer set.
 DESKTOP_NOW_MARKER="/run/hosaka/desktop-now"
+# The Electron kiosk writes its main PID here (see kiosk/main.js). We signal
+# it to drop to / return from the LXQt desktop without killing the SPA:
+#   SIGUSR1 → hide (show the desktop)   SIGUSR2 → show + focus (return to Hosaka)
+KIOSK_PID_FILE="/run/hosaka/kiosk.pid"
 
 WEB_UNIT="hosaka-webserver.service"
 KIOSK_UNIT="hosaka-kiosk.service"
@@ -414,6 +419,44 @@ kiosk_display() {
   printf '%s\n' ':0'
 }
 
+# Tell the running Electron kiosk to drop to the desktop ("desktop") or come
+# back to the front ("hosaka"). Preferred path is a Unix signal to the PID it
+# recorded; if that file is missing/stale we fall back to wmctrl/xdotool poking
+# the window titled "Hosaka". Returns non-zero only if nothing could be done.
+kiosk_window() {
+  local want="$1" pid="" sig=""
+  case "$want" in
+    desktop) sig="USR1" ;;
+    hosaka)  sig="USR2" ;;
+    *) return 2 ;;
+  esac
+
+  if [[ -r "$KIOSK_PID_FILE" ]]; then
+    pid="$(head -n1 "$KIOSK_PID_FILE" 2>/dev/null | tr -dc '0-9')"
+  fi
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+    kill -"$sig" "$pid" 2>/dev/null && return 0
+  fi
+
+  # Fallback: drive the window manager directly on the kiosk display.
+  local kd; kd="$(kiosk_display)"
+  if have_cmd wmctrl; then
+    if [[ "$want" == "desktop" ]]; then
+      DISPLAY="$kd" wmctrl -r "Hosaka" -b add,hidden 2>/dev/null && return 0
+    else
+      DISPLAY="$kd" wmctrl -a "Hosaka" 2>/dev/null && return 0
+    fi
+  fi
+  if have_cmd xdotool; then
+    if [[ "$want" == "desktop" ]]; then
+      DISPLAY="$kd" xdotool search --name "Hosaka" windowminimize 2>/dev/null && return 0
+    else
+      DISPLAY="$kd" xdotool search --name "Hosaka" windowactivate 2>/dev/null && return 0
+    fi
+  fi
+  return 1
+}
+
 read_runtime_mode() {
   # Modes:
   #   console — interactive UI (chromium kiosk on the touchscreen, terminal,
@@ -492,6 +535,19 @@ mode_device() {
     pkill -u "$(id -un)" -9 -f 'chromium.*hosaka-kiosk-profile' || true
     ok "stopped chromium kiosk"
   fi
+  if pgrep -u "$(id -un)" -f 'kiosk/node_modules/electron/dist/electron' >/dev/null; then
+    pkill -u "$(id -un)" -TERM -f 'kiosk/node_modules/electron/dist/electron' || true
+    ok "stopped electron kiosk"
+  fi
+  if pgrep -u "$(id -un)" -f 'hosaka-lxqt-kiosk' >/dev/null; then
+    pkill -u "$(id -un)" -TERM -f 'hosaka-lxqt-kiosk' || true
+    ok "stopped LXQt kiosk supervisor"
+  fi
+  for proc in lxqt-session lxqt-panel pcmanfm-qt lxqt-runner lxqt-powermanagement; do
+    if pgrep -u "$(id -un)" -x "$proc" >/dev/null; then
+      pkill -u "$(id -un)" -TERM -x "$proc" || true
+    fi
+  done
   if pgrep -u "$(id -un)" -f '/.config/openbox/autostart' >/dev/null; then
     pkill -u "$(id -un)" -9 -f '/.config/openbox/autostart' || true
     ok "stopped openbox autostart loop"
@@ -578,18 +634,19 @@ mode_console() {
   write_runtime_mode "console"
   ok "runtime mode set to $(c_green console)"
 
-  # Clear the in-session "drop to desktop" marker and any persisted LXQt
-  # x-session selector, so the next startx and the live autostart loop
-  # both go back to hosting the kiosk.
+  # LXQt is the base desktop now; make sure the x-session selector keeps it
+  # so boot lands on the desktop-with-apps with Hosaka riding on top.
+  ensure_state_dir
+  if [[ "$(cat "$X_SESSION_FILE" 2>/dev/null)" != "lxqt" ]]; then
+    if ! printf '%s\n' "lxqt" > "$X_SESSION_FILE" 2>/dev/null; then
+      printf '%s\n' "lxqt" | sudo tee "$X_SESSION_FILE" >/dev/null
+    fi
+    ok "x-session pinned to $(c_cyan lxqt)"
+  fi
+  # Legacy openbox-only escape marker — clear it if some old path left it set.
   if [[ -f "$DESKTOP_NOW_MARKER" ]]; then
     rm -f "$DESKTOP_NOW_MARKER" 2>/dev/null \
       || sudo rm -f "$DESKTOP_NOW_MARKER" 2>/dev/null || true
-    ok "cleared desktop escape marker"
-  fi
-  if [[ -f "$X_SESSION_FILE" ]]; then
-    rm -f "$X_SESSION_FILE" 2>/dev/null \
-      || sudo rm -f "$X_SESSION_FILE" 2>/dev/null || true
-    ok "cleared LXQt x-session selector"
   fi
 
   if (( persist )); then
@@ -598,68 +655,47 @@ mode_console() {
     fi
   fi
 
-  # Console mode releases the TTY from the device dashboard service (no-op
-  # if it wasn't running) and refreshes getty so .profile re-runs and starts
-  # X. If openbox is already up we just re-fire the autostart in-place to
-  # avoid the visible flash of restarting Xorg.
+  # Release tty1 from the device dashboard if it's holding it.
   if systemctl is-active --quiet hosaka-device-dashboard.service 2>/dev/null; then
     sudo systemctl stop hosaka-device-dashboard.service 2>/dev/null || true
   fi
 
-  if pgrep -x Xorg >/dev/null && pgrep -u "$(id -un)" -x openbox >/dev/null; then
-    # Existing X session — just (re)fire the kiosk autostart in place.
-    if ! pgrep -u "$(id -un)" -f '/.config/openbox/autostart' >/dev/null; then
-      kd="$(kiosk_display)"
-      DISPLAY="$kd" XAUTHORITY="${HOME}/.Xauthority" \
-        nohup setsid /bin/sh "$KIOSK_AUTOSTART" \
-        </dev/null >/tmp/hosaka-autostart.log 2>&1 &
-      disown
-      ok "relaunched openbox autostart (chromium will follow)"
-    else
-      note "openbox autostart already running"
-    fi
+  # Bring Hosaka to the front. Three cases, cheapest first:
+  #   1. Electron is alive but hidden  → just re-show it (instant, stateful).
+  #   2. An LXQt session is up          → (re)launch the kiosk on top of it.
+  #   3. No X session                   → restart tty1 so .xinitrc → LXQt →
+  #                                        autostart brings everything up.
+  if kiosk_window hosaka 2>/dev/null; then
+    ok "Hosaka is back on top"
+  elif pgrep -u "$(id -un)" -x lxqt-session >/dev/null 2>&1 \
+       || pgrep -u "$(id -un)" -x openbox >/dev/null 2>&1; then
+    local kd; kd="$(kiosk_display)"
+    DISPLAY="$kd" XAUTHORITY="${HOME}/.Xauthority" \
+      nohup setsid /usr/local/bin/hosaka-lxqt-kiosk \
+      </dev/null >/tmp/hosaka-lxqt-kiosk.log 2>&1 &
+    disown
+    ok "launching Hosaka kiosk on the LXQt desktop"
   else
-    refresh_tty1 "console"
+    refresh_tty1 "lxqt"
   fi
 }
 
-# ── mode desktop (in-session escape hatch) ───────────────────────────────────
+# ── mode desktop (drop to the LXQt desktop-with-apps) ─────────────────────────
 #
-# Equivalent of the Alt+F4 openbox keybind: sets the transient marker so
-# the openbox autostart loop stops respawning the kiosk, kills any live
-# kiosk processes, and starts a panel. Persistent mode is unchanged — a
-# reboot returns to the kiosk. Use `hosaka mode kiosk` to restore.
+# Hides the always-on-top Hosaka window so the LXQt panel + flatpak apps
+# underneath become usable. The SPA keeps running, so `hosaka mode kiosk`
+# (or Super+H, or closing a launched app) brings it right back. Persistent
+# mode is unchanged — a reboot returns to Hosaka on top.
 mode_desktop() {
-  note "dropping to $(c_cyan 'openbox desktop') — kiosk respawn paused (this session only)"
+  note "dropping to the $(c_cyan 'LXQt desktop') — Hosaka hidden, still running"
 
-  mkdir -p "$(dirname "$DESKTOP_NOW_MARKER")" 2>/dev/null || true
-  if ! ( : > "$DESKTOP_NOW_MARKER" ) 2>/dev/null; then
-    sudo sh -c ": > $DESKTOP_NOW_MARKER"
+  if kiosk_window desktop 2>/dev/null; then
+    ok "Hosaka hidden — flatpak apps + panel are now in front"
+    note "run $(c_cyan 'hosaka mode kiosk') (or press $(c_cyan 'Super+H')) to return"
+  else
+    warn "no running Hosaka kiosk to hide"
+    note "the LXQt desktop is already in front"
   fi
-  ok "set $DESKTOP_NOW_MARKER"
-
-  if pgrep -u "$(id -un)" -f 'kiosk/node_modules/electron/dist/electron' >/dev/null; then
-    pkill -u "$(id -un)" -TERM -f 'kiosk/node_modules/electron/dist/electron' || true
-    ok "stopped electron kiosk"
-  fi
-  if pgrep -u "$(id -un)" -f 'chromium.*hosaka-kiosk-profile' >/dev/null; then
-    pkill -u "$(id -un)" -TERM -f 'chromium.*hosaka-kiosk-profile' || true
-    ok "stopped chromium kiosk"
-  fi
-
-  # Bring up a panel so the operator has something to click. tint2 reads
-  # ~/.config/tint2/tint2rc if present; default is fine for first-run.
-  if have_cmd tint2 && ! pgrep -u "$(id -un)" -x tint2 >/dev/null; then
-    local kd
-    kd="$(kiosk_display)"
-    DISPLAY="$kd" XAUTHORITY="${HOME}/.Xauthority" \
-      nohup setsid tint2 </dev/null >/tmp/hosaka-tint2.log 2>&1 &
-    disown
-    ok "started tint2 panel"
-  fi
-
-  note "right-click the desktop for Applications, terminals, and \`Relaunch Hosaka kiosk\`"
-  note "or run $(c_cyan 'hosaka mode kiosk') to restore the kiosk"
 }
 
 # ── mode lxqt (persistent: full LXQt desktop on next startx) ─────────────────
@@ -708,7 +744,7 @@ cmd_status() {
   echo
   echo "  hosaka mode        : $(c_amber "$mode")"
   echo "  x-session          : $(c_cyan "$x_session")"
-  echo "  desktop-now        : $([[ -f $DESKTOP_NOW_MARKER ]] && c_amber present || c_dim absent)"
+  echo "  hosaka kiosk       : $(pgrep -u "$(id -un)" -f 'kiosk/node_modules/electron/dist/electron' >/dev/null && c_green running || c_dim 'not running')"
   echo "  boot marker        : $([[ -f $BOOT_MARKER ]] && c_amber present || c_dim absent)"
   echo "  $WEB_UNIT  : $(systemctl is-active "$WEB_UNIT" 2>/dev/null || echo inactive)"
   echo "  $PICO_UNIT : $(systemctl is-active "$PICO_UNIT" 2>/dev/null || echo inactive)"
@@ -1344,6 +1380,12 @@ PY
   )
 }
 
+cmd_launch() {
+  local py
+  py="$(_hosaka_python)"
+  ( cd "$REPO_ROOT" && HOSAKA_APPS_ROOT="$REPO_ROOT/hosaka-apps" exec "$py" -m hosaka launch "$@" )
+}
+
 cmd_install() {
   local target="${1:-}"
   if [[ -z "$target" ]]; then
@@ -1530,26 +1572,26 @@ usage() {
 hosaka — operator CLI for the Hosaka Field Terminal Pi
 
   hosaka mode                       show current mode (console|device) + x-session
-  hosaka mode console [--persist]   interactive UI on the touchscreen
+  hosaka mode console [--persist]   bring Hosaka back to the front (over LXQt).
                                     --persist  remove boot marker
-                                    also clears the desktop-now / lxqt selectors
   hosaka mode device  [--persist] [--full]
                                     diagnostic + ssh-friendly. Stops kiosk,
                                     pauses picoclaw, shows device dashboard
                                     (IPs/ports/RAM/battery) on tty1.
                                     --persist  survive reboots
                                     --full     also stop hosaka-webserver
-  hosaka mode desktop               in-session escape from the kiosk (Alt+F4 equivalent):
-                                    pauses the kiosk respawn loop, kills electron,
-                                    leaves you on an openbox desktop with tint2.
-                                    Reboot returns to the kiosk; clear with
-                                    \`hosaka mode kiosk\`.
-  hosaka mode lxqt [--now]          switch the x-session to full LXQt desktop
-                                    (applies on next startx; --now restarts X).
+  hosaka mode desktop               drop to the LXQt desktop-with-apps. Hides the
+                                    Hosaka window (it keeps running); flatpak apps
+                                    + panel come to the front. Return with
+                                    \`hosaka mode kiosk\` or Super+H.
+  hosaka mode lxqt [--now]          (advanced) pin the base x-session to LXQt —
+                                    this is the default. --now restarts X.
 
   Aliases (legacy): \`hosaka mode kiosk\` → console, \`hosaka mode build\` → device
 
   hosaka status                     what's running + memory snapshot
+  hosaka launch [app]               launch a Flatpak-backed Hosaka app; no app lists targets
+  hosaka launch alias ALIAS APP     add an easy alias, e.g. \`hosaka launch alias ff firefox\`
   hosaka down [--port N] [--all]    stop local dev listeners/windows for this checkout
   hosaka dashboard                  print the device dashboard once and exit
   hosaka diag [--json] [--host URL] shared device/network/peripheral snapshot
@@ -1620,12 +1662,13 @@ main() {
           [[ -f "$X_SESSION_FILE" ]] && x_session="$(cat "$X_SESSION_FILE" 2>/dev/null || echo kiosk)"
           echo "  current mode: $(c_amber "$(read_runtime_mode)")"
           echo "  x-session   : $(c_cyan "$x_session")"
-          echo "  desktop-now : $([[ -f $DESKTOP_NOW_MARKER ]] && c_amber present || c_dim absent)"
+          echo "  hosaka kiosk: $(pgrep -u "$(id -un)" -f 'kiosk/node_modules/electron/dist/electron' >/dev/null && c_green running || c_dim 'not running')"
           ;;
         *) die "unknown mode: $sub (try console|device|desktop|lxqt|show)" ;;
       esac
       ;;
     status)    cmd_status "$@" ;;
+    launch|apps) cmd_launch "$@" ;;
     down)      cmd_down "$@" ;;
     dashboard) exec /usr/local/bin/hosaka-device-dashboard --once ;;
     diag)      cmd_diag "$@" ;;

@@ -177,6 +177,103 @@ html, body, #root {
   background: var(--bg-2);
 }
 
+.hosaka-context-menu {
+  position: fixed;
+  z-index: 260;
+  width: 260px;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  background: rgba(11, 13, 16, 0.96);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  font-family: var(--font-mono);
+}
+
+.hosaka-context-menu button {
+  display: flex;
+  width: 100%;
+  min-height: 34px;
+  align-items: center;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hosaka-context-menu button:hover,
+.hosaka-context-menu button:focus-visible {
+  color: var(--amber);
+  border-color: var(--amber-dim);
+  background: var(--bg-2);
+  outline: none;
+}
+
+.hosaka-context-menu hr {
+  margin: 6px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.hosaka-swap-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: var(--bg-0);
+  color: var(--amber);
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+}
+
+.hosaka-swap-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 24px);
+  gap: 8px;
+}
+
+.hosaka-swap-grid span {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--amber-dim);
+  background: var(--bg-1);
+  animation: hosaka-swap-blip 0.65s steps(2, end) both;
+  animation-delay: calc(var(--swap-i, 0) * 24ms);
+}
+
+.hosaka-swap-grid span:nth-child(1) { --swap-i: 1; }
+.hosaka-swap-grid span:nth-child(2) { --swap-i: 2; }
+.hosaka-swap-grid span:nth-child(3) { --swap-i: 3; }
+.hosaka-swap-grid span:nth-child(4) { --swap-i: 4; }
+.hosaka-swap-grid span:nth-child(5) { --swap-i: 5; }
+.hosaka-swap-grid span:nth-child(6) { --swap-i: 6; }
+.hosaka-swap-grid span:nth-child(7) { --swap-i: 7; }
+.hosaka-swap-grid span:nth-child(8) { --swap-i: 8; }
+.hosaka-swap-grid span:nth-child(9) { --swap-i: 9; }
+.hosaka-swap-grid span:nth-child(10) { --swap-i: 10; }
+.hosaka-swap-grid span:nth-child(11) { --swap-i: 11; }
+.hosaka-swap-grid span:nth-child(12) { --swap-i: 12; }
+.hosaka-swap-grid span:nth-child(13) { --swap-i: 13; }
+.hosaka-swap-grid span:nth-child(14) { --swap-i: 14; }
+.hosaka-swap-grid span:nth-child(15) { --swap-i: 15; }
+.hosaka-swap-grid span:nth-child(16) { --swap-i: 16; }
+
+@keyframes hosaka-swap-blip {
+  0%, 100% { background: var(--bg-1); box-shadow: none; }
+  50% { background: var(--amber); box-shadow: 0 0 10px rgba(255, 191, 70, 0.45); }
+}
+
+.hosaka-swap-copy {
+  font-size: 12px;
+  color: var(--fg-2);
+  text-transform: lowercase;
+}
+
 .hosaka-dock-picker {
   display: inline-flex;
   align-items: center;
@@ -446,7 +543,7 @@ html, body, #root {
    debug-860fc3.log #10/#25). Padding stays on the host itself. */
 .terminal-host {
   position: absolute;
-  inset: 10px;
+  inset: 10px 10px 14px;
   padding: 10px;
   background: #0b0d10;
   border: 1px solid var(--border-strong);
@@ -2252,7 +2349,7 @@ html, body, #root {
   }
 
   /* Terminal: zero chrome so xterm gets the entire stage */
-  .terminal-host { inset: 2px; padding: 4px; }
+  .terminal-host { inset: 2px 2px 8px; padding: 4px; }
 
   /* Reading: collapse sidebar to top on small screens */
   .reading-wrap { flex-direction: column; }

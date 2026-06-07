@@ -90,6 +90,9 @@ def _dispatch_argv() -> int | None:
     if cmd == "voice":
         from hosaka.voice.daemon import main as voice_main
         return voice_main()
+    if cmd in {"launch", "apps"}:
+        from hosaka.apps import main as apps_main
+        return apps_main(sys.argv[2:])
     return None
 
 

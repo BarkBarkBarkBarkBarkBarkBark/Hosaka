@@ -18,6 +18,7 @@ export function getCommands(): CommandEntry[] {
     { cmd: "/docs",      desc: st("commands.docsDesc"),        cat: st("commands.catReference") },
 
     { cmd: "/ask <x>",   desc: st("commands.askDesc"),         cat: st("commands.catChatAI") },
+    { cmd: "/llm",       desc: "switch plain text back to LLM / agent mode.", cat: st("commands.catChatAI") },
     { cmd: "/model",     desc: st("commands.modelDesc"),       cat: st("commands.catChatAI") },
     { cmd: "/reset",     desc: st("commands.resetDesc"),       cat: st("commands.catChatAI") },
     { cmd: "/cancel",    desc: st("commands.cancelDesc"),      cat: st("commands.catChatAI") },
@@ -30,7 +31,7 @@ export function getCommands(): CommandEntry[] {
     { cmd: "/agent local",   desc: st("commands.agentLocalDesc"),  cat: st("commands.catAgent") },
     { cmd: "/agent test",    desc: st("commands.agentTestDesc"),   cat: st("commands.catAgent") },
     { cmd: "!<cmd>",         desc: st("commands.shellDesc"),       cat: st("commands.catAgent") },
-    { cmd: "/code",          desc: st("commands.codeDesc"),        cat: st("commands.catAgent") },
+    { cmd: "/code",          desc: "switch plain text to shell/code mode.",   cat: st("commands.catAgent") },
 
     { cmd: "/netscan",   desc: st("commands.netscanDesc"),     cat: st("commands.catNetwork") },
 

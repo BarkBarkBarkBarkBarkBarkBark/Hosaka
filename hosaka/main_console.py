@@ -37,6 +37,7 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("/chat",           "Enter interactive chat mode with the AI",       "Chat & AI"),
     ("/chat <text>",    "One-shot question — ask and get an answer",     "Chat & AI"),
     ("/ask <text>",     "Alias for /chat <text>",                        "Chat & AI"),
+    ("/llm",            "Plain text talks to the AI",                    "Chat & AI"),
     ("/voice",          "Talk to Hosaka (wake-word + OpenAI Realtime)",  "Chat & AI"),
     # ── System ──
     ("/status",         "System overview — uptime, IP, model, services", "System"),
@@ -71,7 +72,8 @@ COMMANDS: list[tuple[str, str, str]] = [
     # ── Video ──
     ("/video <url>",    "Send a video URL to the kiosk video panel",     "Video"),
     # ── Tools ──
-    ("/code",           "Drop into a shell session (exit to return)",    "Tools"),
+    ("/code",           "Plain text runs as shell/code",                 "Tools"),
+    ("/shell",          "Drop into a shell session (exit to return)",    "Tools"),
     ("/history",        "Show recent commands from this session",        "Tools"),
     ("/weather",        "Current weather (requires internet)",           "Tools"),
     ("/whoami",         "Show current user and hostname",                "Tools"),
@@ -124,8 +126,8 @@ def _show_help() -> None:
     for ln in box("HOSAKA — QUICK START GUIDE", color=CYAN_DIM):
         print(ln)
     print()
-    print(f"  Just type anything → it goes straight to the AI.")
-    print(f"  Prefix with {CYAN}/{R} for built-in commands.  Prefix with {CYAN}!{R} for shell.")
+    print(f"  Just type anything → follows the prompt mode: {VIOLET}llm{R} or {GREEN}code{R}.")
+    print(f"  Use {CYAN}/llm{R} or {CYAN}/code{R} to toggle. Prefix {CYAN}!{R} for one shell command.")
     print()
     print(f"  {AMBER}Start here:{R}")
     starters = [
@@ -139,7 +141,7 @@ def _show_help() -> None:
     for cmd, desc in starters:
         print(f"    {cmd_style(cmd):<34s} {desc_style(desc)}")
     print()
-    print(f"  Anything else you type is sent to Picoclaw as a question.")
+    print(f"  Anything else follows the active mode: llm → Picoclaw, code → shell.")
     print(f"  {VIOLET}There is no wrong way.{R} Experiment freely.")
 
 
@@ -153,7 +155,7 @@ def _show_commands() -> None:
             print(section_header(cat, AMBER_DIM))
         print(f"    {cmd_style(cmd):<34s} {desc_style(desc)}")
     print()
-    print(f"  {GRAY}Everything else → sent to Picoclaw AI as a question.{R}")
+    print(f"  {GRAY}Everything else follows the active prompt mode: llm → Picoclaw, code → shell.{R}")
     print()
 
 
@@ -247,6 +249,20 @@ def _enter_code_mode(current_dir: Path) -> None:
     except Exception as exc:  # noqa: BLE001
         print(f"Shell failed: {exc}")
     print("Back in Hosaka console.")
+
+
+def _run_shell_command(shell_cmd: str, current_dir: Path) -> None:
+    if not shell_cmd.strip():
+        print(f"  {GRAY}usage:{R} {CYAN}!<command>{R} or switch with {CYAN}/code{R}")
+        return
+    try:
+        proc = subprocess.run(
+            shell_cmd, shell=True, text=True, cwd=str(current_dir)  # noqa: S602
+        )
+        if proc.returncode != 0:
+            print(f"[exit {proc.returncode}]")
+    except Exception as exc:  # noqa: BLE001
+        print(f"Shell error: {exc}")
 
 
 # ── /netscan ──────────────────────────────────────────────────────────────────
@@ -931,9 +947,11 @@ def run_main_console() -> None:
     _print_banner()
     _check_api_key()
     current_dir = Path.cwd()
+    input_mode = "llm"
     while True:
         try:
-            prompt = f"{CYAN}hosaka{R}:{BLUE}{current_dir}{R} {AMBER}>{R} "
+            mode_color = VIOLET if input_mode == "llm" else GREEN
+            prompt = f"{CYAN}hosaka{R}:{BLUE}{current_dir}{R} {DARK_GRAY}[{mode_color}{input_mode}{DARK_GRAY}]{R} {AMBER}>{R} "
             raw = input(prompt).strip()
         except (EOFError, KeyboardInterrupt):
             print(f"\n{GRAY}Exiting Hosaka console.{R}")
@@ -1001,6 +1019,16 @@ def run_main_console() -> None:
 
         # ── Tools ──
         elif raw == "/code":
+            input_mode = "code"
+            print(f"  {GRAY}input mode → {GREEN}code{R}{GRAY}. plain text now runs as shell. {CYAN}/llm{R}{GRAY} returns to AI.{R}")
+        elif raw.startswith("/code "):
+            _run_shell_command(raw[6:].strip(), current_dir)
+        elif raw == "/llm":
+            input_mode = "llm"
+            print(f"  {GRAY}input mode → {VIOLET}llm{R}{GRAY}. plain text now goes to Picoclaw. {CYAN}/code{R}{GRAY} switches to shell.{R}")
+        elif raw.startswith("/llm "):
+            one_shot(raw[5:].strip(), hostname=_hostname(), cwd=str(current_dir))
+        elif raw == "/shell":
             _enter_code_mode(current_dir)
         elif raw == "/history":
             _show_history()
@@ -1067,7 +1095,11 @@ def run_main_console() -> None:
         elif raw.startswith("read "):
             _read_file(raw[5:], current_dir=current_dir)
         elif raw == "code":
-            _enter_code_mode(current_dir)
+            input_mode = "code"
+            print(f"  {GRAY}input mode → {GREEN}code{R}{GRAY}. plain text now runs as shell. {CYAN}/llm{R}{GRAY} returns to AI.{R}")
+        elif raw == "llm":
+            input_mode = "llm"
+            print(f"  {GRAY}input mode → {VIOLET}llm{R}{GRAY}. plain text now goes to Picoclaw.{R}")
         elif raw == "/netscan" or raw == "netscan":
             _netscan()
         elif raw == "/todo" or raw == "todo":
@@ -1107,15 +1139,7 @@ def run_main_console() -> None:
 
         # ── Shell passthrough ──
         elif raw.startswith("!"):
-            shell_cmd = raw[1:].strip()
-            try:
-                proc = subprocess.run(
-                    shell_cmd, shell=True, text=True, cwd=str(current_dir)  # noqa: S602
-                )
-                if proc.returncode != 0:
-                    print(f"[exit {proc.returncode}]")
-            except Exception as exc:  # noqa: BLE001
-                print(f"Shell error: {exc}")
+            _run_shell_command(raw[1:].strip(), current_dir)
 
         # ── Unknown slash command ──
         elif raw.startswith("/"):
@@ -1123,4 +1147,7 @@ def run_main_console() -> None:
 
         # ── Default: everything else → Picoclaw ──
         else:
-            one_shot(raw, hostname=_hostname(), cwd=str(current_dir))
+            if input_mode == "code":
+                _run_shell_command(raw, current_dir)
+            else:
+                one_shot(raw, hostname=_hostname(), cwd=str(current_dir))

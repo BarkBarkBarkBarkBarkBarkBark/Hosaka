@@ -10,20 +10,18 @@ import { FloatingOrb } from "./components/FloatingOrb";
 import { useSyncedDoc } from "./sync/useSyncedDoc";
 import { useConversationLog } from "./chat/conversationLog";
 import {
-  APP_REGISTRY,
   getAppDefinition,
   listEnabledApps,
   resolveAppId,
   type AppId,
 } from "./ui/appRegistry";
-import { dedupeAppIds, INITIAL_WINDOWS_DOC, type WindowEntry, type WindowsDoc } from "./ui/windowState";
+import { INITIAL_WINDOWS_DOC, type WindowEntry, type WindowsDoc } from "./ui/windowState";
 import { OverlayStack } from "./components/OverlayStack";
 
-// Each panel becomes its own chunk so first paint of the kiosk only ships
-// the shell (header + dock + footer + the active panel). Big panels — xterm
-// (~500 KB), marked + reading content, video player — only load when their
-// tab is first tapped. We then KEEP them mounted via the `visited` set below
-// so panel state (typing buffers, scrollback) survives tab switching.
+// Each panel becomes its own chunk so first paint of the kiosk only ships the
+// shell plus the active panel. On the Pi we intentionally keep only one panel
+// mounted at a time — old-console / cartridge-swap style — so xterm, webviews,
+// video, and orb surfaces release their renderer work when you switch away.
 const TerminalPanel = lazy(() =>
   import("./panels/TerminalPanel").then((m) => ({ default: m.TerminalPanel })),
 );
@@ -93,6 +91,7 @@ const ExternalAppPanel = lazy(() =>
 import { CmdLine } from "./components/CmdLine";
 import { HintLayer } from "./components/HintLayer";
 import { WindowDock } from "./components/WindowDock";
+import { HosakaContextMenu } from "./components/HosakaContextMenu";
 import { useShortcuts } from "./ui/useShortcuts";
 
 // Build stamp injected by vite.config.ts via `define`. Empty fallback so
@@ -126,6 +125,7 @@ export function App() {
   const [docToast, setDocToast] = useState<{ path: string; at: number } | null>(null);
   const [hostPlatform, setHostPlatform] = useState<string | null>(null);
   const [exposeOpen, setExposeOpen] = useState(false);
+  const [swapTarget, setSwapTarget] = useState<AppId | null>(null);
   useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
@@ -214,11 +214,13 @@ export function App() {
   );
   const syncedOpenAppIds = useMemo(() => {
     const filtered = windowDoc.openAppIds.filter((appId) => enabledIds.has(appId));
-    return dedupeAppIds(["terminal", ...filtered]);
+    const active = enabledIds.has(windowDoc.activeAppId) ? windowDoc.activeAppId : null;
+    return [filtered[filtered.length - 1] ?? active ?? "terminal"] as AppId[];
   }, [enabledIds, windowDoc.openAppIds]);
   const openAppIds = useMemo(() => {
     const source = openOverride ?? syncedOpenAppIds;
-    return dedupeAppIds(["terminal", ...source.filter((appId) => enabledIds.has(appId))]);
+    const filtered = source.filter((appId) => enabledIds.has(appId));
+    return [filtered[filtered.length - 1] ?? "terminal"] as AppId[];
   }, [enabledIds, openOverride, syncedOpenAppIds]);
   const activeAppId = useMemo(() => {
     if (activeOverride && enabledIds.has(activeOverride) && openAppIds.includes(activeOverride)) {
@@ -277,12 +279,15 @@ export function App() {
   const openApp = useCallback((appId: AppId) => {
     const definition = getAppDefinition(appId);
     if (!definition || !enabledIds.has(appId)) return;
-    setOpenOverride((prev) => dedupeAppIds([...(prev ?? openAppIds), appId]));
+    if (appId !== activeAppId) {
+      setSwapTarget(appId);
+      window.setTimeout(() => setSwapTarget((current) => current === appId ? null : current), 650);
+    }
+    setOpenOverride([appId]);
     setActiveOverride(appId);
     const now = Date.now();
     updateWindows((doc) => {
-      const openIds: AppId[] = Array.isArray(doc.openAppIds) ? doc.openAppIds : ["terminal"];
-      doc.openAppIds = dedupeAppIds([...openIds, appId]);
+      doc.openAppIds = [appId];
       doc.activeAppId = appId;
       if (!doc.windows || typeof doc.windows !== "object") doc.windows = {};
       const prev = doc.windows[appId];
@@ -299,26 +304,24 @@ export function App() {
       if (prev?.snapshot !== undefined) next.snapshot = prev.snapshot;
       doc.windows[appId] = next;
     });
-  }, [enabledIds, openAppIds, updateWindows]);
+  }, [activeAppId, enabledIds, updateWindows]);
 
   const closeApp = useCallback((appId: AppId) => {
     const definition = getAppDefinition(appId);
     if (!definition || definition.closable === false) return;
-    const nextOpen = openAppIds.filter((id) => id !== appId);
+    const nextOpen: AppId[] = ["terminal"];
     setOpenOverride(nextOpen);
     if (activeOverride === appId) {
-      setActiveOverride(nextOpen[nextOpen.length - 1] ?? "terminal");
+      setActiveOverride("terminal");
     }
     updateWindows((doc) => {
-      const openIds: AppId[] = Array.isArray(doc.openAppIds) ? doc.openAppIds : ["terminal"];
-      doc.openAppIds = openIds.filter((id) => id !== appId);
+      doc.openAppIds = ["terminal"];
       if (doc.activeAppId === appId) {
-        const remaining = dedupeAppIds(["terminal", ...doc.openAppIds]);
-        doc.activeAppId = remaining[remaining.length - 1] ?? "terminal";
+        doc.activeAppId = "terminal";
         setActiveOverride(doc.activeAppId);
       }
     });
-  }, [activeOverride, openAppIds, updateWindows]);
+  }, [activeOverride, updateWindows]);
 
   const setActiveApp = useCallback((appId: AppId) => {
     if (!enabledIds.has(appId)) return;
@@ -341,6 +344,10 @@ export function App() {
       }),
     );
   }, [openApp]);
+
+  const dropToDesktop = useCallback(() => {
+    void window.hosakaWindow?.toDesktop?.();
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => setBootMessage(t("boot.steady")), 900);
@@ -440,7 +447,7 @@ export function App() {
         return (
           <DesktopPanel
             mode="directory"
-            apps={APP_REGISTRY}
+            apps={enabledApps}
             openAppIds={openAppIds}
             activeAppId={activeAppId}
             conversation={conversationDoc.entries}
@@ -564,6 +571,13 @@ export function App() {
             title="orb (Ctrl+O)"
             onClick={() => setActiveApp("voice")}
           >◎</button>
+          <button
+            type="button"
+            className="icon-btn hosaka-quick-btn"
+            aria-label="switch to LXQt desktop"
+            title="desktop apps (hide Hosaka, Super+H returns)"
+            onClick={dropToDesktop}
+          >▣</button>
         </div>
         <div className="hosaka-topbar-right">
           <LangPicker />
@@ -610,14 +624,6 @@ export function App() {
       />
 
       <nav className="hosaka-dock">
-        {/*
-          The dock used to render every launcherApp as a chip below the
-          dropdown. On a 1024-wide kiosk that wrapped to 4 rows and ate
-          ~60% of the viewport — fully redundant with the dropdown right
-          next to it. The dropdown alone is enough; open windows still
-          show below in `hosaka-window-strip`. Discoverability lives in
-          the menu (☰ → apps → all apps).
-        */}
         <div className="hosaka-launchbar">
           <label className="hosaka-dock-picker">
             <span className="hosaka-dock-picker-label dim">{t("tabs.jump", "app")}</span>
@@ -635,54 +641,13 @@ export function App() {
             </select>
           </label>
         </div>
-
-        <div className="hosaka-window-strip" role="tablist" aria-label="open windows">
-          {openAppIds.map((appId) => {
-            const app = getAppDefinition(appId);
-            if (!app) return null;
-            return (
-              <button
-                key={appId}
-                role="tab"
-                aria-selected={activeAppId === appId}
-                className={`hosaka-window-tab ${activeAppId === appId ? "is-active" : ""}`}
-                onClick={() => setActiveApp(appId)}
-              >
-                <span className="hosaka-window-title">{app.glyph} {app.title}</span>
-                {app.closable !== false && (
-                  <span
-                    className="hosaka-window-close"
-                    role="button"
-                    aria-label={`close ${app.title}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      closeApp(appId);
-                    }}
-                  >
-                    ×
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
       </nav>
 
       <main className="hosaka-stage">
         <Suspense fallback={null}>
-          {openAppIds.map((appId) => {
-            const isActive = activeAppId === appId;
-            const keepMeasurableWhileInactive = appId === "terminal";
-            return (
-              <div
-                key={appId}
-                className={`hosaka-panel ${isActive ? "is-active" : "is-inactive"}`}
-                hidden={!keepMeasurableWhileInactive && !isActive}
-              >
-                {renderApp(appId)}
-              </div>
-            );
-          })}
+          <div key={activeAppId} className="hosaka-panel is-active">
+            {renderApp(activeAppId)}
+          </div>
         </Suspense>
       </main>
 
@@ -691,13 +656,25 @@ export function App() {
       <WindowDock />
 
       <footer className="hosaka-footer">
-        <span className="hosaka-footer-dim">{t("footer")} · {openAppIds.length} windows</span>
+        <span className="hosaka-footer-dim">{t("footer")} · one surface loaded</span>
       </footer>
 
-      <FloatingOrb voiceActive={activeAppId === "voice"} />
+      {activeAppId === "voice" && <FloatingOrb voiceActive />}
 
       <OverlayStack />
       <HintLayer />
+      <HosakaContextMenu apps={enabledApps} onOpenApp={openApp} onStageCommand={stageTerminalCommand} />
+
+      {swapTarget && (
+        <div className="hosaka-swap-screen" role="status" aria-live="polite">
+          <div className="hosaka-swap-grid" aria-hidden>
+            {Array.from({ length: 16 }).map((_, idx) => <span key={idx} />)}
+          </div>
+          <div className="hosaka-swap-copy">
+            loading {getAppDefinition(swapTarget)?.title ?? swapTarget}
+          </div>
+        </div>
+      )}
 
       {exposeOpen && (
         <div
