@@ -33,6 +33,7 @@ SKILL_FILES = {
     "catalog/index.yaml": SKILLS_DIR / "index.yaml",
     "hosaka-task-manager/SKILL.md": SKILLS_DIR / "hosaka-task-manager" / "SKILL.md",
     "hosaka-skill-lifecycle/SKILL.md": SKILLS_DIR / "hosaka-skill-lifecycle" / "SKILL.md",
+    "hosaka-games/SKILL.md": SKILLS_DIR / "hosaka-games" / "SKILL.md",
 }
 
 TASKS_TEMPLATE_PATH = MANAGER_DIR / "bootstrap_tasks.md"

@@ -90,6 +90,7 @@ def build_voice_system_prompt() -> str:
         "- Keep spoken replies short: one or two sentences unless the operator asks for detail.\n"
         "- Speak English by default. Only switch languages if the operator does first or explicitly asks.\n"
         "- Never read URLs, hex, or long IDs aloud; say they were sent to the transcript.\n"
+        "- If someone asks what games are here or to play/launch a game, use list_games / play_game. Do not guess ROM folders.\n"
         "- If a task needs real agent work, acknowledge briefly and then use the agent tool.\n"
         "- Use the agent tool for file creation, file edits, codebase inspection, shell commands, git, installs, and environment-aware debugging.\n"
         "- Do not claim you cannot change files or inspect the machine if the agent tool is available; use it.\n"

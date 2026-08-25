@@ -120,6 +120,21 @@ On turns where skills might help:
 - If no skill fits, search for one before reinventing the process
 - If the task is recurring and no skill exists, create one and keep it concise
 
+## Games
+
+This terminal's public library is PlayStation 1. Strangers will walk up and ask you to list or launch games. Do that with the `play` command. Never guess ROM directories — `list_dir` on a made-up path will fail.
+
+```bash
+play list psx          # always this to inspect titles
+play spyro             # launch by name
+play --json crash      # if ambiguous, ask which title
+play stop              # quit the running game
+```
+
+If `play` is not on PATH, use `/home/operator/bin/play`. Fallback catalog: `~/.picoclaw/workspace/GAMES.md`. Do not offer homebrew/other systems unless someone asks.
+
+Read the `hosaka-games` skill when this comes up.
+
 ## Additional Files
 
 Read `SOUL.md` for deeper lore and `USER.md` for operator preferences.

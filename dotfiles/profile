@@ -27,10 +27,8 @@ if [ -d "$HOME/.local/bin" ] ; then
 fi
 
 # tty1 boot dispatcher.
-#   console mode (default) → startx → openbox → kiosk Chromium
-#   device  mode           → live dashboard (IPs, ports, RAM, battery)
-#                            so the operator can read what they need before
-#                            SSHing in. No X = no Chromium = ~600 MB free.
+#   console mode (default) → startx → LXQt → Hosaka TUI in a terminal
+#   device  mode           → live dashboard on tty1 (no X)
 if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
     HOSAKA_MODE=""
     if [ -r /var/lib/hosaka/mode ]; then

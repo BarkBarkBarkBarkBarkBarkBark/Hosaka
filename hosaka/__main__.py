@@ -87,6 +87,10 @@ def _dispatch_argv() -> int | None:
     if len(sys.argv) < 2:
         return None
     cmd = sys.argv[1]
+    if cmd in {"tui", "console"}:
+        from hosaka.main_console import run_main_console
+        run_main_console()
+        return 0
     if cmd == "voice":
         from hosaka.voice.daemon import main as voice_main
         return voice_main()

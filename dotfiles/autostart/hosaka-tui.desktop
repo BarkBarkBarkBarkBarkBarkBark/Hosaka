@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Hosaka TUI
+GenericName=Hosaka Field Terminal
+Comment=Hosaka terminal UI at login (Electron GUI is still available via hosaka gui)
+Exec=/home/operator/bin/hosaka-tui-term
+Icon=utilities-terminal
+Terminal=false
+Categories=System;
+Hidden=false
+OnlyShowIn=LXQt;
+X-GNOME-Autostart-enabled=true

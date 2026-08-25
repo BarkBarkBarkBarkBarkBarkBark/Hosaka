@@ -20,8 +20,23 @@ from typing import Generator
 
 PICOCLAW_BIN = os.getenv("PICOCLAW_BIN", "picoclaw")
 DEFAULT_SESSION = os.getenv("PICOCLAW_SESSION", "hosaka:main")
-DEFAULT_MODEL = os.getenv("PICOCLAW_MODEL", "")
 PICOCLAW_HOME = os.getenv("PICOCLAW_HOME")
+
+
+def _config_model_name() -> str:
+    from pathlib import Path
+    import json
+    path = Path.home() / ".picoclaw" / "config.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return str(
+            data.get("agents", {}).get("defaults", {}).get("model_name") or ""
+        ).strip()
+    except Exception:
+        return ""
+
+
+DEFAULT_MODEL = os.getenv("PICOCLAW_MODEL", "") or _config_model_name()
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mGKHF]")
 _RESPONSE_PREFIX = "🦞"

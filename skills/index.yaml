@@ -19,6 +19,17 @@ skills:
       - "make this repeatable"
       - "turn this workflow into a skill"
 
+  - id: "hosaka-games"
+    path: "hosaka-games/SKILL.md"
+    purpose: "List and launch PlayStation games for walk-up users."
+    triggers:
+      - "what games"
+      - "play spyro"
+      - "launch a game"
+      - "playstation"
+      - "what's on this machine"
+      - "list games"
+
   - id: "hosaka-peripheral-probe"
     path: "hosaka-peripheral-probe/SKILL.md"
     purpose: "Probe mic, speaker, camera, and ALSA state to diagnose audio/video device problems."

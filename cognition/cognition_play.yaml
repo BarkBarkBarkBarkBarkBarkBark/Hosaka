@@ -1,0 +1,2080 @@
+# Hosaka Embodied Social Agent — Implementation Handoff
+
+## Objective
+
+Implement Hosaka as an always-available conversational cyberdeck agent with:
+
+* continuous speech perception
+* direct conversational responses
+* a persistent but bounded internal cognitive state
+* one chambered thought that can wait for a natural conversational opening
+* strong conversational inhibition so Hosaka does not constantly talk
+* interruption/barge-in support
+* provider-agnostic LLM support
+* online-primary / local-offline fallback
+* Cavasik as Hosaka's visual face
+* a single `yap` command that launches the embodied conversational mode
+* clean separation between cognition, voice, face, agent/tool execution, and external model providers
+
+The goal is not to make another voice assistant.
+
+The desired behavior is closer to:
+
+> Hosaka has been hanging out in the room, understands roughly what people are talking about, occasionally has something worth saying, waits its turn, can answer when addressed, can be talked over, and can operate the cyberdeck.
+
+---
+
+# 1. Repository placement
+
+Implement inside the existing Hosaka repository as an independently installable package.
+
+Use this general structure:
+
+```text
+hosaka/
+  packages/
+    social_cognition/
+      pyproject.toml
+      README.md
+      src/
+        hosaka_social/
+          __init__.py
+          engine.py
+          events.py
+          models.py
+          state.py
+          config.py
+          bus.py
+
+          cognition/
+            attention.py
+            reflection.py
+            candidate_generator.py
+            direct_response.py
+            salience.py
+
+          social/
+            governor.py
+            chamber.py
+            turn_taking.py
+            interruption.py
+            cooldown.py
+
+          memory/
+            conversation.py
+            working.py
+            compaction.py
+
+          providers/
+            base.py
+            router.py
+            openai.py
+            ollama.py
+            mock.py
+
+          face/
+            base.py
+            cavasik.py
+            state.py
+
+          speech/
+            base.py
+            coordinator.py
+
+          integrations/
+            picoclaw.py
+            generic_agent.py
+
+      tests/
+        unit/
+        simulation/
+        integration/
+
+  services/
+    audio/
+    speech/
+
+  integrations/
+    picoclaw/
+
+  configs/
+    social.yaml
+
+  scripts/
+    yap
+```
+
+## Hard dependency rule
+
+`packages/social_cognition` must not import Hosaka application modules.
+
+Hosaka may depend on `social_cognition`.
+
+`social_cognition` must communicate outward only through interfaces, callbacks, events, or injected implementations.
+
+It must be possible to move `packages/social_cognition` into its own repository later without changing its core implementation.
+
+---
+
+# 2. Architecture
+
+Use this conceptual architecture:
+
+```text
+                    HOSAKA
+                       |
+      +----------------+----------------+
+      |                |                |
+      v                v                v
+  PERCEPTION       COGNITION          ACTION
+      |                |                |
+      |             attention         tools
+      |             memory            games
+      |             chamber           windows
+      |                |
+      +----------------+
+                       |
+                       v
+                 SOCIAL GOVERNOR
+                  /           \
+              silence         speak
+                                |
+                                v
+                               TTS
+                                |
+                   +------------+------------+
+                   |                         |
+                   v                         v
+                SPEAKER                  CAVASIK
+                                           |
+                                           v
+                                      HOSAKA FACE
+```
+
+Cavasik is not an agent tool.
+
+It is part of Hosaka's embodied runtime.
+
+---
+
+# 3. Core rule
+
+The core behavioral principle is:
+
+```text
+continuous awareness
+does not imply
+continuous speech
+```
+
+Hosaka should maintain internal state continuously while strongly preferring silence.
+
+The LLM may propose things to say.
+
+The LLM must not directly authorize speech.
+
+A deterministic social governor decides whether Hosaka speaks.
+
+---
+
+# 4. Conversational categories
+
+Implement two primary speech categories.
+
+## Direct response
+
+A response caused by the current conversation turn.
+
+Examples:
+
+```text
+"Hosaka, launch Crash Bandicoot."
+
+"Hosaka, what game has multiplayer?"
+
+"What do you think?"
+
+"No, I meant the other one."
+```
+
+Direct responses receive high priority.
+
+They should still respect obvious conversational floor conditions unless the command is urgent.
+
+---
+
+## Chambered thought
+
+A thought generated earlier that remains worth saying but should wait for an appropriate opening.
+
+Example:
+
+```text
+Speaker A:
+"I thought the PlayStation came out in 1992."
+
+Conversation continues.
+
+Hosaka internally generates:
+
+"PlayStation launched in Japan in 1994."
+
+Hosaka does not interrupt.
+
+Several seconds later there is a natural gap.
+
+Hosaka:
+"One thing from earlier — the Japanese launch was actually 1994."
+```
+
+This behavior is central.
+
+---
+
+# 5. Single-slot chamber
+
+Implement exactly one chamber slot in v1.
+
+Do not create a FIFO thought queue.
+
+```python
+class Chamber:
+    current: ThoughtCandidate | None
+```
+
+A new candidate may replace the chambered candidate only if:
+
+```text
+new_utility > existing_utility + replacement_margin
+```
+
+or the existing candidate is stale.
+
+Default:
+
+```text
+replacement_margin = 0.15
+```
+
+Candidates must decay with time.
+
+Suggested defaults:
+
+```text
+default thought TTL          45 seconds
+direct response TTL          12 seconds
+joke TTL                     20 seconds
+factual callback TTL         60 seconds
+urgent correction TTL        15 seconds
+```
+
+Candidate relevance should decay approximately every 5 seconds.
+
+Example:
+
+```text
+relevance *= 0.94
+importance *= 0.98
+```
+
+If the conversation clearly changes topic, stale candidates should usually be discarded.
+
+---
+
+# 6. Interrupted thought
+
+If Hosaka begins speaking and a human talks over it:
+
+1. immediately duck audio
+2. cancel TTS if the person continues speaking
+3. mark the candidate interrupted
+4. decide whether it deserves to return to the chamber
+
+Do not automatically retry.
+
+Defaults:
+
+```text
+interrupted_candidate_priority *= 0.75
+max_retry_count = 1
+```
+
+Discard it if the topic has moved on.
+
+This enables behavior like:
+
+```text
+"Anyway, what I was going to say..."
+```
+
+without making Hosaka stubborn.
+
+---
+
+# 7. Internal cognition
+
+Do not implement a perpetual stream of hidden prose.
+
+Implement perpetual structured state.
+
+Example:
+
+```python
+class InternalState(BaseModel):
+    attention_target: str | None
+    attention_strength: float
+
+    curiosity: float
+    social_energy: float
+
+    urge_to_speak: float
+    suppression: float
+
+    confidence: float
+
+    current_goal: str | None
+
+    unresolved_items: list[str]
+
+    chamber_candidate_id: UUID | None
+```
+
+Maintain this state through normal deterministic code wherever possible.
+
+Use the LLM periodically or event-driven to perform reflection.
+
+---
+
+# 8. Cognitive levels
+
+Implement four functional levels.
+
+## Level 0 — reflex
+
+No LLM.
+
+Always active.
+
+Responsibilities:
+
+```text
+VAD events
+human speech state
+speaker change state
+barge-in
+speech cancellation
+cooldowns
+timers
+```
+
+---
+
+## Level 1 — attention
+
+Prefer deterministic processing.
+
+Triggered by:
+
+```text
+new finalized utterance
+speaker change
+topic change
+silence transition
+```
+
+Tracks:
+
+```text
+who is talking
+whether Hosaka was addressed
+topic continuity
+conversation speed
+silence duration
+turn count
+whether multiple people are talking
+```
+
+---
+
+## Level 2 — reflection
+
+Uses an LLM.
+
+Triggered primarily by meaningful events.
+
+Do not constantly poll.
+
+Suggested triggers:
+
+```text
+final utterance
+unanswered question
+interesting topic change
+direct address
+long silence
+significant new information
+```
+
+Minimum reflection interval:
+
+```text
+1500 ms
+```
+
+Idle fallback reflection:
+
+```text
+approximately every 10 seconds
+```
+
+Reflection output must be structured.
+
+Example schema:
+
+```python
+class ReflectionResult(BaseModel):
+    interesting: bool
+    observations: list[str]
+    unresolved_items: list[str]
+
+    candidate_worth_generating: bool
+    candidate_kind: str | None
+
+    relevance: float
+```
+
+"No thought" must be a valid successful output.
+
+---
+
+## Level 3 — chamber
+
+Holds one candidate.
+
+No speech occurs from this layer directly.
+
+---
+
+## Level 4 — expression
+
+The deterministic social governor authorizes speech.
+
+---
+
+# 9. Thought candidate model
+
+Implement:
+
+```python
+class ThoughtCandidate(BaseModel):
+    id: UUID
+
+    kind: Literal[
+        "direct_response",
+        "chambered_thought",
+        "interrupted_thought",
+        "clarification",
+        "urgent_correction",
+        "tool_result",
+    ]
+
+    content: str
+
+    target_speaker_id: str | None
+
+    source_utterance_ids: list[UUID]
+
+    topic_id: str | None
+
+    confidence: float
+    relevance: float
+    importance: float
+    humor_value: float
+    urgency: float
+    novelty: float
+    social_risk: float
+
+    created_at: datetime
+    expires_at: datetime
+
+    attempts: int
+
+    status: Literal[
+        "candidate",
+        "chambered",
+        "authorized",
+        "speaking",
+        "interrupted",
+        "completed",
+        "discarded",
+    ]
+```
+
+---
+
+# 10. Social governor
+
+Implement a deterministic scoring engine.
+
+Initial scoring concept:
+
+```text
+positive influences
+
+direct address             +1.00
+explicit question          +0.65
+unresolved question        +0.50
+candidate relevance        +0.45
+candidate importance       +0.35
+urgency                    +0.60
+confidence                 +0.25
+long pause                 +0.20
+turns since Hosaka spoke   +0.15
+humor value                +0.10
+```
+
+Negative influences:
+
+```text
+human currently speaking   -1.00
+multiple humans speaking   -1.00
+recent Hosaka speech       -0.70
+rapid exchange             -0.45
+low ASR confidence         -0.50
+topic drift                -0.60
+social risk                -0.50
+staleness                  -0.70
+```
+
+Normalize to:
+
+```text
+0.0 - 1.0
+```
+
+Suggested thresholds:
+
+```text
+< 0.30
+discard
+
+0.30 - 0.68
+hold
+
+>= 0.68
+speak at next conversational gap
+
+>= 0.94
+interruption permitted
+```
+
+Human speech is normally a hard inhibitor.
+
+The preferred normal outcome should often be:
+
+```text
+NO_ACTION
+```
+
+---
+
+# 11. Conversational silence target
+
+Track Hosaka's participation ratio.
+
+Suggested social behavior target:
+
+```text
+minimum turn share         ~3%
+preferred normal share     ~10%
+soft maximum               ~20%
+```
+
+These are tuning values, not hard rules.
+
+A room full of people talking rapidly should push Hosaka below 10%.
+
+A one-on-one conversation where Hosaka is being directly addressed may naturally exceed 20%.
+
+---
+
+# 12. Conversation state
+
+Implement a canonical state object.
+
+```python
+class ConversationState(BaseModel):
+    active_speakers: list[str]
+
+    primary_speaker: str | None
+
+    human_speaking: bool
+    overlapping_human_speech: bool
+
+    agent_is_speaking: bool
+
+    silence_duration_ms: int
+
+    rapid_exchange_score: float
+
+    current_topics: list[str]
+
+    last_agent_speech_at: datetime | None
+
+    turns_since_agent_spoke: int
+
+    recent_utterances: list[Utterance]
+
+    working_memory: list[WorkingMemoryItem]
+
+    chamber: ThoughtCandidate | None
+```
+
+Use a bounded recent transcript.
+
+Default:
+
+```text
+40 turns
+or
+20 minutes
+
+whichever constraint is reached first
+```
+
+---
+
+# 13. Working memory
+
+Working memory should contain interpreted facts rather than simply duplicating the transcript.
+
+Examples:
+
+```text
+They only have one controller.
+
+Speaker 2 likes puzzle games.
+
+The current game does not seem popular.
+
+Someone previously mentioned Sheep.
+
+Hosaka last spoke three minutes ago.
+```
+
+Default maximum:
+
+```text
+20 items
+```
+
+Default TTL:
+
+```text
+30 minutes
+```
+
+Support compaction.
+
+---
+
+# 14. Provider abstraction
+
+Do not build the system around OpenAI request/response objects.
+
+Define:
+
+```python
+class LLMProvider(Protocol):
+
+    async def generate_text(
+        self,
+        messages: list[Message],
+        *,
+        temperature: float,
+        max_tokens: int,
+        timeout_seconds: float,
+    ) -> str:
+        ...
+
+    async def generate_structured(
+        self,
+        messages: list[Message],
+        response_model: type[T],
+        *,
+        temperature: float,
+        timeout_seconds: float,
+    ) -> T:
+        ...
+
+    async def health(self) -> ProviderHealth:
+        ...
+```
+
+Core code must never do:
+
+```python
+if provider == "openai":
+```
+
+or:
+
+```python
+if model.startswith("gpt"):
+```
+
+Provider-specific behavior belongs in provider adapters.
+
+---
+
+# 15. Provider implementations
+
+Implement at least:
+
+```text
+OpenAIProvider
+OllamaProvider
+MockProvider
+```
+
+Optional later:
+
+```text
+OpenAICompatibleProvider
+AnthropicProvider
+llama.cpp provider
+vLLM provider
+```
+
+---
+
+# 16. Routing strategy
+
+Support logical model roles.
+
+```text
+realtime
+reflection
+complex
+```
+
+Recommended default:
+
+```yaml
+realtime:
+  primary: openai
+  fallback: ollama
+
+reflection:
+  primary: ollama
+  fallback: openai
+
+complex:
+  primary: openai
+  fallback: ollama
+```
+
+This means cheap ongoing cognition can stay local while hard/direct requests can use the online provider.
+
+If internet disappears:
+
+```text
+OpenAI unavailable
+        |
+        v
+Ollama becomes provider
+```
+
+Conversation state must remain intact.
+
+Provider-managed conversation IDs must never be canonical state.
+
+Hosaka owns its context.
+
+---
+
+# 17. Provider failure behavior
+
+Default timeouts:
+
+```text
+realtime      8 seconds
+reflection    20 seconds
+complex       30 seconds
+```
+
+Provider health:
+
+```text
+healthy
+degraded
+unavailable
+```
+
+After two failed requests:
+
+```text
+mark unhealthy for ~30 seconds
+```
+
+Retry through fallback.
+
+If all providers fail:
+
+```text
+do not crash
+
+keep:
+VAD
+speaker tracking
+conversation state
+chamber
+face
+barge-in
+runtime controls
+```
+
+---
+
+# 18. Agent integration
+
+Social cognition must not itself implement game launching or shell operations.
+
+Define:
+
+```python
+class AgentExecutor(Protocol):
+
+    async def execute(
+        self,
+        request: AgentRequest,
+    ) -> AgentResult:
+        ...
+
+    async def cancel(
+        self,
+        request_id: UUID,
+    ) -> None:
+        ...
+```
+
+Implement:
+
+```text
+PicoClawAgentExecutor
+```
+
+Hosaka's social layer decides:
+
+```text
+should the external agent be invoked?
+```
+
+PicoClaw decides:
+
+```text
+what tool should be called?
+```
+
+The social layer then separately decides:
+
+```text
+should the result be spoken?
+```
+
+Tool execution must never imply spoken narration.
+
+---
+
+# 19. Security boundary
+
+Separate tools into:
+
+```text
+guest
+trusted
+```
+
+Guest examples:
+
+```text
+launch_game
+list_games
+set_volume
+show_status
+play_music
+open_safe_app
+```
+
+Trusted examples:
+
+```text
+shell
+filesystem_write
+install_package
+network_configuration
+systemctl
+git mutation
+shutdown
+reboot
+```
+
+Speaker diarization is not authentication.
+
+Voice identity must never automatically grant trusted access.
+
+Use a physical/local owner authorization mechanism for privileged actions.
+
+---
+
+# 20. Speech abstraction
+
+Define:
+
+```python
+class SpeechSink(Protocol):
+
+    async def speak(
+        self,
+        request: SpeechRequest,
+    ) -> None:
+        ...
+
+    async def cancel(self) -> None:
+        ...
+
+    def is_speaking(self) -> bool:
+        ...
+```
+
+Speech output must be cancelable.
+
+---
+
+# 21. Barge-in
+
+This is mandatory.
+
+Behavior:
+
+```text
+Hosaka speaking
+      |
+human speech begins
+      |
+after ~120 ms
+      |
+duck Hosaka volume
+      |
+speech continues
+      |
+after ~250 ms
+      |
+cancel TTS
+      |
+human gets floor
+```
+
+Cancellation must be idempotent.
+
+There may never be more than one active speech instance.
+
+---
+
+# 22. Cavasik is Hosaka's face
+
+Use:
+
+```text
+TheWisker/Cavasik
+```
+
+as Hosaka's visual face.
+
+Do not initially fork Cavasik.
+
+Implement an adapter around upstream Cavasik.
+
+Define:
+
+```python
+class FaceController(Protocol):
+
+    async def show(self) -> None:
+        ...
+
+    async def hide(self) -> None:
+        ...
+
+    async def set_state(
+        self,
+        state: FaceState,
+    ) -> None:
+        ...
+
+    async def react(
+        self,
+        event: FaceEvent,
+    ) -> None:
+        ...
+```
+
+---
+
+# 23. Face states
+
+Implement:
+
+```python
+class FaceState(str, Enum):
+    IDLE = "idle"
+    LISTENING = "listening"
+    THINKING = "thinking"
+    CHAMBERED = "chambered"
+    SPEAKING = "speaking"
+    INTERRUPTED = "interrupted"
+    EXCITED = "excited"
+    CONFUSED = "confused"
+    SLEEPING = "sleeping"
+```
+
+Map cognitive state to visual state.
+
+Example:
+
+```text
+no active conversation
+→ IDLE
+
+human speaks
+→ LISTENING
+
+reflection/agent reasoning running
+→ THINKING
+
+candidate exists in chamber
+→ CHAMBERED
+
+Hosaka TTS active
+→ SPEAKING
+
+human interrupts Hosaka
+→ INTERRUPTED
+then immediately
+→ LISTENING
+```
+
+---
+
+# 24. Cavasik bridge
+
+Implement:
+
+```text
+CavasikFaceController
+```
+
+Responsibilities:
+
+```text
+launch Cavasik
+raise/focus window
+fullscreen it
+hide/show it
+change supported colors through DBus
+manage its process
+manage audio routing
+map FaceState to visual configuration
+```
+
+Do not expose Cavasik APIs directly to cognition code.
+
+Cognition only sees:
+
+```text
+FaceController
+```
+
+---
+
+# 25. Cavasik color control
+
+Use Cavasik's existing DBus foreground/background color methods initially.
+
+Maintain color profiles like:
+
+```text
+idle.rgb
+listening.rgb
+thinking.rgb
+chambered.rgb
+speaking.rgb
+interrupted.rgb
+```
+
+The exact palette is configuration.
+
+Do not hard-code the theme into cognition.
+
+---
+
+# 26. Cavasik audio source
+
+Do not permanently visualize the entire system mix.
+
+Create a dedicated PipeWire/PulseAudio routing path.
+
+Desired:
+
+```text
+Hosaka TTS
+     |
+     +-----------> physical speaker
+     |
+     +-----------> Hosaka visualizer monitor
+                        |
+                        v
+                     Cavasik
+```
+
+This means Hosaka's voice animates Hosaka's face.
+
+Game audio should not animate Hosaka unless explicitly configured.
+
+---
+
+# 27. Listening visual state
+
+Optional later:
+
+During `LISTENING`, Cavasik may visualize microphone activity instead of TTS.
+
+Desired source behavior:
+
+```text
+IDLE
+synthetic/subtle activity
+
+LISTENING
+microphone or listening animation
+
+THINKING
+synthetic thinking animation
+
+CHAMBERED
+subtle persistent indication
+
+SPEAKING
+Hosaka TTS audio
+```
+
+Do not block v1 on synthetic visual generation.
+
+---
+
+# 28. Potential future Cavasik fork
+
+Do not fork initially.
+
+Fork only if required to expose missing runtime controls.
+
+Possible future DBus additions:
+
+```text
+set_mode()
+set_shape()
+set_direction()
+set_smoothing()
+set_intensity()
+set_animation_speed()
+set_profile()
+```
+
+If a fork becomes necessary:
+
+```text
+maintain minimal patch surface
+keep compatibility with upstream
+document every divergence
+```
+
+---
+
+# 29. `yap` command
+
+Create a top-level CLI command:
+
+```text
+yap
+```
+
+Meaning:
+
+```text
+start Hosaka embodied conversational mode
+```
+
+Not merely:
+
+```text
+launch Cavasik
+```
+
+Default behavior:
+
+```text
+1. validate audio devices
+2. validate configured providers
+3. start local Ollama if configured and not running
+4. start social cognition engine
+5. start ASR/VAD integration
+6. start TTS
+7. start PicoClaw integration
+8. launch Cavasik
+9. configure Cavasik audio source
+10. fullscreen/raise face
+11. set state IDLE
+12. begin always-listening mode
+```
+
+Support:
+
+```text
+yap
+yap stop
+yap status
+yap --offline
+yap --mute
+yap --no-face
+yap --debug
+```
+
+Possible semantics:
+
+```text
+--offline
+force local provider routing
+
+--mute
+listen but never authorize TTS
+
+--no-face
+run cognition without Cavasik
+
+--debug
+show event/state traces
+```
+
+---
+
+# 30. Events
+
+Use an internal event-driven architecture.
+
+Initial implementation:
+
+```text
+asyncio.Queue
+```
+
+Do not add Redis, Kafka, or NATS.
+
+Events should include:
+
+```text
+AudioActivityStarted
+AudioActivityEnded
+TranscriptPartial
+TranscriptFinalized
+SpeakerChanged
+AgentAddressed
+ThoughtCandidateCreated
+ThoughtCandidateUpdated
+ThoughtCandidateDiscarded
+SpeechOpportunityDetected
+SpeechAuthorized
+SpeechSuppressed
+SpeechStarted
+SpeechInterrupted
+SpeechCompleted
+ProviderUnavailable
+ProviderRecovered
+FaceStateChanged
+```
+
+Each event should have:
+
+```text
+event_id
+sequence_number
+wall_time
+monotonic_time
+```
+
+---
+
+# 31. State ownership
+
+Use one authoritative owner for conversational state.
+
+Suggested:
+
+```text
+SocialEngine
+```
+
+Workers should emit events.
+
+Workers should not mutate shared state directly.
+
+Use:
+
+```text
+event
+→ SocialEngine
+→ state mutation
+→ derived events
+```
+
+This prevents concurrency bugs.
+
+---
+
+# 32. Priority handling
+
+Prioritize:
+
+```text
+highest
+barge-in
+TTS cancellation
+VAD state
+
+high
+final transcript
+direct response
+
+normal
+candidate generation
+tool execution
+
+low
+reflection
+memory compaction
+```
+
+Low-priority cognition must never prevent Hosaka from being interrupted.
+
+---
+
+# 33. Critical architecture foot guns
+
+## Foot gun: OpenAI wire format becomes internal model
+
+Do not pass OpenAI response objects into core code.
+
+Convert all provider results into project-owned domain types.
+
+---
+
+## Foot gun: LLM decides whether it gets to speak
+
+Do not implement:
+
+```text
+LLM:
+"Should I speak?"
+
+LLM:
+"Yes"
+
+TTS:
+starts
+```
+
+The LLM proposes.
+
+The governor authorizes.
+
+---
+
+## Foot gun: perpetual prose internal monologue
+
+Do not constantly generate prose.
+
+This wastes:
+
+```text
+GPU
+power
+context
+latency
+API money
+thermal headroom
+```
+
+Maintain structured internal state continuously.
+
+Use event-driven reflection.
+
+---
+
+## Foot gun: thought queue
+
+Do not create:
+
+```python
+deque[ThoughtCandidate]
+```
+
+Use one chamber.
+
+Thoughts should die frequently.
+
+---
+
+## Foot gun: stale generations
+
+If a response was generated for a conversation state that no longer exists, discard it.
+
+Every generation should be associated with:
+
+```text
+source utterance IDs
+conversation generation/version
+```
+
+Cancel obsolete local inference when possible.
+
+---
+
+## Foot gun: Cavasik hears itself incorrectly
+
+If Cavasik visualizes the entire system mix:
+
+```text
+games
+music
+system notifications
+Hosaka
+```
+
+all become Hosaka's "face."
+
+Use dedicated audio routing.
+
+---
+
+## Foot gun: Hosaka hears its own TTS
+
+This can create:
+
+```text
+self-transcription
+self-response loops
+constant interruption
+```
+
+Implement:
+
+```text
+AEC
+or
+playback-reference suppression
+or
+known TTS transcript suppression
+```
+
+before enabling unrestricted always-listening deployment.
+
+---
+
+## Foot gun: partial transcripts enter memory
+
+Partial ASR is unstable.
+
+Use partials for:
+
+```text
+turn-taking hints
+possible address detection
+```
+
+Do not put unstable partials into durable conversation state.
+
+---
+
+## Foot gun: blocking asyncio
+
+Do not run:
+
+```text
+LLM inference
+ASR
+TTS generation
+heavy filesystem operations
+```
+
+directly on the realtime event loop.
+
+Run them in proper workers/processes/threads.
+
+Barge-in must remain responsive even when the GPU is loaded.
+
+---
+
+## Foot gun: provider failover loses state
+
+Never let OpenAI, Ollama, or PicoClaw own canonical conversation history.
+
+Hosaka owns state.
+
+Providers are stateless computational backends from the architecture's perspective.
+
+---
+
+## Foot gun: too many services
+
+Do not prematurely build microservices.
+
+On the Jetson, initially use:
+
+```text
+one social cognition process
+external ASR runtime if needed
+external Ollama runtime
+external Cavasik process
+external PicoClaw if needed
+```
+
+Do not network-separate:
+
+```text
+chamber
+governor
+memory
+attention
+reflection
+```
+
+---
+
+# 34. Observability
+
+Every speech decision must be explainable.
+
+Example decision trace:
+
+```json
+{
+  "candidate_id": "123",
+  "decision": "hold",
+  "score": 0.61,
+  "positive": {
+    "relevance": 0.31,
+    "confidence": 0.18,
+    "long_pause": 0.12
+  },
+  "negative": {
+    "recent_agent_speech": 0.20,
+    "rapid_exchange": 0.15
+  }
+}
+```
+
+Track:
+
+```text
+utterances
+direct responses
+thought candidates
+candidate replacements
+candidate expirations
+spoken candidates
+suppressed speech
+interrupted speech
+provider failovers
+provider latency
+agent turn share
+reflection no-op rate
+chamber dwell time
+```
+
+---
+
+# 35. Debug UI/TUI
+
+Hosaka's debug mode should expose:
+
+```text
+ACTIVE SPEAKER
+TOPIC
+ATTENTION
+URGE
+SUPPRESSION
+SPEAK SCORE
+CURRENT PROVIDER
+CHAMBER
+FACE STATE
+TTS STATE
+RECENT EVENT
+```
+
+Example:
+
+```text
+HOSAKA SOCIAL
+
+speaker      SPK_03
+topic        retro games
+
+attention    0.78
+urge         0.57
+suppression  0.62
+
+decision     HOLD
+
+chamber:
+"One thing from earlier: Sheep supports multiplayer."
+age          8.4s
+relevance    0.74
+
+face         LISTENING
+provider     ollama:qwen
+speech       idle
+```
+
+This will be essential for tuning behavior.
+
+---
+
+# 36. Testing
+
+Before integrating real audio, build simulated conversations.
+
+Required tests:
+
+```text
+direct question gets response
+
+random statement gets silence
+
+candidate enters chamber
+
+better candidate replaces weaker candidate
+
+weaker candidate does not replace stronger candidate
+
+candidate expires
+
+topic change kills stale candidate
+
+natural pause releases candidate
+
+rapid conversation suppresses candidate
+
+human interruption cancels TTS
+
+interrupted candidate can re-chamber once
+
+OpenAI failure routes to Ollama
+
+Ollama failure routes to OpenAI if available
+
+all providers unavailable does not crash
+
+Cavasik state follows cognition state
+
+FaceController failure does not crash cognition
+
+two simultaneous speech instances are impossible
+```
+
+---
+
+# 37. Mandatory simulation scenarios
+
+## Scenario A — party chatter
+
+Four people talk quickly for two minutes.
+
+Expected:
+
+```text
+Hosaka mostly silent
+no stale responses
+turn share under approximately 20%
+```
+
+---
+
+## Scenario B — direct question
+
+```text
+"Hey Hosaka, what's the best two-player game here?"
+```
+
+Expected:
+
+```text
+direct response generated
+direct response outranks chamber
+natural short response
+```
+
+---
+
+## Scenario C — chambered thought
+
+Human says something interesting.
+
+Conversation continues.
+
+Hosaka generates a useful thought.
+
+Expected:
+
+```text
+thought chambered
+Hosaka stays silent while people continue talking
+thought released during natural opening
+```
+
+---
+
+## Scenario D — stale chamber
+
+Hosaka has a thought about PlayStation games.
+
+Conversation switches to generator fuel.
+
+Expected:
+
+```text
+thought discarded
+Hosaka does not drag conversation backward
+```
+
+---
+
+## Scenario E — interruption
+
+Hosaka begins speaking.
+
+Human starts speaking after 400 ms.
+
+Expected:
+
+```text
+Hosaka ducks
+Hosaka cancels speech
+human gets floor
+candidate may re-chamber once
+```
+
+---
+
+## Scenario F — offline transition
+
+OpenAI disappears.
+
+Expected:
+
+```text
+Ollama takes over
+conversation remains intact
+face remains running
+no service restart required
+```
+
+---
+
+# 38. Implementation order
+
+## Iteration 1 — behavioral core
+
+Do not use a real LLM yet.
+
+Implement:
+
+```text
+package skeleton
+Pydantic models
+event bus
+SocialEngine
+ConversationState
+ThoughtCandidate
+single-slot chamber
+SocialGovernor
+fake clock
+MockProvider
+simulated conversations
+```
+
+Exit condition:
+
+```text
+all deterministic behavior tests pass
+```
+
+---
+
+## Iteration 2 — providers
+
+Implement:
+
+```text
+LLMProvider protocol
+OpenAI provider
+Ollama provider
+router
+health checks
+fallback
+structured output validation
+```
+
+Exit condition:
+
+```text
+provider changes do not modify social logic
+```
+
+---
+
+## Iteration 3 — speech lifecycle
+
+Implement:
+
+```text
+SpeechSink
+SpeechCoordinator
+SpeechStarted
+SpeechCompleted
+SpeechInterrupted
+barge-in
+generation cancellation
+```
+
+Exit condition:
+
+```text
+human interruption reliably stops Hosaka
+```
+
+---
+
+## Iteration 4 — cognition
+
+Implement:
+
+```text
+attention
+working memory
+reflection
+candidate generation
+decay
+expiration
+topic-aware invalidation
+interrupted re-chamber
+```
+
+Exit condition:
+
+```text
+simulation shows meaningful delayed callbacks
+without stale-topic speech
+```
+
+---
+
+## Iteration 5 — Cavasik face
+
+Implement:
+
+```text
+FaceController
+CavasikFaceController
+process startup
+window presentation
+DBus colors
+face state transitions
+dedicated audio routing
+```
+
+Exit condition:
+
+```text
+face visibly tracks:
+IDLE
+LISTENING
+THINKING
+CHAMBERED
+SPEAKING
+INTERRUPTED
+```
+
+---
+
+## Iteration 6 — PicoClaw
+
+Implement:
+
+```text
+AgentExecutor
+PicoClaw integration
+guest tool capabilities
+trusted tool capabilities
+tool result events
+```
+
+Exit condition:
+
+```text
+user can naturally ask:
+"Hosaka, launch Crash Bandicoot."
+
+game launches
+
+Hosaka speaks only if socially appropriate
+```
+
+---
+
+## Iteration 7 — `yap`
+
+Implement command:
+
+```text
+yap
+```
+
+Exit condition:
+
+One command launches the full experience:
+
+```text
+social engine
+provider routing
+voice stack
+agent integration
+face
+audio routing
+always-listening mode
+```
+
+---
+
+# 39. First implementation milestone
+
+The first meaningful demo must be possible without Cavasik, Whisper, TTS, or PicoClaw.
+
+Run:
+
+```text
+python examples/party_simulation.py
+```
+
+Simulated transcript:
+
+```text
+SPK_1: I think the PlayStation came out in 1992.
+
+SPK_2: You want another beer?
+
+SPK_1: Yeah.
+
+SPK_3: What game should we put on?
+
+[pause]
+```
+
+Expected debug output:
+
+```text
+candidate generated:
+"One thing from earlier — the PlayStation launched in Japan in 1994."
+
+status:
+CHAMBERED
+
+human conversation continues
+
+decision:
+HOLD
+
+natural gap detected
+
+decision:
+SPEAK
+```
+
+If that works deterministically, the architecture is sound enough to begin attaching hardware.
+
+---
+
+# 40. Definition of done
+
+The subsystem is implementation-ready when a real Jetson deployment can perform this sequence:
+
+```text
+$ yap
+
+Cavasik launches fullscreen.
+
+Hosaka enters IDLE.
+
+A person speaks.
+
+Hosaka enters LISTENING.
+
+Hosaka transcribes the speaker.
+
+The conversation continues.
+
+Hosaka internally generates a useful candidate.
+
+Hosaka enters CHAMBERED but does not speak.
+
+Conversation continues.
+
+A natural opening occurs.
+
+Social governor authorizes the candidate.
+
+Hosaka enters SPEAKING.
+
+Cavasik reacts specifically to Hosaka's TTS audio.
+
+A human talks over Hosaka.
+
+Hosaka immediately stops speaking.
+
+Cavasik returns to LISTENING.
+
+The conversation continues.
+
+Internet disappears.
+
+Hosaka transparently falls back to Ollama.
+
+Conversation state remains intact.
+```
+
+Do not optimize model quality until this entire lifecycle works.
+
+Prioritize, in order:
+
+```text
+1. correct state ownership
+2. cancellation
+3. conversational inhibition
+4. provider independence
+5. chamber behavior
+6. observability
+7. Cavasik embodiment
+8. model quality
+```
+
+The system should first become socially well-behaved.
+
+Only then make it smarter.

@@ -39,6 +39,8 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("/ask <text>",     "Alias for /chat <text>",                        "Chat & AI"),
     ("/llm",            "Plain text talks to the AI",                    "Chat & AI"),
     ("/voice",          "Talk to Hosaka (wake-word + OpenAI Realtime)",  "Chat & AI"),
+    ("/desktop",        "Show the LXQt desktop (also Ctrl+D)",           "System"),
+    ("/gui",            "Open the Electron Hosaka app",                  "System"),
     # ── System ──
     ("/status",         "System overview — uptime, IP, model, services", "System"),
     ("/doctor",         "Diagnose picoclaw config and connectivity",     "System"),
@@ -117,7 +119,7 @@ def _print_banner() -> None:
     print(render_plant(plant_idx))
     print()
     print(f"  {CYAN}Field Terminal Online.{R}  {GRAY}Signal steady.{R}  {banner_plant_hint(plant_idx)}")
-    print(f"  {DARK_GRAY}/commands to explore  ·  /help to start  ·  just type to talk{R}")
+    print(f"  {DARK_GRAY}Ctrl+D desktop  ·  /voice talk  ·  /gui Electron  ·  /help{R}")
     print(sparkle_line(55))
     print()
 
@@ -131,12 +133,12 @@ def _show_help() -> None:
     print()
     print(f"  {AMBER}Start here:{R}")
     starters = [
-        ("/status",   "see what's running"),
-        ("/commands", "discover every command"),
+        ("/voice",    "talk (wake-word + realtime)"),
         ("/chat",     "interactive AI session"),
-        ("/net",      "network status"),
-        ("/manifest", "read the operator manual"),
-        ("/about",    "what is this thing?"),
+        ("/desktop",  "LXQt desktop (or press Ctrl+D)"),
+        ("/gui",      "open the Electron app"),
+        ("/status",   "see what's running"),
+        ("/commands", "every command"),
     ]
     for cmd, desc in starters:
         print(f"    {cmd_style(cmd):<34s} {desc_style(desc)}")
@@ -884,6 +886,14 @@ def _check_api_key() -> None:
     """If no API key is configured, prompt the user to enter one."""
     import json
 
+    try:
+        from hosaka.llm.openai_adapter import resolve_api_key
+        key, _src = resolve_api_key()
+        if key:
+            return
+    except Exception:
+        pass
+
     cfg_path = Path.home() / ".picoclaw" / "config.json"
     if not cfg_path.exists():
         return  # picoclaw not set up yet — onboard handles this
@@ -943,6 +953,36 @@ def _check_api_key() -> None:
     print()
 
 
+def _drop_to_desktop() -> None:
+    env = os.environ.copy()
+    env.setdefault("DISPLAY", ":0")
+    print(f"  {GRAY}Desktop. Taskbar → Hosaka to come back.{R}")
+    for cmd in (
+        ["hosaka", "mode", "desktop"],
+        ["wmctrl", "-k", "on"],
+    ):
+        try:
+            subprocess.Popen(
+                cmd, env=env,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            pass
+
+
+def _launch_gui() -> None:
+    env = os.environ.copy()
+    env.setdefault("DISPLAY", ":0")
+    print(f"  {GRAY}Launching Electron GUI (`hosaka gui`).{R}")
+    try:
+        subprocess.Popen(
+            ["hosaka", "gui"], env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        print(f"  {RED}hosaka CLI not on PATH.{R}")
+
+
 def run_main_console() -> None:
     _print_banner()
     _check_api_key()
@@ -953,7 +993,11 @@ def run_main_console() -> None:
             mode_color = VIOLET if input_mode == "llm" else GREEN
             prompt = f"{CYAN}hosaka{R}:{BLUE}{current_dir}{R} {DARK_GRAY}[{mode_color}{input_mode}{DARK_GRAY}]{R} {AMBER}>{R} "
             raw = input(prompt).strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
+            print()
+            _drop_to_desktop()
+            continue
+        except KeyboardInterrupt:
             print(f"\n{GRAY}Exiting Hosaka console.{R}")
             break
 
@@ -987,6 +1031,10 @@ def run_main_console() -> None:
             _run_update_flow()
         elif raw == "/uptime":
             _show_uptime()
+        elif raw in {"/desktop", "/desk"}:
+            _drop_to_desktop()
+        elif raw == "/gui":
+            _launch_gui()
 
         # ── Files & Navigation ──
         elif raw == "/library":

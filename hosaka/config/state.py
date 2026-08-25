@@ -13,20 +13,20 @@ _DEFAULT_STATE_PATH_SYSTEM = Path("/var/lib/hosaka/state.json")
 _DEFAULT_STATE_PATH_USER = Path.home() / ".hosaka" / "state.json"
 
 
+def _writable_file(path: Path) -> bool:
+    if path.exists():
+        return os.access(path, os.W_OK)
+    parent = path.parent
+    return parent.exists() and os.access(parent, os.W_OK)
+
+
 def _default_state_path() -> Path:
     env = os.getenv("HOSAKA_STATE_PATH")
     if env:
         return Path(env)
-    # Fall back to user-writable path if the system path isn't accessible
-    if _DEFAULT_STATE_PATH_SYSTEM.parent.exists():
-        try:
-            _DEFAULT_STATE_PATH_SYSTEM.parent.mkdir(parents=True, exist_ok=True)
-            probe = _DEFAULT_STATE_PATH_SYSTEM.parent / ".hosaka_probe"
-            probe.touch()
-            probe.unlink()
-            return _DEFAULT_STATE_PATH_SYSTEM
-        except OSError:
-            pass
+    # /var/lib/hosaka can be writable while state.json is still root-owned.
+    if _writable_file(_DEFAULT_STATE_PATH_SYSTEM):
+        return _DEFAULT_STATE_PATH_SYSTEM
     return _DEFAULT_STATE_PATH_USER
 
 
@@ -96,6 +96,15 @@ class StateStore:
 
     def save(self, state: SetupState) -> None:
         state.timestamps["updated"] = _utc_now()
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.state_path.open("w", encoding="utf-8") as fh:
+        try:
+            self._write(self.state_path, state)
+        except OSError:
+            if self.state_path == _DEFAULT_STATE_PATH_USER:
+                raise
+            self.state_path = _DEFAULT_STATE_PATH_USER
+            self._write(self.state_path, state)
+
+    def _write(self, path: Path, state: SetupState) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as fh:
             json.dump(state.to_dict(), fh, indent=2)

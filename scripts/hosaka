@@ -687,15 +687,12 @@ mode_console() {
 # (or Super+H, or closing a launched app) brings it right back. Persistent
 # mode is unchanged — a reboot returns to Hosaka on top.
 mode_desktop() {
-  note "dropping to the $(c_cyan 'LXQt desktop') — Hosaka hidden, still running"
-
-  if kiosk_window desktop 2>/dev/null; then
-    ok "Hosaka hidden — flatpak apps + panel are now in front"
-    note "run $(c_cyan 'hosaka mode kiosk') (or press $(c_cyan 'Super+H')) to return"
-  else
-    warn "no running Hosaka kiosk to hide"
-    note "the LXQt desktop is already in front"
-  fi
+  note "dropping to the $(c_cyan 'LXQt desktop')"
+  kiosk_window desktop 2>/dev/null || true
+  local kd; kd="$(kiosk_display 2>/dev/null || true)"
+  DISPLAY="${kd:-${DISPLAY:-:0}}" XAUTHORITY="${HOME}/.Xauthority" \
+    wmctrl -k on >/dev/null 2>&1 || true
+  ok "desktop is in front — click Hosaka in the taskbar, or $(c_cyan 'hosaka tui') / $(c_cyan 'hosaka gui')"
 }
 
 # ── mode lxqt (persistent: full LXQt desktop on next startx) ─────────────────
@@ -1269,11 +1266,17 @@ cmd_message() {
 }
 
 cmd_tui() {
-  # Full console with /chat, plant, ops, etc. Runs via the same venv the
-  # webserver uses so hosaka.tui imports resolve without PYTHONPATH games.
+  # Straight into the console — do not run the boot orchestrator
+  # (that path writes /var/lib/hosaka/state.json and needs root).
   local py
   py="$(_hosaka_python)"
-  ( cd "$REPO_ROOT" && exec "$py" -m hosaka "$@" )
+  ( cd "$REPO_ROOT" && exec "$py" -m hosaka tui "$@" )
+}
+
+cmd_voice() {
+  local py
+  py="$(_hosaka_python)"
+  ( cd "$REPO_ROOT" && exec "$py" -m hosaka voice "$@" )
 }
 
 cmd_doctor() {
@@ -1569,25 +1572,42 @@ USAGE
 
 usage() {
   cat <<USAGE
-hosaka — operator CLI for the Hosaka Field Terminal Pi
+hosaka — field terminal
 
+Boot is the TUI (a terminal). Electron GUI is still installed, just not autostart.
+
+Keys / TUI
+  Ctrl+D          show the LXQt desktop
+  /voice          talk (wake-word + realtime)
+  /gui            open Electron
+  /desktop        same as Ctrl+D
+  /help           TUI command list
+  /exit           leave the TUI
+
+Daily
+  hosaka              this cheat sheet
+  hosaka tui          terminal UI (boot default)
+  hosaka voice        voice daemon
+  hosaka gui          Electron app
+  hosaka mode desktop desktop (Ctrl+D)
+  hosaka status       RAM / services
+  play spyro          launch a game by name
+  controller          list / connect / test a pad
+  emulationstation    games browser
+
+Modes
   hosaka mode                       show current mode (console|device) + x-session
-  hosaka mode console [--persist]   bring Hosaka back to the front (over LXQt).
-                                    --persist  remove boot marker
+  hosaka mode console [--persist]   bring the Electron GUI to the front
   hosaka mode device  [--persist] [--full]
                                     diagnostic + ssh-friendly. Stops kiosk,
                                     pauses picoclaw, shows device dashboard
                                     (IPs/ports/RAM/battery) on tty1.
                                     --persist  survive reboots
                                     --full     also stop hosaka-webserver
-  hosaka mode desktop               drop to the LXQt desktop-with-apps. Hides the
-                                    Hosaka window (it keeps running); flatpak apps
-                                    + panel come to the front. Return with
-                                    \`hosaka mode kiosk\` or Super+H.
-  hosaka mode lxqt [--now]          (advanced) pin the base x-session to LXQt —
-                                    this is the default. --now restarts X.
+  hosaka mode desktop               LXQt desktop (hides Electron if running)
+  hosaka mode lxqt [--now]          pin x-session to LXQt (already the default)
 
-  Aliases (legacy): \`hosaka mode kiosk\` → console, \`hosaka mode build\` → device
+  Aliases: \`hosaka mode kiosk\` → console, \`hosaka mode build\` → device, \`hosaka gui\` → console
 
   hosaka status                     what's running + memory snapshot
   hosaka launch [app]               launch a Flatpak-backed Hosaka app; no app lists targets
@@ -1646,9 +1666,10 @@ USAGE
 }
 
 main() {
-  local cmd="${1:-status}"
+  local cmd="${1:-help}"
   shift || true
   case "$cmd" in
+    gui)       mode_console "$@" ;;
     mode)
       local sub="${1:-show}"
       shift || true
@@ -1685,6 +1706,7 @@ main() {
     chat|agent|repl) cmd_chat "$@" ;;
     message|msg|say) cmd_message "$@" ;;
     tui|console-ui)  cmd_tui "$@" ;;
+    voice)     cmd_voice "$@" ;;
     issue|issues|track) cmd_issue "$@" ;;
     -h|--help|help) usage ;;
     *) usage; die "unknown command: $cmd" ;;

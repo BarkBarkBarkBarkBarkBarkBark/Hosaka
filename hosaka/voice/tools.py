@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import socket
+import subprocess
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -232,6 +233,48 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {"path": {"type": "string"}},
             "required": ["path"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "list_games",
+        "description": (
+            "List playable games on this terminal. Default is PlayStation 1, "
+            "which is the public library. Use when anyone asks what games "
+            "are here, what's playable, or to hear the catalog. Do not guess "
+            "ROM folders."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "system": {
+                    "type": "string",
+                    "description": "Library to list. Default psx. Use all only if asked.",
+                    "enum": ["psx", "all"],
+                }
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "play_game",
+        "description": (
+            "Launch a game on the screen by name (PlayStation first). "
+            "Use when anyone says play Spyro, start Crash, launch a game. "
+            "If the result lists several matches, ask which title, then call again."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Game name as spoken, e.g. 'spyro' or 'crash team racing'.",
+                }
+            },
+            "required": ["name"],
             "additionalProperties": False,
         },
     },
@@ -467,6 +510,72 @@ def _tool_read_doc(args: dict[str, Any]) -> str:
     return body
 
 
+def _play_bin() -> Path:
+    return Path(os.getenv("HOSAKA_PLAY", str(Path.home() / "bin" / "play")))
+
+
+def _run_play(*args: str) -> dict[str, Any]:
+    play = _play_bin()
+    if not play.is_file():
+        return {"ok": False, "error": f"play not found at {play}"}
+    try:
+        proc = subprocess.run(
+            ["python", str(play), "--json", *args],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except OSError as exc:
+        return {"ok": False, "error": f"play failed ({exc})"}
+    raw = (proc.stdout or "").strip()
+    if not raw:
+        err = (proc.stderr or "").strip() or f"exit {proc.returncode}"
+        return {"ok": False, "error": err}
+    try:
+        payload = json.loads(raw.splitlines()[-1])
+    except json.JSONDecodeError:
+        return {"ok": False, "error": raw[:400]}
+    if isinstance(payload, dict):
+        return payload
+    return {"ok": False, "error": raw[:400]}
+
+
+def _tool_list_games(args: dict[str, Any]) -> str:
+    system = str(args.get("system") or "psx").strip().lower() or "psx"
+    if system not in {"psx", "all"}:
+        system = "psx"
+    payload = _run_play("list", system)
+    if not payload.get("ok"):
+        return payload.get("error") or "list_games failed"
+    games = payload.get("games") or []
+    titles = [str(g.get("title") or "") for g in games if g.get("title")]
+    if not titles:
+        return "no playstation games installed"
+    if system == "psx":
+        return f"{len(titles)} playstation games: " + ", ".join(titles)
+    return f"{len(titles)} games: " + ", ".join(
+        f"{g.get('title')} [{g.get('system')}]" for g in games if g.get("title")
+    )
+
+
+def _tool_play_game(args: dict[str, Any]) -> str:
+    name = str(args.get("name") or "").strip()
+    if not name:
+        return "play_game: need a game name"
+    if name.lower() in {"stop", "quit", "exit"}:
+        payload = _run_play("stop")
+        return payload.get("message") or payload.get("error") or "stopped"
+    payload = _run_play(name)
+    if payload.get("action") == "launch" and payload.get("ok"):
+        return f"launching {payload.get('title')}"
+    if payload.get("action") == "ambiguous":
+        matches = payload.get("matches") or []
+        titles = [str(m.get("title") or "") for m in matches if m.get("title")]
+        return "several matches: " + "; ".join(titles) + ". ask which one."
+    return payload.get("error") or payload.get("message") or "play_game failed"
+
+
 def _strip_code_fence(text: str) -> str:
     cleaned = text.strip()
     if cleaned.startswith("```"):
@@ -579,6 +688,8 @@ _DISPATCH: dict[str, Callable[[dict[str, Any]], str]] = {
     "write_doc_template": _tool_write_doc_template,
     "list_docs": _tool_list_docs,
     "read_doc": _tool_read_doc,
+    "list_games": _tool_list_games,
+    "play_game": _tool_play_game,
 }
 
 

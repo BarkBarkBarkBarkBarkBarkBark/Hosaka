@@ -7,6 +7,12 @@
 - Keep explanations to one or two short sentences unless more detail is requested
 - Use `python`, never `python3`
 
+## Games
+
+- The public library is PlayStation 1. List it with `play list psx`.
+- Do not volunteer homebrew/other-system ROMs unless asked.
+- If someone asks to play a game, launch it. Do not explain how.
+
 ## Interaction Style
 
 - Default to practical, direct help
