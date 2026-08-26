@@ -1,0 +1,7 @@
+#!/bin/bash
+# Panel: Terminal — show the TUI in the one Hosaka window.
+set -eu
+here="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+switch="$(dirname "$here")/hosaka-ui-switch"
+[ -x "$HOME/bin/hosaka-ui-switch" ] && switch="$HOME/bin/hosaka-ui-switch"
+exec "$switch" terminal

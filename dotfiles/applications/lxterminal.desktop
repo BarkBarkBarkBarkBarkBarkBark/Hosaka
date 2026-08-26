@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Hosaka
+GenericName=Hosaka Field Terminal
+Comment=Hosaka console
+TryExec=
+Exec=sh -lc 'exec "$HOME/bin/hosaka-tui-term"'
+Icon=hosaka
+Type=Application
+Categories=GTK;System;TerminalEmulator;
+Keywords=console;command line;hosaka;
+Terminal=false

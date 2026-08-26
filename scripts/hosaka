@@ -1268,15 +1268,19 @@ cmd_message() {
 cmd_tui() {
   # Straight into the console — do not run the boot orchestrator
   # (that path writes /var/lib/hosaka/state.json and needs root).
+  unset NO_COLOR
+  export FORCE_COLOR=1
+  export TERM="${TERM:-xterm-256color}"
+  export COLORTERM="${COLORTERM:-truecolor}"
   local py
   py="$(_hosaka_python)"
-  ( cd "$REPO_ROOT" && exec "$py" -m hosaka tui "$@" )
+  cd "$REPO_ROOT" && exec "$py" -m hosaka tui "$@"
 }
 
 cmd_voice() {
   local py
   py="$(_hosaka_python)"
-  ( cd "$REPO_ROOT" && exec "$py" -m hosaka voice "$@" )
+  cd "$REPO_ROOT" && exec "$py" -m hosaka voice "$@"
 }
 
 cmd_doctor() {

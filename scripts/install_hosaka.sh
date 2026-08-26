@@ -221,6 +221,103 @@ if [[ -n "$CURRENT_HOME" ]]; then
       "$REPO_ROOT/dotfiles/wallpaper/hosaka-desktop.png" \
       "$CURRENT_HOME/.local/share/hosaka/desktop-background.png"
   fi
+  if [[ -f "$REPO_ROOT/scripts/hosaka-tui-term" ]]; then
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/scripts/hosaka-tui-term" "$CURRENT_HOME/bin/hosaka-tui-term"
+  fi
+  if [[ -f "$REPO_ROOT/scripts/hosaka-ui-switch" ]]; then
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/scripts/hosaka-ui-switch" "$CURRENT_HOME/bin/hosaka-ui-switch"
+  fi
+  if [[ -f "$REPO_ROOT/scripts/hosaka-ui-session" ]]; then
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/scripts/hosaka-ui-session" "$CURRENT_HOME/bin/hosaka-ui-session"
+  fi
+  if [[ -f "$REPO_ROOT/scripts/hosaka-tui-session" ]]; then
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/scripts/hosaka-tui-session" "$CURRENT_HOME/bin/hosaka-tui-session"
+  fi
+  if [[ -f "$REPO_ROOT/scripts/hosaka-voice-term" ]]; then
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/scripts/hosaka-voice-term" "$CURRENT_HOME/bin/hosaka-voice-term"
+  fi
+  # LXQt Custom Command runs `command` on a timer and `click` on press.
+  python - "$CURRENT_HOME/.config/lxqt/panel.conf" "$CURRENT_HOME/bin" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+bindir = Path(sys.argv[2])
+if not path.is_file():
+    raise SystemExit(0)
+text = path.read_text()
+def upsert(section: str, keys: dict[str, str], src: str) -> str:
+    header = f"[{section}]"
+    if header not in src:
+        return src
+    start = src.index(header)
+    nxt = src.find("\n[", start + 1)
+    body = src[start:] if nxt < 0 else src[start:nxt]
+    lines = body.splitlines()
+    have = {line.split("=", 1)[0] for line in lines if "=" in line}
+    extra = [f"{k}={v}" for k, v in keys.items() if k not in have]
+    rewritten = []
+    for line in lines:
+        if "=" in line:
+            k = line.split("=", 1)[0]
+            if k in keys:
+                rewritten.append(f"{k}={keys[k]}")
+                continue
+        rewritten.append(line)
+    rewritten.extend(extra)
+    block = "\n".join(rewritten).rstrip() + "\n"
+    if nxt < 0:
+        return src[:start] + block
+    return src[:start] + block + src[nxt:]
+term = str(bindir / "hosaka-tui-term")
+voice = str(bindir / "hosaka-voice-term")
+text = upsert("terminal", {
+    "click": term, "command": "", "repeat": "false", "runWithBash": "false",
+}, text)
+text = upsert("voice", {
+    "click": voice, "command": "", "repeat": "false", "runWithBash": "false",
+}, text)
+path.write_text(text)
+PY
+  if [[ -f "$REPO_ROOT/scripts/hosaka-voice-session" ]]; then
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/scripts/hosaka-voice-session" "$CURRENT_HOME/bin/hosaka-voice-session"
+  fi
+  if [[ -f "$REPO_ROOT/dotfiles/lxterminal/lxterminal.conf" ]]; then
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/dotfiles/lxterminal/lxterminal.conf" \
+      "$CURRENT_HOME/.config/lxterminal/lxterminal.conf"
+  fi
+  if [[ -f "$REPO_ROOT/dotfiles/applications/hosaka-voice.desktop" ]]; then
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/dotfiles/applications/hosaka-voice.desktop" \
+      "$CURRENT_HOME/.local/share/applications/hosaka-voice.desktop"
+  fi
+  if [[ -f "$REPO_ROOT/dotfiles/applications/lxterminal.desktop" ]]; then
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/dotfiles/applications/lxterminal.desktop" \
+      "$CURRENT_HOME/.local/share/applications/lxterminal.desktop"
+  fi
+  if [[ -f "$REPO_ROOT/dotfiles/applications/hosaka.desktop" ]]; then
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/dotfiles/applications/hosaka.desktop" \
+      "$CURRENT_HOME/.local/share/applications/hosaka.desktop"
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/dotfiles/applications/hosaka.desktop" \
+      "$CURRENT_HOME/Desktop/hosaka.desktop"
+  fi
+  if [[ -f "$REPO_ROOT/dotfiles/icons/hosaka.png" ]]; then
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/dotfiles/icons/hosaka.png" \
+      "$CURRENT_HOME/.local/share/icons/hicolor/256x256/apps/hosaka.png"
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+      "$REPO_ROOT/dotfiles/icons/hosaka.png" \
+      "$CURRENT_HOME/.local/share/hosaka/hosaka-icon.png"
+  fi
   if [[ -f "$REPO_ROOT/dotfiles/openbox/menu.xml" ]]; then
     sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
       "$REPO_ROOT/dotfiles/openbox/menu.xml" "$CURRENT_HOME/.config/openbox/menu.xml"

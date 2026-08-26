@@ -301,7 +301,7 @@ def chat_stream(messages: list[dict[str, str]]) -> Generator[str, None, None]:
                     continue
 
 
-def chat_sync(messages: list[dict[str, str]]) -> str:
+def chat_sync(messages: list[dict[str, str]], timeout: float | None = None) -> str:
     """Non-streaming chat completion from OpenAI."""
     key = _api_key()
     if not key:
@@ -315,7 +315,7 @@ def chat_sync(messages: list[dict[str, str]]) -> str:
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
-    with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
+    with httpx.Client(timeout=timeout or REQUEST_TIMEOUT) as client:
         resp = client.post(_chat_url(), json=payload, headers=headers)
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"]

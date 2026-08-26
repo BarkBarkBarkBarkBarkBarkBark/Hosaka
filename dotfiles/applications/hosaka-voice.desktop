@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Voice
+GenericName=Hosaka Voice
+Comment=Talk to Hosaka
+Exec=sh -lc 'exec "$HOME/bin/hosaka-voice-term"'
+Icon=/home/operator/.local/share/hosaka/hosaka-icon.png
+Terminal=false
+StartupNotify=true
+StartupWMClass=lxterminal
+Categories=Audio;Utility;
+Keywords=hosaka;voice;talk;

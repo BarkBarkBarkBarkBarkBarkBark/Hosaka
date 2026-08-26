@@ -220,10 +220,46 @@ def _run_client_mode() -> None:
     # (If main_console doesn't yet speak remote, the user still gets a
     # working browser path via `hosaka open`.)
     try:
-        run_main_console()
+        _run_console_supervised()
     except Exception as exc:  # noqa: BLE001
         print(f"Hosaka client: main console exited ({exc})")
         sys.exit(1)
+
+
+def run_console_supervised() -> None:
+    """Stay in the TUI forever. Crashes and /exit come back to the prompt."""
+    from hosaka.tui.style import pin_to_tui, restore_terminal, tui_escape_allowed
+
+    pin_to_tui()
+    crashes = 0
+    while True:
+        try:
+            run_main_console()
+            if tui_escape_allowed():
+                return
+            if not sys.stdin.isatty():
+                return
+        except KeyboardInterrupt:
+            if tui_escape_allowed():
+                return
+        except SystemExit:
+            if tui_escape_allowed():
+                raise
+        except Exception as exc:  # noqa: BLE001
+            restore_terminal()
+            crashes += 1
+            print()
+            print(f"  Console crashed: {exc}")
+            print("  Coming right back.")
+            print()
+            if crashes > 20 and tui_escape_allowed():
+                raise
+            time.sleep(min(2.0, 0.4 * crashes))
+        restore_terminal()
+        pin_to_tui()
+
+
+_run_console_supervised = run_console_supervised
 
 
 def launch() -> None:
@@ -272,7 +308,7 @@ def launch() -> None:
             orchestrator.persist()
             raise
 
-    run_main_console()
+    _run_console_supervised()
 
 
 if __name__ == "__main__":

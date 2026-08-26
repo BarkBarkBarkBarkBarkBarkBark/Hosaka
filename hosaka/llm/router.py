@@ -59,6 +59,7 @@ def detect_backend() -> str:
 def stream_chat(
     messages: list[dict[str, str]],
     backend: str | None = None,
+    session: str | None = None,
 ) -> Generator[str, None, None]:
     """Stream tokens from the best available backend.
 
@@ -71,7 +72,7 @@ def stream_chat(
         user_msg = _last_user_msg(messages)
         if user_msg:
             try:
-                yield from picoclaw_adapter.chat_stream(user_msg)
+                yield from picoclaw_adapter.chat_stream(user_msg, session=session)
                 return
             except Exception as exc:
                 log.warning("Picoclaw stream failed: %s — falling back", exc)
@@ -91,6 +92,7 @@ def stream_chat(
 def sync_chat(
     messages: list[dict[str, str]],
     backend: str | None = None,
+    session: str | None = None,
 ) -> str:
     """Single-string response from the best available backend."""
     chosen = backend or detect_backend()
@@ -99,7 +101,7 @@ def sync_chat(
         user_msg = _last_user_msg(messages)
         if user_msg:
             try:
-                return picoclaw_adapter.chat_sync(user_msg)
+                return picoclaw_adapter.chat_sync(user_msg, session=session)
             except Exception as exc:
                 log.warning("Picoclaw sync failed: %s — falling back", exc)
 
@@ -126,6 +128,10 @@ def backend_display_name(backend: str) -> str:
         model = _picoclaw_default_model()
         if model.startswith("ollama/"):
             return "Picoclaw -> Ollama"
+        if model.startswith("openai/"):
+            return "Picoclaw -> OpenAI"
+        if model:
+            return f"Picoclaw -> {model}"
         return "Picoclaw agent"
     if backend == LLMBackend.OPENAI:
         base = (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/")

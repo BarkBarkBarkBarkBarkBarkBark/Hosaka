@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Terminal
+GenericName=Hosaka Field Terminal
+Comment=Open the Hosaka console
+Exec=sh -lc 'exec "$HOME/bin/hosaka-tui-term"'
+Icon=hosaka
+Terminal=false
+StartupNotify=true
+StartupWMClass=lxterminal
+Categories=System;TerminalEmulator;
+Keywords=hosaka;terminal;console;

@@ -5,6 +5,16 @@ import os
 import sys
 from pathlib import Path
 
+# The TUI is the product. Parent processes (Cursor, CI, a polluted desktop
+# session) often export NO_COLOR=1 / TERM=dumb — strip that before style.py
+# bakes its palette at import time.
+if len(sys.argv) > 1 and sys.argv[1] in {"tui", "console"}:
+    os.environ.pop("NO_COLOR", None)
+    os.environ["FORCE_COLOR"] = "1"
+    if os.environ.get("TERM", "dumb") in {"", "dumb", "unknown"}:
+        os.environ["TERM"] = "xterm-256color"
+    os.environ.setdefault("COLORTERM", "truecolor")
+
 # Load .env (repo root or cwd) before anything reads os.environ.
 try:
     from dotenv import load_dotenv
@@ -22,6 +32,10 @@ try:
     _secrets_store.apply_to_env()
 except Exception:  # noqa: BLE001 - never let secrets loading kill boot
     pass
+
+if len(sys.argv) > 1 and sys.argv[1] in {"tui", "console"}:
+    os.environ.pop("NO_COLOR", None)
+    os.environ["FORCE_COLOR"] = "1"
 
 # ── logging ───────────────────────────────────────────────────────────────────
 _LOG_FILE = os.getenv("HOSAKA_LOG_FILE", "/var/log/hosaka/boot.log")
@@ -88,8 +102,8 @@ def _dispatch_argv() -> int | None:
         return None
     cmd = sys.argv[1]
     if cmd in {"tui", "console"}:
-        from hosaka.main_console import run_main_console
-        run_main_console()
+        from hosaka.boot.launcher import run_console_supervised
+        run_console_supervised()
         return 0
     if cmd == "voice":
         from hosaka.voice.daemon import main as voice_main

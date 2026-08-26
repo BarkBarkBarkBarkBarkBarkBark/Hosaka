@@ -14,6 +14,8 @@ Pieces:
 * ``camera``          — V4L2 frame grab via opencv.
 * ``vision``          — one-shot vision call (gpt-4o-mini) on a JPEG.
 * ``daemon``          — the full wake -> Realtime -> speakers loop.
+* ``social_bridge``   — optional TUI SocialEngine adapter (governor owns
+                        when Hosaka may speak; GUI is not involved).
 """
 
 from __future__ import annotations

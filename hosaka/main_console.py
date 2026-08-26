@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import logging
 import os
 import platform
+import sys
 import random
 import json
 import shlex
 import shutil
 import subprocess
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -38,7 +41,7 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("/chat <text>",    "One-shot question — ask and get an answer",     "Chat & AI"),
     ("/ask <text>",     "Alias for /chat <text>",                        "Chat & AI"),
     ("/llm",            "Plain text talks to the AI",                    "Chat & AI"),
-    ("/voice",          "Talk to Hosaka (wake-word + OpenAI Realtime)",  "Chat & AI"),
+    ("/voice",          "Talk to Hosaka (wake-word + TUI orb)",           "Chat & AI"),
     ("/desktop",        "Show the LXQt desktop (also Ctrl+D)",           "System"),
     ("/gui",            "Open the Electron Hosaka app",                  "System"),
     # ── System ──
@@ -49,6 +52,7 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("/restart all",    "Restart both terminal and gateway",             "System"),
     ("/update",         "Pull latest code, reinstall, restart services", "System"),
     ("/uptime",         "Show system uptime",                            "System"),
+    ("/logs",           "Show recent Hosaka log lines",                  "System"),
     # ── Files & Navigation ──
     ("/read <file>",    "Paginate a file (also: /read manifest, /read <slug>)", "Files & Navigation"),
     ("/library",        "Browse the lore archive — list all entries",    "Files & Navigation"),
@@ -88,7 +92,7 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("/manifest",       "Open the No Wrong Way operator manual",        "Reference"),
     ("/about",          "About this system",                             "Reference"),
     ("/lore",           "...  (see also: /library)",                    "Reference"),
-    ("/exit",           "Exit the Hosaka console",                       "Reference"),
+    ("/exit",           "There is no outside — stay in the console",     "Reference"),
     # ── Shell passthrough ──
     ("!<command>",      "Run any shell command (e.g. !sudo apt update)", "Shell"),
 ]
@@ -133,7 +137,7 @@ def _show_help() -> None:
     print()
     print(f"  {AMBER}Start here:{R}")
     starters = [
-        ("/voice",    "talk (wake-word + realtime)"),
+        ("/voice",    "talk (wake-word + TUI orb)"),
         ("/chat",     "interactive AI session"),
         ("/desktop",  "LXQt desktop (or press Ctrl+D)"),
         ("/gui",      "open the Electron app"),
@@ -213,10 +217,91 @@ def _read_file(argument: str, current_dir: Path) -> None:
         _paginate_lines(numbered)
 
 
+def _allow_shell_escape() -> bool:
+    from hosaka.tui.style import tui_escape_allowed
+
+    return tui_escape_allowed()
+
+
 def _unknown_command(command: str) -> None:
     print(f"  {GRAY}Unknown command: {AMBER}{command}{R}")
     print(f"  {VIOLET}No Wrong Way{R} — try {cmd_style('/commands')} to see what's available.")
     print(f"  {GRAY}Or just type your question and Picoclaw will answer.{R}")
+
+
+def _log_path() -> Path:
+    return Path(os.getenv("HOSAKA_LOG_FILE", "/var/log/hosaka/boot.log"))
+
+
+def _show_logs(*, lines: int = 40) -> None:
+    path = _log_path()
+    print(f"  {GRAY}{path}{R}")
+    if not path.exists():
+        print(f"  {GRAY}No log file yet.{R}")
+        return
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        print(f"  {RED}Could not read logs: {exc}{R}")
+        return
+    tail = text.splitlines()[-lines:]
+    for line in tail:
+        print(f"  {GRAY}{line}{R}")
+    if not tail:
+        print(f"  {GRAY}Log is empty.{R}")
+
+
+def _report_command_error(raw: str, exc: BaseException) -> None:
+    logging.getLogger("hosaka.tui").error("command failed: %s", raw, exc_info=exc)
+    token = raw.split()[0] if raw else "command"
+    print()
+    print(f"  {RED}Something broke in {AMBER}{token}{R}")
+    print(f"  {GRAY}{exc}{R}")
+    print(f"  {GRAY}Run {CYAN}/logs{R}{GRAY} for details. You're still here.{R}")
+    print()
+    detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    try:
+        path = _log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(f"\n--- {token} ---\n{detail}\n")
+    except OSError:
+        pass
+
+
+def _run_voice_mode() -> None:
+    try:
+        from hosaka.voice.daemon import main as voice_main
+    except ImportError as exc:
+        print(exc)
+        return
+    print("Listening. Esc or q to return.")
+    code = 0
+    try:
+        code = voice_main()
+    except KeyboardInterrupt:
+        code = 0
+    except Exception as exc:  # noqa: BLE001
+        print(f"  {RED}Voice mode hit a snag:{R} {exc}")
+        logging.getLogger("hosaka.tui").exception("voice mode failed")
+        code = 2
+    try:
+        import signal
+
+        from hosaka.tui.style import pin_to_tui, restore_terminal
+
+        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            try:
+                signal.signal(sig, signal.SIG_DFL)
+            except (OSError, ValueError):
+                pass
+        restore_terminal()
+        pin_to_tui()
+    except Exception:  # noqa: BLE001
+        pass
+    if code:
+        print("Voice mode could not start.")
+    print("Back in Hosaka console.")
 
 
 def _run_update_flow() -> None:
@@ -250,6 +335,9 @@ def _enter_code_mode(current_dir: Path) -> None:
         subprocess.run([shell], cwd=str(current_dir))  # noqa: S603
     except Exception as exc:  # noqa: BLE001
         print(f"Shell failed: {exc}")
+    from hosaka.tui.style import pin_to_tui
+
+    pin_to_tui()
     print("Back in Hosaka console.")
 
 
@@ -413,7 +501,7 @@ def _picoclaw_status() -> None:
     installed = bool(shutil.which("picoclaw"))
     print(f"Picoclaw: {'installed' if installed else 'NOT FOUND on PATH'}")
     print(f"Session:  {picoclaw_adapter.DEFAULT_SESSION}")
-    print(f"Model:    {picoclaw_adapter.DEFAULT_MODEL or 'default'}")
+    print(f"Model:    {picoclaw_adapter.active_model() or 'default'}")
     if not installed:
         print("Install: https://github.com/sipeed/picoclaw/releases")
     else:
@@ -984,6 +1072,9 @@ def _launch_gui() -> None:
 
 
 def run_main_console() -> None:
+    from hosaka.tui.style import install_terminal_guard
+
+    install_terminal_guard()
     _print_banner()
     _check_api_key()
     current_dir = Path.cwd()
@@ -995,11 +1086,19 @@ def run_main_console() -> None:
             raw = input(prompt).strip()
         except EOFError:
             print()
+            # Dead stdin (pane switch / /dev/null) would otherwise reprint
+            # the banner forever. A live Ctrl-D still drops to the desktop.
+            if not sys.stdin.isatty():
+                break
             _drop_to_desktop()
             continue
         except KeyboardInterrupt:
-            print(f"\n{GRAY}Exiting Hosaka console.{R}")
-            break
+            print()
+            if _allow_shell_escape():
+                print(f"{GRAY}Exiting Hosaka console.{R}")
+                break
+            print(f"  {GRAY}Still here. Ctrl-Z cannot leave either.{R}")
+            continue
 
         if not raw:
             continue
@@ -1007,6 +1106,19 @@ def run_main_console() -> None:
         _session_history.append(raw)
         record_interaction()
 
+        if raw == "/exit":
+            if _allow_shell_escape():
+                break
+            print(f"  {VIOLET}There is no outside.{R} {GRAY}This is the console.{R}")
+            continue
+
+        try:
+            current_dir, input_mode = _dispatch_command(raw, current_dir, input_mode)
+        except Exception as exc:  # noqa: BLE001
+            _report_command_error(raw, exc)
+
+
+def _dispatch_command(raw: str, current_dir: Path, input_mode: str) -> tuple[Path, str]:
         # ── Reference ──
         if raw == "/help":
             _show_help()
@@ -1031,6 +1143,8 @@ def run_main_console() -> None:
             _run_update_flow()
         elif raw == "/uptime":
             _show_uptime()
+        elif raw == "/logs":
+            _show_logs()
         elif raw in {"/desktop", "/desk"}:
             _drop_to_desktop()
         elif raw == "/gui":
@@ -1093,20 +1207,7 @@ def run_main_console() -> None:
         elif raw.startswith("/ask "):
             one_shot(raw[5:], hostname=_hostname(), cwd=str(current_dir))
         elif raw == "/voice":
-            try:
-                from hosaka.voice.daemon import main as voice_main
-            except ImportError as exc:
-                print(
-                    f"Voice deps not installed ({exc}).\n"
-                    "Run ./scripts/install_voice_deps.sh first."
-                )
-            else:
-                print("Entering voice mode. Ctrl-C to return.")
-                try:
-                    voice_main()
-                except KeyboardInterrupt:
-                    pass
-                print("Back in Hosaka console.")
+            _run_voice_mode()
 
         # ── Tools (continued) ──
         elif raw.startswith("/draw "):
@@ -1132,10 +1233,6 @@ def run_main_console() -> None:
         elif raw == "/signal":
             print(f"  {CYAN}Signal steady.{R} Persistence confirmed.")
             print(f"  {GRAY}... but steady is relative, isn't it?{R}")
-
-        # ── Exit ──
-        elif raw == "/exit":
-            break
 
         # ── Legacy compat (redirect old forms) ──
         elif raw in {"update", "/setup", "/network", "/theme"}:
@@ -1164,7 +1261,6 @@ def run_main_console() -> None:
             # Signal the web panel via a small HTTP POST to the local server
             try:
                 import urllib.request
-                import urllib.parse
                 data = _json.dumps({"url": url}).encode()
                 req = urllib.request.Request(
                     "http://localhost:8421/api/video",
@@ -1199,3 +1295,4 @@ def run_main_console() -> None:
                 _run_shell_command(raw, current_dir)
             else:
                 one_shot(raw, hostname=_hostname(), cwd=str(current_dir))
+        return current_dir, input_mode

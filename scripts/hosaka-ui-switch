@@ -1,0 +1,91 @@
+#!/bin/bash
+# One Hosaka window. Terminal and Voice swap in place — never a second window.
+set -u
+export DISPLAY="${DISPLAY:-:0}"
+export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+export PATH="${HOME}/.local/bin:${HOME}/bin:/usr/local/bin:${PATH}"
+unset NO_COLOR
+export FORCE_COLOR=1
+export TERM=xterm-256color
+export COLORTERM=truecolor
+
+mode="${1:-terminal}"
+[ "$mode" = "voice" ] || mode="terminal"
+
+ui="${XDG_RUNTIME_DIR:-/tmp}/hosaka-ui"
+mkdir -p "$ui"
+modefile="$ui/mode"
+childpid="$ui/child.pid"
+lock="$ui/window.lock"
+
+prev=""
+[ -f "$modefile" ] && prev="$(tr -d '[:space:]' <"$modefile" 2>/dev/null || true)"
+printf '%s\n' "$mode" >"$modefile"
+
+focus_hosaka() {
+  wmctrl -a Hosaka >/dev/null 2>&1 || true
+}
+
+kill_inner() {
+  local pid=""
+  [ -f "$childpid" ] && pid="$(cat "$childpid" 2>/dev/null || true)"
+  [ -n "${pid:-}" ] || return 0
+  pkill -TERM -P "$pid" 2>/dev/null || true
+  kill -TERM "$pid" 2>/dev/null || true
+  local i=0
+  while [ "$i" -lt 20 ]; do
+    kill -0 "$pid" 2>/dev/null || return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  pkill -KILL -P "$pid" 2>/dev/null || true
+  kill -KILL "$pid" 2>/dev/null || true
+}
+
+running_mode() {
+  local pid="" cmd=""
+  [ -f "$childpid" ] && pid="$(cat "$childpid" 2>/dev/null || true)"
+  [ -n "${pid:-}" ] || return 0
+  cmd="$(ps -p "$pid" -o args= 2>/dev/null || true)"
+  case "$cmd" in
+    *' -m hosaka voice'*) echo voice ;;
+    *' -m hosaka tui'*) echo terminal ;;
+  esac
+}
+
+close_stray_windows() {
+  # Title is everything after: id desktop hostname
+  # Do not match the machine hostname "hosaka".
+  wmctrl -l 2>/dev/null | while read -r id _desk _host title; do
+    case "$title" in
+      Hosaka|Hosaka\ Voice)
+        wmctrl -ic "$id" >/dev/null 2>&1 || true
+        ;;
+    esac
+  done
+}
+
+session="${HOME}/bin/hosaka-ui-session"
+if [ ! -x "$session" ]; then
+  here="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+  session="$(dirname "$here")/hosaka-ui-session"
+fi
+
+exec 9>"$lock"
+if flock -n 9; then
+  close_stray_windows
+  sleep 0.15
+  if command -v lxterminal >/dev/null 2>&1; then
+    exec lxterminal --no-remote --title=Hosaka -e "$session"
+  fi
+  if command -v qterminal >/dev/null 2>&1; then
+    exec qterminal -e "$session"
+  fi
+  exec x-terminal-emulator -e "$session"
+fi
+
+if [ "$(running_mode)" != "$mode" ]; then
+  kill_inner
+fi
+focus_hosaka
+exit 0

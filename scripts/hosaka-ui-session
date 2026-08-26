@@ -1,0 +1,75 @@
+#!/bin/bash
+# Inside the single Hosaka window: run Terminal or Voice, never both.
+# Foreground on the lxterminal pty — do not setsid/background (that
+# redirects stdin from /dev/null and the TUI reprint-loops the banner).
+set -u
+unset NO_COLOR
+export FORCE_COLOR=1
+export TERM=xterm-256color
+export COLORTERM=truecolor
+export HOSAKA_UI_SESSION=1
+export PATH="${HOME}/.local/bin:${HOME}/bin:/usr/local/bin:${PATH}"
+
+ui="${XDG_RUNTIME_DIR:-/tmp}/hosaka-ui"
+mkdir -p "$ui"
+modefile="$ui/mode"
+childpid="$ui/child.pid"
+
+REPO="${HOSAKA_REPO:-$HOME/Hosaka}"
+if [ -x "$REPO/.venv/bin/python" ]; then
+  PY="$REPO/.venv/bin/python"
+elif [ -x "$REPO/.hosakavenv/bin/python" ]; then
+  PY="$REPO/.hosakavenv/bin/python"
+else
+  PY="$(command -v python)"
+fi
+cd "$REPO" || exit 1
+
+export HOSAKA_UI_CHILD_PID="$childpid"
+export HOSAKA_UI_PY="$PY"
+
+stop_child() {
+  local pid=""
+  [ -f "$childpid" ] && pid="$(cat "$childpid" 2>/dev/null || true)"
+  [ -n "${pid:-}" ] || return 0
+  pkill -TERM -P "$pid" 2>/dev/null || true
+  kill -TERM "$pid" 2>/dev/null || true
+  local i=0
+  while [ "$i" -lt 15 ]; do
+    kill -0 "$pid" 2>/dev/null || return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  pkill -KILL -P "$pid" 2>/dev/null || true
+  kill -KILL "$pid" 2>/dev/null || true
+}
+
+run_kind() {
+  local kind="$1"
+  export HOSAKA_UI_KIND="$kind"
+  "$PY" -c '
+import os
+pid_path = os.environ["HOSAKA_UI_CHILD_PID"]
+kind = os.environ["HOSAKA_UI_KIND"]
+py = os.environ["HOSAKA_UI_PY"]
+with open(pid_path, "w", encoding="utf-8") as fh:
+    fh.write(str(os.getpid()))
+os.execv(py, [py, "-m", "hosaka", kind])
+'
+}
+
+trap 'stop_child; exit 0' TERM INT HUP
+
+while true; do
+  mode="$(tr -d '[:space:]' <"$modefile" 2>/dev/null || true)"
+  [ "$mode" = "voice" ] || mode="terminal"
+  if [ "$mode" = "voice" ]; then
+    run_kind voice || true
+  else
+    run_kind tui || true
+  fi
+  rm -f "$childpid"
+  if [ "$mode" = "voice" ]; then
+    printf '%s\n' "terminal" >"$modefile"
+  fi
+done

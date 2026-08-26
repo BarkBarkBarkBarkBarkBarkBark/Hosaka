@@ -22,6 +22,11 @@ PICOCLAW_BIN = os.getenv("PICOCLAW_BIN", "picoclaw")
 DEFAULT_SESSION = os.getenv("PICOCLAW_SESSION", "hosaka:main")
 PICOCLAW_HOME = os.getenv("PICOCLAW_HOME")
 
+_FAIL_MARKERS = (
+    "llm call failed after retries",
+    "error processing message",
+)
+
 
 def _config_model_name() -> str:
     from pathlib import Path
@@ -36,7 +41,11 @@ def _config_model_name() -> str:
         return ""
 
 
-DEFAULT_MODEL = os.getenv("PICOCLAW_MODEL", "") or _config_model_name()
+def active_model() -> str:
+    return os.getenv("PICOCLAW_MODEL", "") or _config_model_name()
+
+
+DEFAULT_MODEL = active_model()
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mGKHF]")
 _RESPONSE_PREFIX = "🦞"
@@ -91,25 +100,36 @@ def _extract_response(raw_output: str) -> str:
     return "\n".join(lines)
 
 
-def chat_sync(message: str, session: str | None = None) -> str:
+def chat_sync(
+    message: str,
+    session: str | None = None,
+    timeout: float = 120,
+) -> str:
     """Send a message to picoclaw and return the response text."""
     session = session or DEFAULT_SESSION
     cmd = [PICOCLAW_BIN, "agent", "-m", message, "--session", session]
-    if DEFAULT_MODEL:
-        cmd += ["--model", DEFAULT_MODEL]
+    model = active_model()
+    if model:
+        cmd += ["--model", model]
 
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=timeout,
             env={**os.environ, **({"HOME": PICOCLAW_HOME} if PICOCLAW_HOME else {})},
         )
         output = result.stdout + result.stderr
-        return _extract_response(output) or "[picoclaw: empty response]"
+        text = _extract_response(output) or "[picoclaw: empty response]"
+        lowered = text.lower()
+        if any(marker in lowered for marker in _FAIL_MARKERS):
+            raise RuntimeError(text)
+        return text
     except subprocess.TimeoutExpired:
-        return "[picoclaw: timed out]"
+        raise RuntimeError("picoclaw timed out")
+    except RuntimeError:
+        raise
     except Exception as exc:  # noqa: BLE001
         return f"[picoclaw error: {exc}]"
 

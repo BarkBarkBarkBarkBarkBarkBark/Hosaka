@@ -46,3 +46,24 @@ if [ -f "$WALLPAPER_DST" ]; then
 else
   log "wallpaper missing; wrote settings only"
 fi
+
+# Big one-click launcher on the desktop + app menu.
+ICON_SRC=""
+DESKTOP_SRC=""
+if [ -n "$ROOT" ]; then
+  [ -f "$ROOT/dotfiles/icons/hosaka.png" ] && ICON_SRC="$ROOT/dotfiles/icons/hosaka.png"
+  [ -f "$ROOT/dotfiles/applications/hosaka.desktop" ] && DESKTOP_SRC="$ROOT/dotfiles/applications/hosaka.desktop"
+fi
+if [ -n "$ICON_SRC" ]; then
+  mkdir -p "${HOME}/.local/share/icons/hicolor/256x256/apps" "${HOME}/.local/share/hosaka" 2>/dev/null || true
+  cp "$ICON_SRC" "${HOME}/.local/share/hosaka/hosaka-icon.png" 2>/dev/null || true
+  cp "$ICON_SRC" "${HOME}/.local/share/icons/hicolor/256x256/apps/hosaka.png" 2>/dev/null || true
+  gtk-update-icon-cache -f "${HOME}/.local/share/icons/hicolor" >/dev/null 2>&1 || true
+fi
+if [ -n "$DESKTOP_SRC" ]; then
+  mkdir -p "${HOME}/.local/share/applications" "${HOME}/Desktop" 2>/dev/null || true
+  cp "$DESKTOP_SRC" "${HOME}/.local/share/applications/hosaka.desktop" 2>/dev/null || true
+  cp "$DESKTOP_SRC" "${HOME}/Desktop/hosaka.desktop" 2>/dev/null || true
+  chmod +x "${HOME}/.local/share/applications/hosaka.desktop" "${HOME}/Desktop/hosaka.desktop" 2>/dev/null || true
+  gio set "${HOME}/Desktop/hosaka.desktop" metadata::trusted true >/dev/null 2>&1 || true
+fi

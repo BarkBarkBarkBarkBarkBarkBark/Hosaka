@@ -34,12 +34,15 @@ class TestSyncChat:
         with patch("hosaka.llm.picoclaw_adapter.chat_sync", return_value="pico response") as mock_sync:
             result = sync_chat(messages, backend=LLMBackend.PICOCLAW)
         assert result == "pico response"
-        mock_sync.assert_called_once_with("hello")
+        mock_sync.assert_called_once_with("hello", session=None)
 
-    def test_picoclaw_falls_back_to_openai(self) -> None:
+    def test_picoclaw_error_text_falls_back_to_openai(self) -> None:
         messages = [{"role": "user", "content": "hello"}]
         with (
-            patch("hosaka.llm.picoclaw_adapter.chat_sync", side_effect=RuntimeError("fail")),
+            patch(
+                "hosaka.llm.picoclaw_adapter.chat_sync",
+                side_effect=RuntimeError("llm call failed after retries"),
+            ),
             patch("hosaka.llm.openai_adapter.is_available", return_value=True),
             patch("hosaka.llm.openai_adapter.chat_sync", return_value="openai response"),
         ):
@@ -60,6 +63,16 @@ class TestSyncChat:
         messages = [{"role": "user", "content": "random unknown thing"}]
         result = sync_chat(messages, backend=LLMBackend.OFFLINE)
         assert "[offline]" in result
+
+
+def test_conversational_backend_prefers_openai() -> None:
+    from hosaka.llm import chat as chat_mod
+
+    with (
+        patch.object(chat_mod.openai_adapter, "is_available", return_value=True),
+        patch.object(chat_mod.picoclaw_adapter, "is_available", return_value=True),
+    ):
+        assert chat_mod._conversational_backend() == LLMBackend.OPENAI
 
 
 class TestOpenAIAvailability:

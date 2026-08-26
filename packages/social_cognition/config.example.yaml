@@ -1,0 +1,73 @@
+agent_name: hosaka
+
+governor:
+  weights:
+    positive:
+      direct_address: 1.00
+      explicit_question: 0.65
+      unresolved_question: 0.50
+      candidate_relevance: 0.45
+      candidate_importance: 0.35
+      urgency: 0.60
+      confidence: 0.25
+      long_pause: 0.20
+      turns_since_agent_spoke: 0.15
+      humor_value: 0.10
+    negative:
+      human_currently_speaking: 1.00
+      overlapping_human_speech: 1.00
+      recent_agent_speech: 0.70
+      rapid_exchange: 0.45
+      low_asr_confidence: 0.50
+      topic_drift: 0.60
+      candidate_social_risk: 0.50
+      candidate_staleness: 0.70
+  thresholds:
+    discard_below: 0.30
+    hold_below: 0.68
+    speak_at_gap: 0.68
+    interrupt: 0.94
+  silence_bias:
+    enabled: true
+    baseline_suppression: 0.20
+    target_agent_share_of_turns:
+      minimum: 0.03
+      preferred: 0.10
+      maximum_soft_limit: 0.20
+  asr_confidence_floor: 0.35
+
+chamber:
+  replacement_margin: 0.15
+  decay:
+    interval_seconds: 5
+    relevance_multiplier: 0.94
+    importance_multiplier: 0.98
+  expiration:
+    default_seconds: 45
+    direct_response_seconds: 12
+    humor_seconds: 20
+    factual_callback_seconds: 60
+    urgent_correction_seconds: 15
+  interrupted:
+    priority_multiplier: 0.75
+    max_retries: 1
+
+turn_taking:
+  silence_windows_ms:
+    minimal_gap: 350
+    normal_response_gap: 600
+    chambered_thought_gap: 900
+    unsolicited_initiative_gap: 1400
+
+barge_in:
+  duck_after_ms: 120
+  cancel_after_ms: 250
+
+cooldown:
+  recent_speech_seconds: 8.0
+
+memory:
+  conversation_max_turns: 40
+  conversation_max_age_minutes: 20
+  working_memory_max_items: 20
+  working_memory_ttl_minutes: 30

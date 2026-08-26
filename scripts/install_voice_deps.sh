@@ -15,6 +15,7 @@ echo "[voice-deps] apt packages (portaudio, alsa, v4l)..."
 sudo apt-get update -y
 sudo apt-get install -y --no-install-recommends \
   portaudio19-dev \
+  libportaudio2 \
   libasound2-dev \
   libsndfile1 \
   v4l-utils \
@@ -28,6 +29,10 @@ fi
 
 echo "[voice-deps] pip install -r requirements-voice.txt"
 "${PIP[@]}" -r "$ROOT/requirements-voice.txt"
+
+echo "[voice-deps] daemon extras (mic + wake word)..."
+"${PIP[@]}" -r "$ROOT/requirements-voice-daemon.txt" || true
+"${PIP[@]}" --no-deps openwakeword || echo "  skipped openwakeword (ok — /voice still listens)"
 
 echo "[voice-deps] pre-downloading openwakeword models..."
 python - <<'PY'

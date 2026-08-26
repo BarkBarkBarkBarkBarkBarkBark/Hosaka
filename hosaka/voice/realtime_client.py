@@ -33,6 +33,13 @@ log = logging.getLogger("hosaka.voice.realtime")
 DEFAULT_MODEL = os.getenv("HOSAKA_VOICE_MODEL", "gpt-realtime")
 DEFAULT_VOICE = os.getenv("HOSAKA_VOICE_VOICE", "marin")
 REALTIME_URL = "wss://api.openai.com/v1/realtime?model={model}"
+PCM16_24K = {"type": "audio/pcm", "rate": 24_000}
+
+_AUDIO_DELTA = frozenset({"response.output_audio.delta", "response.audio.delta"})
+_AUDIO_DONE = frozenset({"response.output_audio.done", "response.audio.done"})
+_TRANSCRIPT_DELTA = frozenset(
+    {"response.output_audio_transcript.delta", "response.audio_transcript.delta"}
+)
 
 
 def _openai_base_url() -> str:
@@ -52,6 +59,45 @@ def _require_websockets() -> Any:
 
 class RealtimeError(RuntimeError):
     pass
+
+
+def ga_session_update(
+    *,
+    model: str,
+    voice: str,
+    instructions: str,
+    tools: list[dict[str, Any]],
+    auto_create_response: bool,
+) -> dict[str, Any]:
+    """GA ``session.update`` body. Beta fields (``modalities``, flat
+    ``input_audio_format``, top-level ``voice``) are rejected since 2026-05-12.
+    """
+    session: dict[str, Any] = {
+        "type": "realtime",
+        "model": model,
+        "output_modalities": ["audio"],
+        "audio": {
+            "input": {
+                "format": dict(PCM16_24K),
+                "transcription": {"model": "gpt-4o-mini-transcribe"},
+                "turn_detection": {
+                    "type": "semantic_vad",
+                    "eagerness": "medium",
+                    "create_response": auto_create_response,
+                    "interrupt_response": True,
+                },
+            },
+            "output": {
+                "format": dict(PCM16_24K),
+                "voice": voice,
+            },
+        },
+        "instructions": instructions,
+    }
+    if tools:
+        session["tools"] = tools
+        session["tool_choice"] = "auto"
+    return {"type": "session.update", "session": session}
 
 
 # ── event types we care about ────────────────────────────────────────────
@@ -81,6 +127,7 @@ class RealtimeSession:
         instructions: str = "",
         voice: str = DEFAULT_VOICE,
         model: str = DEFAULT_MODEL,
+        auto_create_response: bool = True,
     ) -> None:
         if not api_key:
             raise RealtimeError("OPENAI_API_KEY not set")
@@ -89,58 +136,58 @@ class RealtimeSession:
         self._voice = voice
         self._tools = tools or []
         self._instructions = instructions
+        self._auto_create_response = auto_create_response
         self._ws: ClientConnection | None = None
 
         # Caller-supplied event hooks. All async, called from the reader task.
         self.on_audio: AudioHandler | None = None
         self.on_user_transcript: TextHandler | None = None
+        self.on_user_partial: TextHandler | None = None
         self.on_assistant_transcript: TextHandler | None = None
         self.on_state: StateHandler | None = None
         self.on_tool: ToolHandler | None = None
+        self.on_response_done: Callable[[], Awaitable[None]] | None = None
+        self.on_trace: Callable[[str, str], None] | None = None
+        self._bg: set[asyncio.Task[None]] = set()
 
     # ── context manager ───────────────────────────────────────────────
 
     async def __aenter__(self) -> "RealtimeSession":
         url = REALTIME_URL.format(model=self._model)
-        headers = [
-            ("Authorization", f"Bearer {self._api_key}"),
-            ("OpenAI-Beta", "realtime=v1"),
-        ]
+        headers = [("Authorization", f"Bearer {self._api_key}")]
         websockets = _require_websockets()
-        self._ws = await websockets.connect(
-            url,
-            additional_headers=headers,
-            max_size=16 * 1024 * 1024,
-        )
-        await self._send(
-            {
-                "type": "session.update",
-                "session": {
-                    "modalities": ["audio"],
-                    "voice": self._voice,
-                    "input_audio_format": "pcm16",
-                    "output_audio_format": "pcm16",
-                    "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
-                    "turn_detection": {
-                        "type": "server_vad",
-                        "threshold": 0.5,
-                        "prefix_padding_ms": 300,
-                        "silence_duration_ms": 600,
-                    },
-                    "tools": self._tools,
-                    "tool_choice": "auto",
-                    "instructions": self._instructions,
-                },
-            }
-        )
+        try:
+            self._ws = await websockets.connect(
+                url,
+                additional_headers=headers,
+                max_size=16 * 1024 * 1024,
+                ping_interval=None,
+                ping_timeout=None,
+            )
+            await self._send(
+                ga_session_update(
+                    model=self._model,
+                    voice=self._voice,
+                    instructions=self._instructions,
+                    tools=self._tools,
+                    auto_create_response=self._auto_create_response,
+                )
+            )
+        except RealtimeError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            await self.__aexit__()
+            raise RealtimeError(f"realtime handshake failed: {exc}") from exc
         return self
 
     async def __aexit__(self, *_exc: Any) -> None:
+        for task in list(self._bg):
+            task.cancel()
         ws = self._ws
         self._ws = None
         if ws is not None:
             try:
-                await ws.close()
+                await asyncio.wait_for(ws.close(), timeout=1.0)
             except Exception:  # noqa: BLE001
                 pass
 
@@ -172,14 +219,46 @@ class RealtimeSession:
     async def cancel_response(self) -> None:
         await self._send({"type": "response.cancel"})
 
+    async def speak_verbatim(self, text: str) -> None:
+        """Ask Realtime to speak `text` as audio. Used when SocialEngine authorizes."""
+        spoken = text.strip()
+        if not spoken:
+            return
+        await self._send(
+            {
+                "type": "response.create",
+                "response": {
+                    "output_modalities": ["audio"],
+                    "instructions": (
+                        "Speak the following text verbatim. "
+                        "Do not add commentary or questions.\n\n"
+                        f"{spoken}"
+                    ),
+                },
+            }
+        )
+
     # ── receive loop ──────────────────────────────────────────────────
 
+    def _spawn(self, coro: Awaitable[None]) -> None:
+        """Run a hook without stalling the WebSocket reader."""
+        try:
+            task = asyncio.get_running_loop().create_task(coro)
+        except RuntimeError:
+            return
+        self._bg.add(task)
+        task.add_done_callback(self._bg.discard)
+
+    async def _run_hook(self, hook: Callable[..., Awaitable[None]] | None, *args: Any) -> None:
+        if hook is None:
+            return
+        try:
+            await hook(*args)
+        except Exception:  # noqa: BLE001
+            log.exception("realtime hook failed")
+
     async def _notify_state(self, state: str) -> None:
-        if self.on_state is not None:
-            try:
-                await self.on_state(state)
-            except Exception:  # noqa: BLE001
-                log.exception("on_state hook failed")
+        self._spawn(self._run_hook(self.on_state, state))
 
     async def _submit_tool_result(self, call_id: str, output: str) -> None:
         await self._send(
@@ -196,31 +275,51 @@ class RealtimeSession:
 
     async def _handle_event(self, evt: dict[str, Any]) -> None:
         etype = evt.get("type", "")
-        if etype == "response.audio.delta":
+        if self.on_trace is not None and etype and "delta" not in etype:
+            detail = etype
+            if etype == "error":
+                err = evt.get("error") or {}
+                detail = f"error {err.get('type','')}: {err.get('message','')}"[:160]
+            elif etype == "response.function_call_arguments.done":
+                detail = f"tool {evt.get('name','')}"
+            elif etype == "conversation.item.input_audio_transcription.completed":
+                detail = f"you {(evt.get('transcript') or '')[:80]}"
+            elif "delta" in etype:
+                detail = etype
+            try:
+                self.on_trace(etype, detail)
+            except Exception:  # noqa: BLE001
+                pass
+        if etype in _AUDIO_DELTA:
             if self.on_audio is not None:
                 try:
                     pcm = base64.b64decode(evt.get("delta", ""))
                     await self.on_audio(pcm)
                 except Exception:  # noqa: BLE001
                     log.exception("on_audio hook failed")
-        elif etype == "response.audio_transcript.delta":
+        elif etype in _TRANSCRIPT_DELTA:
             if self.on_assistant_transcript is not None:
                 try:
                     await self.on_assistant_transcript(str(evt.get("delta", "")))
                 except Exception:  # noqa: BLE001
                     log.exception("on_assistant_transcript hook failed")
+        elif etype == "conversation.item.input_audio_transcription.delta":
+            delta = str(evt.get("delta") or evt.get("transcript") or "")
+            if delta:
+                self._spawn(self._run_hook(self.on_user_partial, delta))
         elif etype == "conversation.item.input_audio_transcription.completed":
-            if self.on_user_transcript is not None:
-                try:
-                    await self.on_user_transcript(str(evt.get("transcript", "")))
-                except Exception:  # noqa: BLE001
-                    log.exception("on_user_transcript hook failed")
+            self._spawn(
+                self._run_hook(
+                    self.on_user_transcript, str(evt.get("transcript", ""))
+                )
+            )
         elif etype == "input_audio_buffer.speech_started":
             await self._notify_state("listening")
         elif etype == "input_audio_buffer.speech_stopped":
             await self._notify_state("thinking")
-        elif etype == "response.audio.done":
+        elif etype in _AUDIO_DONE:
             await self._notify_state("idle")
+            self._spawn(self._run_hook(self.on_response_done))
         elif etype == "response.function_call_arguments.done":
             call_id = str(evt.get("call_id", ""))
             name = str(evt.get("name", ""))
@@ -229,21 +328,27 @@ class RealtimeSession:
                 args = json.loads(raw) if isinstance(raw, str) else dict(raw)
             except json.JSONDecodeError:
                 args = {}
-            output = f"tool {name}: no dispatcher wired"
-            if self.on_tool is not None:
-                try:
-                    output = await self.on_tool(name, args)
-                except Exception as exc:  # noqa: BLE001
-                    log.exception("tool %s crashed", name)
-                    output = f"{name}: crashed ({exc})"
-            await self._submit_tool_result(call_id, output)
+            self._spawn(self._run_tool(call_id, name, args))
         elif etype == "error":
             err = evt.get("error", {})
-            log.warning(
+            log.debug(
                 "realtime error: %s (%s)",
                 err.get("message"),
                 err.get("type"),
             )
+
+    async def _run_tool(self, call_id: str, name: str, args: dict[str, Any]) -> None:
+        output = f"tool {name}: no dispatcher wired"
+        if self.on_tool is not None:
+            try:
+                output = await self.on_tool(name, args)
+            except Exception as exc:  # noqa: BLE001
+                log.exception("tool %s crashed", name)
+                output = f"{name}: crashed ({exc})"
+        try:
+            await self._submit_tool_result(call_id, output)
+        except Exception:  # noqa: BLE001
+            log.exception("tool result submit failed")
 
     async def events(self) -> AsyncIterator[dict[str, Any]]:
         """Iterate over decoded server events (after dispatching hooks)."""

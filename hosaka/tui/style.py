@@ -6,13 +6,18 @@ All output uses ANSI escape sequences — no external dependencies.
 
 from __future__ import annotations
 
+import math
 import os
 import random
 import sys
+import threading
 
 # ── color toggle ─────────────────────────────────────────────────────────
 
 def _color_enabled() -> bool:
+    force = os.getenv("FORCE_COLOR", "").strip().lower()
+    if force in {"1", "true", "yes", "on"}:
+        return True
     if os.getenv("NO_COLOR"):
         return False
     if not hasattr(sys.stdout, "fileno"):
@@ -262,6 +267,69 @@ def random_orb() -> str:
     return render_orb(state)
 
 
+_SPIRAL_CHARS = " ·░▒▓█"
+_SPIRAL_PALETTE = (23, 25, 30, 37, 45, 51, 87)
+
+
+def render_orb_spiral(phase: float, energy: float = 0.0) -> str:
+    """Two-arm galaxy swirl. ``energy`` 0–1 punches the arms from mic RMS."""
+    width, height = 25, 11
+    cx, cy = 12.0, 5.0
+    punch = 0.55 + 0.9 * max(0.0, min(1.0, energy))
+    lines: list[str] = []
+    for row in range(height):
+        cells: list[str] = []
+        for col in range(width):
+            dx = (col - cx) * 0.42
+            dy = row - cy
+            radius = math.hypot(dx, dy)
+            if radius > 6.35:
+                cells.append(" ")
+                continue
+            if radius < 0.85:
+                cells.append(f"{fg256(231)}{B}◉{R}")
+                continue
+            theta = math.atan2(dy, dx)
+            swirl = theta * 2.0 - radius * 1.15 + phase
+            arm = 0.5 + 0.5 * math.cos(swirl)
+            arm2 = 0.5 + 0.5 * math.cos(swirl * 0.5 + 1.2)
+            core = max(0.0, 1.0 - (radius / 6.35) ** 1.6)
+            value = max(arm, arm2 * 0.55) * core * punch
+            idx = min(5, int(value * 6.2))
+            ch = _SPIRAL_CHARS[idx]
+            if ch == " ":
+                cells.append(" ")
+                continue
+            pal = _SPIRAL_PALETTE[min(len(_SPIRAL_PALETTE) - 1, idx)]
+            cells.append(f"{fg256(pal)}{ch}")
+        cells.append(_r())
+        lines.append("  " + "".join(cells))
+    return "\n".join(lines)
+
+
+_WAVE_BARS = " ▁▂▃▄▅▆▇█"
+
+
+def render_waveform(levels: list[float], width: int = 48, *, floor: float = 0.0) -> str:
+    """Traveling RMS meter. Newest sample is on the right.
+
+    Samples at or below ``floor`` render dim so the noise floor is visible.
+    """
+    if width < 8:
+        width = 8
+    data = list(levels)[-width:]
+    if len(data) < width:
+        data = [0.0] * (width - len(data)) + data
+    dim_cut = max(0.0, float(floor)) + 0.02
+    cells: list[str] = []
+    for v in data:
+        idx = min(8, max(0, int(v * 9)))
+        ch = _WAVE_BARS[idx]
+        color = DARK_GRAY if v <= dim_cut else CYAN
+        cells.append(f"{color}{ch}" if COLOR else ch)
+    return f"  {''.join(cells)}{_r()}"
+
+
 # ── decorative elements ──────────────────────────────────────────────────
 
 def divider(width: int = 50, color: str = "") -> str:
@@ -276,6 +344,58 @@ def sparkle_line(width: int = 50) -> str:
     chars = "·.·:·.·.·:··.·.·:·.·.·:··.·.·:·.·.·:··.·.·:·.·"
     line = chars[:width]
     return f"  {DARK_GRAY}{line}{_r()}"
+
+
+class thinking_sparkles:
+    """A comet of sparkles that flies while the model is thinking."""
+
+    def __init__(self, width: int = 42) -> None:
+        self.width = max(16, width)
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def __enter__(self) -> thinking_sparkles:
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self) -> None:
+        if self._stop.is_set():
+            return
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=0.4)
+        self._clear()
+
+    def __exit__(self, *_exc: object) -> None:
+        self.stop()
+
+    def _clear(self) -> None:
+        try:
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _run(self) -> None:
+        trail = "·✦✧✦·"
+        colors = [51, 45, 135, 213, 214]
+        i = 0
+        while not self._stop.wait(0.07):
+            pos = (i % (self.width + len(trail) + 4)) - len(trail)
+            cells: list[str] = []
+            for col in range(self.width):
+                k = col - pos
+                if 0 <= k < len(trail):
+                    cells.append(f"{fg256(colors[k % len(colors)])}{trail[k]}")
+                else:
+                    cells.append(" ")
+            try:
+                sys.stdout.write("\r  " + "".join(cells) + _r())
+                sys.stdout.flush()
+            except Exception:  # noqa: BLE001
+                break
+            i += 1
 
 
 # ── colorize helpers for the console ─────────────────────────────────────
@@ -315,3 +435,55 @@ def err_style(text: str) -> str:
 def lore_style(text: str) -> str:
     """Style for lore fragments — eerie violet."""
     return f"{VIOLET_DIM}{text}{_r()}" if COLOR else text
+
+
+_TERM_RESET = "\033[r\033[?25h"
+_GUARD_INSTALLED = False
+
+
+def restore_terminal() -> None:
+    """Undo DECSTBM split-pane + hidden cursor if voice HUD died mid-draw."""
+    for stream in (getattr(sys, "__stdout__", None), getattr(sys, "stdout", None)):
+        if stream is None:
+            continue
+        try:
+            stream.write(_TERM_RESET)
+            stream.flush()
+            break
+        except Exception:  # noqa: BLE001
+            continue
+
+
+def install_terminal_guard() -> None:
+    """atexit + excepthook so a crash doesn't leave the TTY broken."""
+    global _GUARD_INSTALLED
+    if _GUARD_INSTALLED:
+        return
+    _GUARD_INSTALLED = True
+    import atexit
+
+    atexit.register(restore_terminal)
+    previous = sys.excepthook
+
+    def _hook(exc_type, exc, tb) -> None:  # noqa: ANN001
+        restore_terminal()
+        previous(exc_type, exc, tb)
+
+    sys.excepthook = _hook
+    pin_to_tui()
+
+
+def tui_escape_allowed() -> bool:
+    raw = os.getenv("HOSAKA_ALLOW_SHELL", "0").strip().lower()
+    return raw not in {"0", "false", "no", "off", ""}
+
+
+def pin_to_tui() -> None:
+    """Disable job-control so Ctrl-Z cannot drop the operator into bash."""
+    import signal
+
+    for sig in (signal.SIGTSTP, signal.SIGTTIN, signal.SIGTTOU, signal.SIGQUIT):
+        try:
+            signal.signal(sig, signal.SIG_IGN)
+        except (OSError, ValueError):
+            pass

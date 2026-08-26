@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import socket
 import subprocess
 import time
@@ -27,6 +28,14 @@ from typing import Any, Callable
 from hosaka.identity import build_voice_system_prompt
 
 log = logging.getLogger("hosaka.voice.tools")
+
+_game_puck_hook: Callable[[str], None] | None = None
+
+
+def set_game_puck_hook(hook: Callable[[str], None] | None) -> None:
+    """Voice daemon registers this so a launch can free the puck for RetroArch."""
+    global _game_puck_hook
+    _game_puck_hook = hook
 
 # ── storage for voice-added todos ────────────────────────────────────────
 
@@ -263,7 +272,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "name": "play_game",
         "description": (
             "Launch a game on the screen by name (PlayStation first). "
-            "Use when anyone says play Spyro, start Crash, launch a game. "
+            "Use when anyone says play Spyro, start Crash, launch Tony Hawk, "
+            "THPS, or any installed title. "
             "If the result lists several matches, ask which title, then call again."
         ),
         "parameters": {
@@ -271,7 +281,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Game name as spoken, e.g. 'spyro' or 'crash team racing'.",
+                    "description": "Game name as spoken, e.g. 'tony hawk' or 'crash team racing'.",
                 }
             },
             "required": ["name"],
@@ -510,27 +520,57 @@ def _tool_read_doc(args: dict[str, Any]) -> str:
     return body
 
 
-def _play_bin() -> Path:
-    return Path(os.getenv("HOSAKA_PLAY", str(Path.home() / "bin" / "play")))
+def _play_argv(*args: str) -> list[str]:
+    """Same `play` PATH command a terminal uses — never `python ~/bin/play`."""
+    override = os.getenv("HOSAKA_PLAY", "").strip()
+    if override:
+        return [override, "--json", *args]
+    found = shutil.which("play")
+    if found:
+        return [found, "--json", *args]
+    return [str(Path.home() / "bin" / "play"), "--json", *args]
 
 
-def _run_play(*args: str) -> dict[str, Any]:
-    play = _play_bin()
-    if not play.is_file():
-        return {"ok": False, "error": f"play not found at {play}"}
+def _play_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["PLAY_FOREGROUND"] = "0"
+    home_bin = str(Path.home() / "bin")
+    path = env.get("PATH") or os.defpath
+    parts = path.split(os.pathsep)
+    if home_bin not in parts:
+        env["PATH"] = os.pathsep.join([home_bin, path])
+    return env
+
+
+def _run_play(*args: str, wait_s: float = 15.0, kill: bool = False) -> dict[str, Any]:
+    argv = _play_argv(*args)
+    exe = Path(argv[0])
+    if not exe.is_file() and shutil.which(argv[0]) is None:
+        return {"ok": False, "error": f"play not found ({argv[0]})"}
     try:
-        proc = subprocess.run(
-            ["python", str(play), "--json", *args],
-            capture_output=True,
+        proc = subprocess.Popen(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=20,
-            check=False,
+            start_new_session=True,
+            env=_play_env(),
         )
     except OSError as exc:
         return {"ok": False, "error": f"play failed ({exc})"}
-    raw = (proc.stdout or "").strip()
+    try:
+        stdout, stderr = proc.communicate(timeout=wait_s)
+    except subprocess.TimeoutExpired:
+        if kill:
+            proc.kill()
+            proc.communicate()
+            return {"ok": False, "error": f"play timed out after {int(wait_s)}s"}
+        title = " ".join(a for a in args if a not in {"list", "stop"})
+        return {"ok": True, "action": "launch", "title": title or "game"}
+    raw = (stdout or "").strip()
     if not raw:
-        err = (proc.stderr or "").strip() or f"exit {proc.returncode}"
+        err = (stderr or "").strip() or f"exit {proc.returncode}"
         return {"ok": False, "error": err}
     try:
         payload = json.loads(raw.splitlines()[-1])
@@ -545,7 +585,7 @@ def _tool_list_games(args: dict[str, Any]) -> str:
     system = str(args.get("system") or "psx").strip().lower() or "psx"
     if system not in {"psx", "all"}:
         system = "psx"
-    payload = _run_play("list", system)
+    payload = _run_play("list", system, wait_s=45.0, kill=True)
     if not payload.get("ok"):
         return payload.get("error") or "list_games failed"
     games = payload.get("games") or []
@@ -563,12 +603,19 @@ def _tool_play_game(args: dict[str, Any]) -> str:
     name = str(args.get("name") or "").strip()
     if not name:
         return "play_game: need a game name"
+    hook = _game_puck_hook
     if name.lower() in {"stop", "quit", "exit"}:
-        payload = _run_play("stop")
+        payload = _run_play("stop", wait_s=8.0, kill=True)
+        if hook is not None:
+            hook("resume")
         return payload.get("message") or payload.get("error") or "stopped"
-    payload = _run_play(name)
+    if hook is not None:
+        hook("pause")
+    payload = _run_play(name, wait_s=20.0, kill=False)
     if payload.get("action") == "launch" and payload.get("ok"):
         return f"launching {payload.get('title')}"
+    if hook is not None:
+        hook("resume")
     if payload.get("action") == "ambiguous":
         matches = payload.get("matches") or []
         titles = [str(m.get("title") or "") for m in matches if m.get("title")]
