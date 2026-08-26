@@ -42,13 +42,20 @@ def _print_stream(
 ) -> str:
     """Stream tokens to stdout and return the full assistant response."""
     from hosaka.tui.style import thinking_sparkles
+    from hosaka.voice.tools import chat_tool_schemas, dispatch
 
     collected: list[str] = []
     first = True
     spark = thinking_sparkles()
     spark.__enter__()
     try:
-        for token in stream_chat(messages, backend=backend, session=session):
+        for token in stream_chat(
+            messages,
+            backend=backend,
+            session=session,
+            tools=chat_tool_schemas(),
+            dispatch=dispatch,
+        ):
             if first:
                 spark.stop()
                 first = False

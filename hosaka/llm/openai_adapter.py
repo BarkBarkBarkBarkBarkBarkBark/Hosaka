@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Generator
+from typing import Any, Callable, Generator
 
 import httpx
 
@@ -267,23 +267,92 @@ def is_available() -> bool:
     return bool(_api_key())
 
 
-def chat_stream(messages: list[dict[str, str]]) -> Generator[str, None, None]:
-    """Stream chat completion tokens from OpenAI."""
+def _headers(key: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+
+
+def _complete(
+    messages: list[dict[str, Any]],
+    *,
+    stream: bool,
+    tools: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    key = _api_key()
+    if not key:
+        raise RuntimeError("OPENAI_API_KEY is not set.")
+    payload: dict[str, Any] = {
+        "model": _model(),
+        "messages": messages,
+        "stream": stream,
+    }
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
+    with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
+        resp = client.post(_chat_url(), json=payload, headers=_headers(key))
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]
+
+
+def chat_stream(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    dispatch: Callable[[str, dict[str, Any]], str] | None = None,
+) -> Generator[str, None, None]:
+    """Stream chat completion tokens from OpenAI.
+
+    When *tools* and *dispatch* are set, run tool calls first (same
+    list_games / play_game path as voice), then yield the final reply.
+    """
     key = _api_key()
     if not key:
         yield "OPENAI_API_KEY is not set."
         return
+
+    if tools and dispatch is not None:
+        working: list[dict[str, Any]] = list(messages)
+        for _ in range(6):
+            try:
+                msg = _complete(working, stream=False, tools=tools)
+            except Exception as exc:  # noqa: BLE001
+                yield f"(chat failed: {exc})"
+                return
+            calls = msg.get("tool_calls") or []
+            if not calls:
+                text = str(msg.get("content") or "")
+                if text:
+                    yield text
+                return
+            working.append(msg)
+            for call in calls:
+                fn = call.get("function") or {}
+                name = str(fn.get("name") or "")
+                raw_args = fn.get("arguments") or "{}"
+                try:
+                    args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
+                except json.JSONDecodeError:
+                    args = {}
+                if not isinstance(args, dict):
+                    args = {}
+                working.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.get("id") or "",
+                        "content": dispatch(name, args),
+                    }
+                )
+        return
+
     payload = {
         "model": _model(),
         "messages": messages,
         "stream": True,
     }
-    headers = {
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json",
-    }
     with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
-        with client.stream("POST", _chat_url(), json=payload, headers=headers) as resp:
+        with client.stream("POST", _chat_url(), json=payload, headers=_headers(key)) as resp:
             resp.raise_for_status()
             for line in resp.iter_lines():
                 if not line or not line.startswith("data: "):

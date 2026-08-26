@@ -64,7 +64,10 @@ def build_chat_system_prompt(hostname: str, cwd: str) -> str:
     sections.append(
         "Runtime context:\n"
         f"- Device hostname: {hostname or 'hosaka'}\n"
-        f"- Working directory: {cwd}"
+        f"- Working directory: {cwd}\n"
+        "- If someone asks what games are here or to play/launch a game, "
+        "use list_games / play_game. Do not suggest bash, ROM folders, or "
+        "emulator flags. Launch is a tool call, same as voice."
     )
     return "\n\n".join(section for section in sections if section).strip()
 

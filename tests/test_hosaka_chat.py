@@ -215,3 +215,63 @@ class TestLlmConfig:
             assert os.environ["OPENAI_API_KEY"] == "sk-live"
             assert os.environ["OPENAI_MODEL"] == "gpt-4o-mini"
             assert os.environ["OPENAI_BASE_URL"] == "https://api.openai.com"
+
+
+def test_chat_tool_schemas_are_play_game_and_list_games() -> None:
+    from hosaka.voice.tools import chat_tool_schemas
+
+    names = {item["function"]["name"] for item in chat_tool_schemas()}
+    assert names == {"list_games", "play_game"}
+
+
+def test_chat_system_prompt_tells_model_to_use_play_tools() -> None:
+    from hosaka.identity import build_chat_system_prompt
+
+    prompt = build_chat_system_prompt(hostname="hosaka", cwd="/tmp")
+    assert "list_games" in prompt
+    assert "play_game" in prompt
+
+
+def test_openai_tool_loop_dispatches_play_game() -> None:
+    from hosaka.llm import openai_adapter
+
+    calls = {"n": 0}
+
+    def fake_complete(messages, *, stream, tools):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "play_game",
+                            "arguments": '{"name": "tony hawk"}',
+                        },
+                    }
+                ],
+            }
+        return {"role": "assistant", "content": "launching Tony Hawk."}
+
+    seen: list[tuple[str, dict]] = []
+
+    def dispatch(name: str, args: dict) -> str:
+        seen.append((name, args))
+        return "launching Tony Hawk's Pro Skater"
+
+    with (
+        patch.object(openai_adapter, "_api_key", return_value="sk-test"),
+        patch.object(openai_adapter, "_complete", side_effect=fake_complete),
+    ):
+        text = "".join(
+            openai_adapter.chat_stream(
+                [{"role": "user", "content": "play tony hawk"}],
+                tools=[{"type": "function", "function": {"name": "play_game"}}],
+                dispatch=dispatch,
+            )
+        )
+    assert seen == [("play_game", {"name": "tony hawk"})]
+    assert "launching Tony Hawk" in text

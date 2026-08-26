@@ -60,6 +60,8 @@ def stream_chat(
     messages: list[dict[str, str]],
     backend: str | None = None,
     session: str | None = None,
+    tools: list | None = None,
+    dispatch=None,
 ) -> Generator[str, None, None]:
     """Stream tokens from the best available backend.
 
@@ -68,7 +70,7 @@ def stream_chat(
     """
     chosen = backend or detect_backend()
 
-    if chosen == LLMBackend.PICOCLAW:
+    if chosen == LLMBackend.PICOCLAW and not tools:
         user_msg = _last_user_msg(messages)
         if user_msg:
             try:
@@ -80,7 +82,9 @@ def stream_chat(
     if chosen in {LLMBackend.PICOCLAW, LLMBackend.OPENAI}:
         if openai_adapter.is_available():
             try:
-                yield from openai_adapter.chat_stream(messages)
+                yield from openai_adapter.chat_stream(
+                    messages, tools=tools, dispatch=dispatch
+                )
                 return
             except Exception:  # noqa: BLE001
                 pass

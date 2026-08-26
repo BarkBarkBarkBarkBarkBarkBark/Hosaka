@@ -275,6 +275,9 @@ def upsert(section: str, keys: dict[str, str], src: str) -> str:
     return src[:start] + block + src[nxt:]
 term = str(bindir / "hosaka-tui-term")
 voice = str(bindir / "hosaka-voice-term")
+text = upsert("panel1", {
+    "plugins": "terminal, voice, worldclock",
+}, text)
 text = upsert("terminal", {
     "click": term, "command": "", "repeat": "false", "runWithBash": "false",
 }, text)
@@ -322,6 +325,31 @@ PY
     sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
       "$REPO_ROOT/dotfiles/openbox/menu.xml" "$CURRENT_HOME/.config/openbox/menu.xml"
   fi
+  python - "$CURRENT_HOME/.config/openbox/rc.xml" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+if not path.is_file():
+    raise SystemExit(0)
+text = path.read_text()
+rule = '''  <application class="Lxterminal" title="Hosaka*">
+    <decor>no</decor>
+    <maximized>yes</maximized>
+    <fullscreen>no</fullscreen>
+    <skip_taskbar>yes</skip_taskbar>
+  </application>
+'''
+old = '''  <application title="Hosaka">
+    <maximized>yes</maximized>
+  </application>
+'''
+if 'title="Hosaka*"' in text:
+    raise SystemExit(0)
+if old in text:
+    path.write_text(text.replace(old, rule, 1))
+elif "</applications>" in text:
+    path.write_text(text.replace("</applications>", rule + "</applications>", 1))
+PY
   if [[ -f "$REPO_ROOT/scripts/hosaka-openbox-flatpak-menu" ]]; then
     sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
       "$REPO_ROOT/scripts/hosaka-openbox-flatpak-menu" \

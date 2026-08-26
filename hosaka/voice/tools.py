@@ -293,6 +293,29 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 
 SYSTEM_INSTRUCTIONS = build_voice_system_prompt()
 
+CHAT_TOOL_NAMES = frozenset({"list_games", "play_game"})
+
+
+def chat_tool_schemas() -> list[dict[str, Any]]:
+    """Chat Completions shape of the same game tools the voice path uses."""
+    out: list[dict[str, Any]] = []
+    for spec in TOOL_SCHEMAS:
+        name = spec.get("name")
+        if name not in CHAT_TOOL_NAMES:
+            continue
+        out.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": spec.get("description") or "",
+                    "parameters": spec.get("parameters")
+                    or {"type": "object", "properties": {}},
+                },
+            }
+        )
+    return out
+
 VOICE_AGENT_SCHEMA = {
     "type": "object",
     "properties": {
