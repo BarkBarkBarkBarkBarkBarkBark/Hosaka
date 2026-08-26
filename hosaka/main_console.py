@@ -43,7 +43,6 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("/llm",            "Plain text talks to the AI",                    "Chat & AI"),
     ("/voice",          "Talk to Hosaka (wake-word + TUI orb)",           "Chat & AI"),
     ("/desktop",        "Show the LXQt desktop (also Ctrl+D)",           "System"),
-    ("/gui",            "Open the Electron Hosaka app",                  "System"),
     # ── System ──
     ("/status",         "System overview — uptime, IP, model, services", "System"),
     ("/doctor",         "Diagnose picoclaw config and connectivity",     "System"),
@@ -54,7 +53,10 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("/uptime",         "Show system uptime",                            "System"),
     ("/logs",           "Show recent Hosaka log lines",                  "System"),
     # ── Files & Navigation ──
-    ("/read <file>",    "Paginate a file (also: /read manifest, /read <slug>)", "Files & Navigation"),
+    ("/read",           "Choose Books or the recovered Field History",   "Files & Navigation"),
+    ("/read books",     "Open the Foliate book library",                 "Files & Navigation"),
+    ("/read history",   "Browse the recovered Field History",           "Files & Navigation"),
+    ("/read <slug>",    "Open a recovered record (also: /read manifest)", "Files & Navigation"),
     ("/library",        "Browse the lore archive — list all entries",    "Files & Navigation"),
     ("/cd <path>",      "Change working directory",                      "Files & Navigation"),
     ("/pwd",            "Print working directory",                       "Files & Navigation"),
@@ -123,7 +125,7 @@ def _print_banner() -> None:
     print(render_plant(plant_idx))
     print()
     print(f"  {CYAN}Field Terminal Online.{R}  {GRAY}Signal steady.{R}  {banner_plant_hint(plant_idx)}")
-    print(f"  {DARK_GRAY}Ctrl+D desktop  ·  /voice talk  ·  /gui Electron  ·  /help{R}")
+    print(f"  {DARK_GRAY}/code  ·  /llm  ·  /voice  ·  /help{R}")
     print(sparkle_line(55))
     print()
 
@@ -135,19 +137,31 @@ def _show_help() -> None:
     print(f"  Just type anything → follows the prompt mode: {VIOLET}llm{R} or {GREEN}code{R}.")
     print(f"  Use {CYAN}/llm{R} or {CYAN}/code{R} to toggle. Prefix {CYAN}!{R} for one shell command.")
     print()
-    print(f"  {AMBER}Start here:{R}")
+    print(f"  {AMBER}Main controls:{R}")
     starters = [
-        ("/voice",    "talk (wake-word + TUI orb)"),
-        ("/chat",     "interactive AI session"),
-        ("/desktop",  "LXQt desktop (or press Ctrl+D)"),
-        ("/gui",      "open the Electron app"),
-        ("/status",   "see what's running"),
-        ("/commands", "every command"),
+        ("/code",  "plain text runs as shell/code"),
+        ("/llm",   "plain text talks to Hosaka"),
+        ("/voice", "talk (wake-word + TUI orb)"),
+        ("/help",  "return to this map"),
     ]
     for cmd, desc in starters:
         print(f"    {cmd_style(cmd):<34s} {desc_style(desc)}")
     print()
-    print(f"  Anything else follows the active mode: llm → Picoclaw, code → shell.")
+    print(f"  {AMBER}Explore:{R}")
+    discoveries = [
+        ("/read",                    "Books or recovered Field History"),
+        ("/library",                 "all 14 preserved records"),
+        ("/read the-field-terminal", "begin with the terminal's own history"),
+        ("/lore  /signal",           "fragments from the margin"),
+        ("/plant  /orb",             "living systems"),
+        ("ask: play a game",          "launch the PlayStation library"),
+        ("/commands",                "every available command"),
+    ]
+    for cmd, desc in discoveries:
+        print(f"    {cmd_style(cmd):<34s} {desc_style(desc)}")
+    print()
+    print(f"  {DARK_GRAY}Some records answer other records.{R}")
+    print(f"  Anything else follows the active mode: llm → Hosaka, code → shell.")
     print(f"  {VIOLET}There is no wrong way.{R} Experiment freely.")
 
 
@@ -215,6 +229,48 @@ def _read_file(argument: str, current_dir: Path) -> None:
     with target.open("r", encoding="utf-8", errors="replace") as handle:
         numbered = (f"{idx:04d} | {line}" for idx, line in enumerate(handle, start=1))
         _paginate_lines(numbered)
+
+
+def _launch_foliate() -> None:
+    """Open Foliate's shelf through Hosaka's manifest-driven app launcher."""
+    env = os.environ.copy()
+    env.setdefault("DISPLAY", ":0")
+    launcher = shutil.which("hosaka") or str(APP_ROOT / "scripts" / "hosaka")
+    print(f"  {CYAN}Opening Books in Foliate…{R}")
+    try:
+        subprocess.Popen(
+            [launcher, "launch", "foliate"],
+            cwd=str(APP_ROOT),
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        print(f"  {err_style('Could not open Foliate:')} {exc}")
+
+
+def _show_read_portal() -> None:
+    """Choose between the ebook shelf and Hosaka's recovered history."""
+    print()
+    for line in box("READ", color=CYAN_DIM):
+        print(line)
+    print()
+    print(f"  {CYAN}1{R}  {WHITE}Books{R}          {GRAY}Foliate ebook library{R}")
+    print(f"  {CYAN}2{R}  {WHITE}Field History{R}  {GRAY}14 recovered terminal records{R}")
+    print()
+    try:
+        choice = input("  open [1/2, q=back] > ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+    if choice in {"1", "b", "book", "books", "foliate"}:
+        _launch_foliate()
+    elif choice in {"2", "h", "history", "field", "archive", "library"}:
+        _show_library()
+    elif choice not in {"", "q", "quit", "back"}:
+        print(f"  {GRAY}No door marked {choice!r}. Try 1 or 2.{R}")
 
 
 def _allow_shell_escape() -> bool:
@@ -1058,19 +1114,6 @@ def _drop_to_desktop() -> None:
             pass
 
 
-def _launch_gui() -> None:
-    env = os.environ.copy()
-    env.setdefault("DISPLAY", ":0")
-    print(f"  {GRAY}Launching Electron GUI (`hosaka gui`).{R}")
-    try:
-        subprocess.Popen(
-            ["hosaka", "gui"], env=env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-    except FileNotFoundError:
-        print(f"  {RED}hosaka CLI not on PATH.{R}")
-
-
 def run_main_console() -> None:
     from hosaka.tui.style import install_terminal_guard
 
@@ -1147,11 +1190,15 @@ def _dispatch_command(raw: str, current_dir: Path, input_mode: str) -> tuple[Pat
             _show_logs()
         elif raw in {"/desktop", "/desk"}:
             _drop_to_desktop()
-        elif raw == "/gui":
-            _launch_gui()
 
         # ── Files & Navigation ──
         elif raw == "/library":
+            _show_library()
+        elif raw == "/read":
+            _show_read_portal()
+        elif raw == "/read books":
+            _launch_foliate()
+        elif raw in {"/read history", "/read field", "/read archive"}:
             _show_library()
         elif raw.startswith("/read "):
             _read_file(raw[6:], current_dir=current_dir)
@@ -1237,6 +1284,12 @@ def _dispatch_command(raw: str, current_dir: Path, input_mode: str) -> tuple[Pat
         # ── Legacy compat (redirect old forms) ──
         elif raw in {"update", "/setup", "/network", "/theme"}:
             _show_status(current_dir)
+        elif raw == "read":
+            _show_read_portal()
+        elif raw == "read books":
+            _launch_foliate()
+        elif raw in {"read history", "read field", "read archive"}:
+            _show_library()
         elif raw.startswith("read "):
             _read_file(raw[5:], current_dir=current_dir)
         elif raw == "code":

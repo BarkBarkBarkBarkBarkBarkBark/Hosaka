@@ -22,10 +22,8 @@ install:
 flatpak_overrides:
   - --filesystem=$HOME/Books
 launch:
-  # Pass the books directory as a positional arg so foliate opens its
-  # "library" view on $HOME/Books instead of the empty welcome screen.
-  # Foliate accepts both file and directory paths; a directory triggers a
-  # batch-add to the in-app library.
+  # No positional path: Foliate opens its real shelf/library view. Passing
+  # $HOME/Books makes Foliate treat the directory as an unpacked EPUB.
   command:
     - flatpak
     - run
@@ -35,7 +33,6 @@ launch:
     - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
     - --env=LIBGL_ALWAYS_SOFTWARE=1
     - com.github.johnfactotum.Foliate
-    - $HOME/Books
 aliases:
   - foliate
 memory:

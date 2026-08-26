@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 
 from hosaka import main_console
 from hosaka.tui import style as tui_style
@@ -126,3 +127,83 @@ def test_eof_on_dead_stdin_exits_without_desktop_spawn(monkeypatch) -> None:
     monkeypatch.setattr(main_console.subprocess, "Popen", fake_popen)
     main_console.run_main_console()
     assert spawned == []
+
+
+def test_read_portal_books_launches_foliate(monkeypatch) -> None:
+    launched: list[bool] = []
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
+    monkeypatch.setattr(main_console, "_launch_foliate", lambda: launched.append(True))
+
+    main_console._show_read_portal()
+
+    assert launched == [True]
+
+
+def test_read_portal_field_history_opens_library(monkeypatch) -> None:
+    opened: list[bool] = []
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "2")
+    monkeypatch.setattr(main_console, "_show_library", lambda: opened.append(True))
+
+    main_console._show_read_portal()
+
+    assert opened == [True]
+
+
+def test_launch_foliate_uses_hosaka_app_launcher(monkeypatch) -> None:
+    calls: list[tuple[list[str], dict]] = []
+    monkeypatch.setattr(main_console.shutil, "which", lambda _name: "/usr/bin/hosaka")
+
+    def fake_popen(cmd, **kwargs):
+        calls.append((list(cmd), kwargs))
+        return object()
+
+    monkeypatch.setattr(main_console.subprocess, "Popen", fake_popen)
+    main_console._launch_foliate()
+
+    assert calls[0][0] == ["/usr/bin/hosaka", "launch", "foliate"]
+    assert calls[0][1]["start_new_session"] is True
+
+
+def test_read_aliases_and_slug_dispatch(monkeypatch) -> None:
+    events: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        main_console, "_launch_foliate", lambda: events.append(("launch", "foliate"))
+    )
+    monkeypatch.setattr(
+        main_console, "_show_library", lambda: events.append(("show", "history"))
+    )
+    monkeypatch.setattr(
+        main_console,
+        "_read_file",
+        lambda argument, current_dir: events.append(("read", argument)),
+    )
+
+    for command in ("/read books", "/read history", "/read the-field-terminal"):
+        main_console._dispatch_command(command, main_console.APP_ROOT, "llm")
+
+    assert events == [
+        ("launch", "foliate"),
+        ("show", "history"),
+        ("read", "the-field-terminal"),
+    ]
+
+
+def test_help_is_discovery_map_without_gui(capsys) -> None:
+    main_console._show_help()
+    out = capsys.readouterr().out
+
+    assert "/read the-field-terminal" in out
+    assert "/plant  /orb" in out
+    assert "play a game" in out
+    assert "/gui" not in out
+    assert all(command != "/gui" for command, _desc, _cat in main_console.COMMANDS)
+
+
+def test_foliate_manifest_opens_shelf_without_books_directory() -> None:
+    manifest = (
+        Path(main_console.APP_ROOT) / "hosaka-apps" / "apps" / "foliate.yaml"
+    ).read_text(encoding="utf-8")
+    launch = manifest.split("launch:", 1)[1].split("aliases:", 1)[0]
+
+    assert "com.github.johnfactotum.Foliate" in launch
+    assert "\n    - $HOME/Books" not in launch
