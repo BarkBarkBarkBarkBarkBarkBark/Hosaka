@@ -1,0 +1,1 @@
+"""Hardware-independent protocols shared by Hosaka roles."""

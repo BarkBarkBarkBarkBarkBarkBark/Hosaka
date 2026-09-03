@@ -1601,6 +1601,24 @@ Daily
   controller          list / connect / test a pad
   emulationstation    games browser
 
+Offline LLM
+  hosaka llm                       show selected provider, model, and endpoint
+  hosaka llm list                  same as hosaka llm
+  hosaka llm scan                  find Ollama servers and installed models
+  hosaka scan llm                  same as hosaka llm scan
+  hosaka llm scan --use            find and save the first working Ollama server
+  hosaka llm scan --use URL        save a specific server shown by the scan
+  hosaka llm openai [MODEL]        switch to saved OpenAI; default gpt-4o-mini
+  hosaka secrets set OPENAI_API_KEY
+                                    securely save an OpenAI key the first time
+
+  Woods checklist: same LAN or hotspot -> hosaka llm scan --use -> hosaka llm
+
+Jetson Voice
+  hosaka inference FILE.wav        send a 16 kHz mono WAV and play the response
+  hosaka inference --record 5      record five seconds, send, and play response
+  Config: HOSAKA_JETSON_URL (mDNS default), HOSAKA_JETSON_FALLBACK_URL, HOSAKA_INFERENCE_TOKEN
+
 Modes
   hosaka mode                       show current mode (console|device) + x-session
   hosaka mode console [--persist]   bring the Electron GUI to the front
@@ -1623,13 +1641,6 @@ Modes
   hosaka diag [--json] [--host URL] shared device/network/peripheral snapshot
   hosaka doctor [--json] [--strict] [--profile PROFILE] [--host URL]
                                     run structured diagnostics; future MCP-friendly
-  hosaka scan llm [--use [URL]]    find Ollama servers and their models on this LAN
-                                    --use saves the first result for future starts
-  hosaka llm                       show selected provider, model, and endpoint
-  hosaka llm list                  alias for `hosaka llm`
-  hosaka llm scan [--use [URL]]    alias for `hosaka scan llm`
-  hosaka llm openai [MODEL]        switch to saved OpenAI configuration
-  hosaka llm ollama --use [URL]    scan for and save a local Ollama server
   hosaka dev [--port N] [--no-open] [-fresh]
                                     local frontend dev without docker.
                                     default = vite + electron; reuses existing session if port is busy
@@ -1638,7 +1649,7 @@ Modes
   hosaka update [source|local] [--check] [--branch BRANCH]
                                     source (default) git pull + build + rsync + restart
                                     local  deploy current working tree without touching git
-                                    `hosaka update help` for more
+                                    run hosaka update help for more
   hosaka deploy [--check]           build + rsync into $DEPLOY_ROOT + restart web
   hosaka logs [unit]                follow journalctl for web/pico/<custom>
   hosaka logs dump [LINES]          one-shot diagnostic dump (default 80 lines per unit)
@@ -1709,6 +1720,7 @@ main() {
     doctor)    cmd_doctor "$@" ;;
     scan)      (cd "$REPO_ROOT" && PYTHONPATH=. exec python -m hosaka.scan "$@") ;;
     llm)       (cd "$REPO_ROOT" && PYTHONPATH=. exec python -m hosaka.llm_cli "$@") ;;
+    inference) (cd "$REPO_ROOT" && PYTHONPATH=. exec python -m hosaka.main_role.inference_client "$@") ;;
     dev)       cmd_dev "$@" ;;
     build)     cmd_build "$@" ;;
     update)    cmd_update "$@" ;;
