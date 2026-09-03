@@ -65,6 +65,8 @@ _TOOL_HINTS = {
     "ask_agent": "thinking it through…",
     "play_game": "launching a game…",
     "list_games": "checking the library…",
+    "list_books": "checking the shelf…",
+    "open_reader": "opening the reader…",
     "todo_add": "adding a todo…",
     "get_status": "checking status…",
     "set_mode": "switching modes…",
@@ -81,15 +83,18 @@ def tool_hint(name: str, detail: str = "") -> str:
     rest = (detail or "").strip()
     if token == "play_game" and rest:
         return f"launching {rest}…"
+    if token == "open_reader" and rest:
+        return f"opening {rest}…"
     return _TOOL_HINTS.get(token, "working on it…")
 
 
 _DIRECT_RE = re.compile(
     r"\b("
-    r"hosaka|launch|lunch|lounge|play|start|stop|quit|"
+    r"hosaka|launch|lunch|lounge|play|start|stop|quit|open|"
     r"what|why|how|when|where|who|which|"
     r"can you|could you|would you|please|"
-    r"tony hawk|thps|crash|spyro|spiral"
+    r"tony hawk|thps|crash|spyro|spiral|"
+    r"read|book|books|ebook|ebooks|foliate|foliage|reader"
     r")\b|[?]",
     re.I,
 )
@@ -103,6 +108,48 @@ _ASR_FIXES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bspero\b", re.I), "spyro"),
     (re.compile(r"\bsparrow\b", re.I), "spyro"),
     (re.compile(r"\bthps\b", re.I), "tony hawk"),
+    (re.compile(r"\bfoliage\b", re.I), "foliate"),
+)
+
+_READ_NAME_SKIP = frozenset(
+    {
+        "foliate",
+        "foliage",
+        "reader",
+        "book",
+        "books",
+        "ebook",
+        "ebooks",
+        "library",
+        "shelf",
+        "something",
+        "me",
+        "it",
+        "that",
+        "this",
+        "some",
+        "any",
+    }
+)
+
+_LIST_BOOKS_RE = re.compile(
+    r"("
+    r"\b(what|which|any|how many)\b.{0,40}\b(book|books|ebooks?|reading)\b|"
+    r"\b(book|books|ebooks?)\b.{0,24}\b(available|have|here|on (the )?(shelf|terminal))|"
+    r"\blist (the )?(books|ebooks?|shelf|library)\b"
+    r")",
+    re.I,
+)
+
+_OPEN_SHELF_RE = re.compile(
+    r"("
+    r"\b(open|launch|start|show)\b.{0,24}\b(foliate|foliage|reader|bookshelf)\b|"
+    r"\b(browse|show|open)\b.{0,16}\b(books|library|shelf)\b|"
+    r"\bopen (the )?(book|books|reader|library)\b|"
+    r"\b(i want to|let me|lets|let's|wanna)\s+read\b|"
+    r"\bread (something|a book|books)\b"
+    r")",
+    re.I,
 )
 
 
@@ -115,6 +162,8 @@ def repair_transcript(text: str) -> str:
 
 
 def parse_play_command(text: str) -> str | None:
+    if parse_read_command(text) is not None:
+        return None
     cleaned = repair_transcript(text).lower()
     if not re.search(r"\b(launch|play|start)\b", cleaned):
         return None
@@ -122,14 +171,45 @@ def parse_play_command(text: str) -> str | None:
     rest = re.sub(r"\b(launch|play|start)\b", " ", rest)
     rest = re.sub(r"\b(the|game|a|an)\b", " ", rest)
     name = " ".join(rest.split())
-    return name or None
+    if not name:
+        return None
+    if name in _READ_NAME_SKIP or any(token in _READ_NAME_SKIP for token in name.split()):
+        return None
+    return name
+
+
+def parse_read_command(text: str) -> dict[str, str] | None:
+    cleaned = repair_transcript(text).lower()
+    cleaned = re.sub(r"\b(please|can you|could you|would you)\b", " ", cleaned)
+    cleaned = " ".join(cleaned.split())
+    if not cleaned:
+        return None
+    if _LIST_BOOKS_RE.search(cleaned):
+        return {"action": "list"}
+    if _OPEN_SHELF_RE.search(cleaned) or cleaned in {"read", "foliate", "open foliate"}:
+        return {"action": "open"}
+    match = re.search(r"\b(read|open)\b (.+)$", cleaned)
+    if match:
+        rest = re.sub(
+            r"\b(the|a|an|book|ebook|please|in foliate|with foliate)\b",
+            " ",
+            match.group(2),
+        )
+        rest = " ".join(rest.split())
+        if rest and rest not in _READ_NAME_SKIP:
+            return {"action": "open", "name": rest}
+    return None
 
 
 def looks_directed(text: str) -> bool:
     stripped = repair_transcript(text)
     if len(stripped) < 4:
         return False
-    return bool(_DIRECT_RE.search(stripped)) or parse_play_command(stripped) is not None
+    return (
+        bool(_DIRECT_RE.search(stripped))
+        or parse_play_command(stripped) is not None
+        or parse_read_command(stripped) is not None
+    )
 
 
 def render_social_status(
@@ -776,7 +856,7 @@ class VoiceSocialBridge:
                     stability=0.5 if len(shown.split()) < 3 else 0.9,
                 )
             )
-            if looks_directed(shown) and parse_play_command(shown) is None:
+            if looks_directed(shown) and parse_play_command(shown) is None and parse_read_command(shown) is None:
                 await self._ask()
 
         async def _on_user(text: str) -> None:
@@ -789,8 +869,9 @@ class VoiceSocialBridge:
             shown = repaired if repaired.lower() != text.strip().lower() else text.strip()
             self._partial = ""
             self.face.note_user(shown)
-            game = parse_play_command(repaired)
-            if directed and game is None:
+            read = parse_read_command(repaired)
+            game = None if read else parse_play_command(repaired)
+            if directed and game is None and read is None:
                 await self._ask()
             await self.engine.handle(
                 TranscriptFinalized(
@@ -804,6 +885,23 @@ class VoiceSocialBridge:
 
                 self.face.note_working(f"launching {game}")
                 result = await asyncio.to_thread(dispatch, "play_game", {"name": game})
+                self.face.clear_busy()
+                speak = getattr(session, "speak_verbatim", None)
+                if speak is not None and self._claim_response():
+                    await speak(result)
+                return
+            if read:
+                from hosaka.voice.tools import dispatch
+
+                name = (read.get("name") or "").strip()
+                if read.get("action") == "list":
+                    self.face.note_working("checking the shelf")
+                    result = await asyncio.to_thread(dispatch, "list_books", {})
+                else:
+                    hint = f"opening {name}" if name else "opening the reader"
+                    self.face.note_working(hint)
+                    args = {"name": name} if name else {}
+                    result = await asyncio.to_thread(dispatch, "open_reader", args)
                 self.face.clear_busy()
                 speak = getattr(session, "speak_verbatim", None)
                 if speak is not None and self._claim_response():

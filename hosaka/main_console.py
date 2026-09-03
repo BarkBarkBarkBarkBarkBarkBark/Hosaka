@@ -1223,6 +1223,12 @@ def _dispatch_command(raw: str, current_dir: Path, input_mode: str) -> tuple[Pat
             _show_ports()
         elif raw.startswith("/dns "):
             _dns_lookup(raw[5:].strip())
+        elif raw == "/scan llm":
+            from hosaka.scan import scan_llm
+            scan_llm()
+        elif raw == "/scan llm use":
+            from hosaka.scan import scan_llm
+            scan_llm(use="first")
         elif raw == "/scan":
             _scan_network()
 

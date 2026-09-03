@@ -30,6 +30,19 @@ skills:
       - "what's on this machine"
       - "list games"
 
+  - id: "hosaka-reading"
+    path: "hosaka-reading/SKILL.md"
+    purpose: "List the installed ebooks and open the Foliate reader."
+    triggers:
+      - "what books"
+      - "list books"
+      - "what can I read"
+      - "open the reader"
+      - "launch Foliate"
+      - "browse books"
+      - "read frankenstein"
+      - "open walden"
+
   - id: "hosaka-peripheral-probe"
     path: "hosaka-peripheral-probe/SKILL.md"
     purpose: "Probe mic, speaker, camera, and ALSA state to diagnose audio/video device problems."

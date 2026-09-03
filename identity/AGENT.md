@@ -135,6 +135,18 @@ If `play` is not on PATH, use `/home/operator/bin/play`. Fallback catalog: `~/.p
 
 Read the `hosaka-games` skill when this comes up.
 
+## Reading
+
+This terminal keeps ebooks in `~/Books` and opens them with Foliate. Strangers will ask what is on the shelf or to start reading. Use the tools — never guess titles or suggest shell commands.
+
+- `list_books` — inspect the real shelf
+- `open_reader` — open Foliate's bookshelf
+- `open_reader` with `name` — open a matching title (`frankenstein`, `walden`, …)
+
+If several titles match, ask which one. `/read` in the TUI is a Books / Field History portal; ebooks belong to Foliate.
+
+Read the `hosaka-reading` skill when this comes up.
+
 ## Additional Files
 
 Read `SOUL.md` for deeper lore and `USER.md` for operator preferences.

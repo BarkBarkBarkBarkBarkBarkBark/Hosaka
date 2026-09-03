@@ -591,6 +591,63 @@ Persisted config lives in `/var/lib/hosaka/llm.json` (or
 `~/.hosaka/llm.json` for non-root installs) and is applied on startup.
 PATCH `/api/llm-key` applies it to the running process without restart.
 
+Hosaka can persist a live local Ollama selection by probing the configured
+hosts' `/api/tags` endpoints:
+
+```bash
+curl -X POST http://localhost:8421/api/ollama/discover
+```
+
+It probes `127.0.0.1` and `100.78.174.79` by default, preserving the current
+model when available. Set `HOSAKA_OLLAMA_DISCOVERY_URLS` to a comma-separated
+list of known LAN/Tailscale Ollama URLs; Hosaka only probes those hosts and
+does not scan a network. The persisted discovery configuration is refreshed on
+each web-server start, so it can move to a reachable local server offline.
+
+### Offline Ollama protocol
+
+When Wi-Fi has no internet but your Ollama machine and Hosaka are on the same
+router or hotspot, type exactly this:
+
+```bash
+hosaka scan llm
+```
+
+It scans the active private `/24` LAN for Ollama's port `11434`, then prints
+every responding server and its installed models. To connect to the first one
+and keep it through reboots, type:
+
+```bash
+hosaka scan llm --use
+```
+
+In the Hosaka console, `/scan` lists nearby network devices, `/scan llm` finds
+model servers, and `/scan llm use` saves the first result. No internet, cloud
+account, or remembered IP address is needed.
+
+To see the model currently selected by Hosaka:
+
+```bash
+hosaka llm
+```
+
+`hosaka llm list` means the same thing.
+
+To switch back to OpenAI (using its saved profile and key):
+
+```bash
+hosaka llm openai
+```
+
+To return to local Ollama later:
+
+```bash
+hosaka llm ollama --use
+```
+
+`hosaka llm scan` is the same command as `hosaka scan llm`; add `--use` to
+save the first working server.
+
 ### System settings
 
 All of the following are editable at runtime in the **⚙ Settings

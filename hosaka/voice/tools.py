@@ -247,6 +247,41 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
     {
         "type": "function",
+        "name": "list_books",
+        "description": (
+            "List the real ebooks available in this terminal's Foliate library. "
+            "Use whenever someone asks what books, ebooks, or reading material "
+            "are available. Do not guess titles."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "open_reader",
+        "description": (
+            "Open Foliate on screen. With no name, open the bookshelf. "
+            "With a title, open that ebook. Use when someone asks to read, "
+            "browse books, open the reader, launch Foliate, or open a title."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Optional book title, e.g. 'frankenstein' or 'walden'.",
+                }
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
         "name": "list_games",
         "description": (
             "List playable games on this terminal. Default is PlayStation 1, "
@@ -293,11 +328,13 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 
 SYSTEM_INSTRUCTIONS = build_voice_system_prompt()
 
-CHAT_TOOL_NAMES = frozenset({"list_games", "play_game"})
+CHAT_TOOL_NAMES = frozenset(
+    {"list_books", "open_reader", "list_games", "play_game"}
+)
 
 
 def chat_tool_schemas() -> list[dict[str, Any]]:
-    """Chat Completions shape of the same game tools the voice path uses."""
+    """Chat Completions shape of shared reading and game tools."""
     out: list[dict[str, Any]] = []
     for spec in TOOL_SCHEMAS:
         name = spec.get("name")
@@ -543,6 +580,117 @@ def _tool_read_doc(args: dict[str, Any]) -> str:
     return body
 
 
+_BOOK_EXTENSIONS = frozenset(
+    {".epub", ".mobi", ".azw", ".azw3", ".fb2", ".cbz", ".pdf"}
+)
+
+
+def _books_dir() -> Path:
+    return Path(os.getenv("HOSAKA_BOOKS_DIR", str(Path.home() / "Books"))).expanduser()
+
+
+def _book_title(path: Path) -> str:
+    return path.stem.replace("-", " ").replace("_", " ").strip().title()
+
+
+def _normalize_book_tokens(value: str) -> list[str]:
+    return "".join(ch.lower() if ch.isalnum() else " " for ch in value).split()
+
+
+def _installed_books() -> list[Path]:
+    root = _books_dir()
+    return sorted(
+        (
+            path
+            for path in root.iterdir()
+            if path.is_file() and path.suffix.lower() in _BOOK_EXTENSIONS
+        ),
+        key=lambda path: path.name.casefold(),
+    )
+
+
+def _find_books(name: str) -> list[Path]:
+    tokens = _normalize_book_tokens(name)
+    if not tokens:
+        return []
+    hits: list[Path] = []
+    for path in _installed_books():
+        hay = " ".join(_normalize_book_tokens(path.stem))
+        if all(token in hay for token in tokens):
+            hits.append(path)
+    return hits
+
+
+def _foliate_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("DISPLAY", ":0")
+    return env
+
+
+def _spawn_foliate(book: Path | None = None) -> None:
+    if book is not None:
+        subprocess.Popen(
+            [
+                "flatpak",
+                "run",
+                "--env=GSK_RENDERER=cairo",
+                "--env=WEBKIT_DISABLE_DMABUF_RENDERER=1",
+                "--env=LIBGL_ALWAYS_SOFTWARE=1",
+                "com.github.johnfactotum.Foliate",
+                str(book),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            env=_foliate_env(),
+        )
+        return
+    launcher = (
+        os.getenv("HOSAKA_CLI", "").strip()
+        or shutil.which("hosaka")
+        or str(Path.home() / ".local" / "bin" / "hosaka")
+    )
+    subprocess.Popen(
+        [launcher, "launch", "foliate"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        env=_foliate_env(),
+    )
+
+
+def _tool_list_books(_: dict[str, Any]) -> str:
+    try:
+        books = _installed_books()
+    except OSError as exc:
+        return f"list_books: could not read the book library ({exc})"
+    if not books:
+        return "no ebooks are installed in the Foliate library"
+    titles = [_book_title(path) for path in books]
+    return f"{len(titles)} books available: " + ", ".join(titles)
+
+
+def _tool_open_reader(args: dict[str, Any]) -> str:
+    name = str(args.get("name") or args.get("title") or "").strip()
+    try:
+        if name:
+            matches = _find_books(name)
+            if not matches:
+                catalog = _tool_list_books({})
+                return f"no book matching {name!r}. {catalog}"
+            if len(matches) > 1:
+                titles = "; ".join(_book_title(path) for path in matches)
+                return f"several matches: {titles}. ask which one."
+            _spawn_foliate(matches[0])
+            return f"opening {_book_title(matches[0])} in Foliate"
+        _spawn_foliate()
+    except OSError as exc:
+        return f"open_reader: could not launch Foliate ({exc})"
+    return "opening Foliate with the book library"
+
+
 def _play_argv(*args: str) -> list[str]:
     """Same `play` PATH command a terminal uses — never `python ~/bin/play`."""
     override = os.getenv("HOSAKA_PLAY", "").strip()
@@ -758,6 +906,8 @@ _DISPATCH: dict[str, Callable[[dict[str, Any]], str]] = {
     "write_doc_template": _tool_write_doc_template,
     "list_docs": _tool_list_docs,
     "read_doc": _tool_read_doc,
+    "list_books": _tool_list_books,
+    "open_reader": _tool_open_reader,
     "list_games": _tool_list_games,
     "play_game": _tool_play_game,
 }

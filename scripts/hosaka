@@ -17,6 +17,8 @@
 #   hosaka status                  what's running, RAM/CPU snapshot
 #   hosaka launch [app]            list/launch Flatpak-backed Hosaka apps
 #   hosaka doctor [flags]          end-to-end diagnostics (runtime, tailscale, drift)
+#   hosaka scan llm [--use]        find nearby Ollama servers; --use saves one
+#   hosaka llm [openai|ollama]     show or switch persistent LLM profiles
 #   hosaka dev                     local repo dev: backend (:8421) + vite + electron
 #   hosaka dev --web              browser-only fallback dev mode
 #   hosaka dev                     if both ports are live, reuse them; if half is up, fill in the gap
@@ -1621,6 +1623,13 @@ Modes
   hosaka diag [--json] [--host URL] shared device/network/peripheral snapshot
   hosaka doctor [--json] [--strict] [--profile PROFILE] [--host URL]
                                     run structured diagnostics; future MCP-friendly
+  hosaka scan llm [--use [URL]]    find Ollama servers and their models on this LAN
+                                    --use saves the first result for future starts
+  hosaka llm                       show selected provider, model, and endpoint
+  hosaka llm list                  alias for `hosaka llm`
+  hosaka llm scan [--use [URL]]    alias for `hosaka scan llm`
+  hosaka llm openai [MODEL]        switch to saved OpenAI configuration
+  hosaka llm ollama --use [URL]    scan for and save a local Ollama server
   hosaka dev [--port N] [--no-open] [-fresh]
                                     local frontend dev without docker.
                                     default = vite + electron; reuses existing session if port is busy
@@ -1698,6 +1707,8 @@ main() {
     dashboard) exec /usr/local/bin/hosaka-device-dashboard --once ;;
     diag)      cmd_diag "$@" ;;
     doctor)    cmd_doctor "$@" ;;
+    scan)      (cd "$REPO_ROOT" && PYTHONPATH=. exec python -m hosaka.scan "$@") ;;
+    llm)       (cd "$REPO_ROOT" && PYTHONPATH=. exec python -m hosaka.llm_cli "$@") ;;
     dev)       cmd_dev "$@" ;;
     build)     cmd_build "$@" ;;
     update)    cmd_update "$@" ;;

@@ -51,6 +51,32 @@ def test_looks_directed_game_launch() -> None:
     assert looks_directed("mm hmm") is False
 
 
+def test_looks_directed_reading() -> None:
+    from hosaka.voice.social_bridge import looks_directed
+
+    assert looks_directed("what books do you have") is True
+    assert looks_directed("open foliate") is True
+    assert looks_directed("i want to read") is True
+    assert looks_directed("read frankenstein") is True
+
+
+def test_parse_read_command_list_and_open() -> None:
+    from hosaka.voice.social_bridge import parse_play_command, parse_read_command
+
+    assert parse_read_command("what books are available") == {"action": "list"}
+    assert parse_read_command("list the books") == {"action": "list"}
+    assert parse_read_command("launch foliate") == {"action": "open"}
+    assert parse_read_command("lunch foliage") == {"action": "open"}
+    assert parse_read_command("i want to read") == {"action": "open"}
+    assert parse_read_command("read frankenstein") == {
+        "action": "open",
+        "name": "frankenstein",
+    }
+    assert parse_read_command("open walden") == {"action": "open", "name": "walden"}
+    assert parse_play_command("launch foliate") is None
+    assert parse_play_command("launch tony hawk") == "tony hawk"
+
+
 def test_repair_lunch_fire_to_launch_spyro() -> None:
     from hosaka.voice.social_bridge import parse_play_command, repair_transcript
 
@@ -404,6 +430,8 @@ def test_tool_hint_is_human() -> None:
 
     assert "looking around" in tool_hint("see")
     assert "spyro" in tool_hint("play_game", "spyro")
+    assert "frankenstein" in tool_hint("open_reader", "frankenstein")
+    assert "shelf" in tool_hint("list_books")
     assert "working on it" in tool_hint("mystery_tool")
     assert voice_debug_enabled() is False
 

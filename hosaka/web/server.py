@@ -383,6 +383,15 @@ async def _openai_stream(messages: list[dict[str, str]]) -> AsyncGenerator[str, 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ANN001
     log.info("Hosaka web server starting. UI dir: %s (exists=%s)", UI_DIR, UI_DIR.exists())
+    from hosaka.llm.llm_config import apply_to_env, discovered_ollama_config, load, save
+
+    current_llm = load()
+    if current_llm.get("ollama_discovery") or not current_llm.get("base_url"):
+        discovered = await asyncio.to_thread(discovered_ollama_config, current_llm)
+        if discovered:
+            save(discovered)
+            apply_to_env(discovered)
+            log.info("Using discovered Ollama server at %s", discovered["base_url"])
     yield
     log.info("Hosaka web server stopping.")
 
@@ -755,6 +764,24 @@ def get_llm_key() -> JSONResponse:
     })
 
 
+@app.post("/api/ollama/discover")
+async def discover_ollama() -> JSONResponse:
+    """Probe configured local Ollama hosts and persist a confirmed model."""
+    from hosaka.llm.llm_config import apply_to_env, discovered_ollama_config, load, save
+
+    cfg = await asyncio.to_thread(discovered_ollama_config, load())
+    if not cfg:
+        return JSONResponse({"ok": False, "error": "no Ollama server found"}, status_code=404)
+    save(cfg)
+    apply_to_env(cfg)
+    return JSONResponse({
+        "ok": True,
+        "base_url": cfg["base_url"],
+        "model": cfg["model"],
+        "models": cfg["ollama_models"],
+    })
+
+
 @app.patch("/api/llm-key")
 async def patch_llm_key(request: Request) -> JSONResponse:
     """Store provider/model/api_key/base_url and apply immediately."""
@@ -767,6 +794,9 @@ async def patch_llm_key(request: Request) -> JSONResponse:
     for field in ("provider", "model", "api_key", "base_url"):
         if field in body and body[field] is not None:
             cfg[field] = str(body[field])
+    if any(field in body for field in ("provider", "model", "base_url")):
+        cfg.pop("ollama_discovery", None)
+        cfg.pop("ollama_models", None)
     _llm_save(cfg)
     _llm_apply(cfg)
     return JSONResponse({"ok": True})

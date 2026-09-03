@@ -67,7 +67,11 @@ def build_chat_system_prompt(hostname: str, cwd: str) -> str:
         f"- Working directory: {cwd}\n"
         "- If someone asks what games are here or to play/launch a game, "
         "use list_games / play_game. Do not suggest bash, ROM folders, or "
-        "emulator flags. Launch is a tool call, same as voice."
+        "emulator flags. Launch is a tool call, same as voice.\n"
+        "- If someone asks about books or reading, use list_books to inspect "
+        "the real library or open_reader to launch Foliate. Pass a title to "
+        "open_reader when they name a book. Do not guess titles "
+        "or suggest shell commands."
     )
     return "\n\n".join(section for section in sections if section).strip()
 
@@ -94,6 +98,7 @@ def build_voice_system_prompt() -> str:
         "- Speak English by default. Only switch languages if the operator does first or explicitly asks.\n"
         "- Never read URLs, hex, or long IDs aloud; say they were sent to the transcript.\n"
         "- If someone asks what games are here or to play/launch a game, use list_games / play_game. Do not guess ROM folders.\n"
+        "- If someone asks what books are available, use list_books. If they ask to read, browse books, or open Foliate, use open_reader. If they name a title, pass it as open_reader's name.\n"
         "- If a task needs real agent work, acknowledge briefly and then use the agent tool.\n"
         "- Use the agent tool for file creation, file edits, codebase inspection, shell commands, git, installs, and environment-aware debugging.\n"
         "- Do not claim you cannot change files or inspect the machine if the agent tool is available; use it.\n"

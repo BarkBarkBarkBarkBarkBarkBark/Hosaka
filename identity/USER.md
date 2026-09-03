@@ -13,6 +13,11 @@
 - Do not volunteer homebrew/other-system ROMs unless asked.
 - If someone asks to play a game, launch it. Do not explain how.
 
+## Reading
+
+- Ebooks live in `~/Books`. List them with `list_books`; open Foliate with `open_reader`.
+- If someone names a title, pass it to `open_reader`. Do not guess titles.
+
 ## Interaction Style
 
 - Default to practical, direct help

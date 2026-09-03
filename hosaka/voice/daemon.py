@@ -269,7 +269,10 @@ async def _main_loop(api_key: str) -> None:
                             "and ignore your own voice on the speaker. "
                             "If they ask to play or launch a game (Tony Hawk, THPS, "
                             "Crash, Spyro, etc.), call play_game immediately with the "
-                            "spoken name. Do not claim you cannot launch games."
+                            "spoken name. Do not claim you cannot launch games. "
+                            "If they ask what books are here, call list_books. If they "
+                            "ask to read, open Foliate, or open a title, call "
+                            "open_reader."
                         )
                     face.note_working("connecting")
                     stop_spin = asyncio.Event()

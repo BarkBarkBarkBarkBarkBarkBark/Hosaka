@@ -102,6 +102,7 @@ class TestOpenAIAvailability:
             {
                 "PICOCLAW_CONFIG_PATH": str(tmp_path / "missing-config.json"),
                 "PICOCLAW_SECURITY_PATH": str(tmp_path / "missing-security.yml"),
+                "HOSAKA_STATE_PATH": str(tmp_path / "state.json"),
             },
             clear=True,
         ):
@@ -185,6 +186,71 @@ class TestOpenAIAvailability:
 
 
 class TestLlmConfig:
+    def test_llm_cli_list_and_scan_aliases(self) -> None:
+        with patch("hosaka.llm_cli.show", return_value=0) as show:
+            from hosaka.llm_cli import main
+
+            assert main(["list"]) == 0
+        show.assert_called_once()
+
+        with patch("hosaka.llm_cli.use_ollama", return_value=0) as scan:
+            assert main(["scan", "--use"]) == 0
+        scan.assert_called_once_with("first")
+
+    def test_replace_active_config_keeps_openai_profile(self) -> None:
+        from hosaka.llm.llm_config import replace_active_config
+
+        config = replace_active_config(
+            {"provider": "openai", "api_key": "sk-test", "model": "gpt-4o-mini"},
+            {"provider": "openai-compatible", "model": "qwen3:4b"},
+        )
+
+        assert config["profiles"]["openai"]["api_key"] == "sk-test"
+        assert config["provider"] == "openai-compatible"
+
+    def test_scan_llm_saves_first_discovery(self) -> None:
+        with patch(
+            "hosaka.scan.find_ollama_hosts",
+            return_value=[{"base_url": "http://192.168.1.50:11434", "models": ["qwen3:4b"]}],
+        ), patch("hosaka.scan.llm_config.load", return_value={}), patch(
+            "hosaka.scan.llm_config.save"
+        ) as save, patch("hosaka.scan.llm_config.apply_to_env"):
+            from hosaka.scan import scan_llm
+
+            assert scan_llm(use="first") == 0
+
+        assert save.call_args.args[0]["base_url"] == "http://192.168.1.50:11434/v1"
+        assert save.call_args.args[0]["model"] == "qwen3:4b"
+
+    def test_discover_ollama_uses_tags_models(self) -> None:
+        response = MagicMock()
+        response.read.return_value = b'{"models":[{"name":"qwen3:4b"}]}'
+        response.__enter__.return_value = response
+        with patch("hosaka.llm.llm_config.urlopen", return_value=response) as mock_open:
+            from hosaka.llm.llm_config import discover_ollama
+
+            discovered = discover_ollama(["http://192.168.1.50:11434"])
+
+        assert discovered == {
+            "base_url": "http://192.168.1.50:11434",
+            "models": ["qwen3:4b"],
+        }
+        mock_open.assert_called_once_with("http://192.168.1.50:11434/api/tags", timeout=1.5)
+
+    def test_discovered_ollama_config_keeps_available_model(self) -> None:
+        with patch(
+            "hosaka.llm.llm_config.discover_ollama",
+            return_value={"base_url": "http://127.0.0.1:11434", "models": ["qwen3:4b"]},
+        ):
+            from hosaka.llm.llm_config import discovered_ollama_config
+
+            config = discovered_ollama_config({"model": "qwen3:4b"})
+
+        assert config is not None
+        assert config["base_url"] == "http://127.0.0.1:11434/v1"
+        assert config["model"] == "qwen3:4b"
+        assert config["ollama_discovery"] is True
+
     def test_openai_compatible_defaults_apply_to_env(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
             from hosaka.llm.llm_config import apply_to_env
@@ -217,11 +283,11 @@ class TestLlmConfig:
             assert os.environ["OPENAI_BASE_URL"] == "https://api.openai.com"
 
 
-def test_chat_tool_schemas_are_play_game_and_list_games() -> None:
+def test_chat_tool_schemas_share_reading_and_game_tools() -> None:
     from hosaka.voice.tools import chat_tool_schemas
 
     names = {item["function"]["name"] for item in chat_tool_schemas()}
-    assert names == {"list_games", "play_game"}
+    assert names == {"list_books", "open_reader", "list_games", "play_game"}
 
 
 def test_chat_system_prompt_tells_model_to_use_play_tools() -> None:
@@ -230,6 +296,8 @@ def test_chat_system_prompt_tells_model_to_use_play_tools() -> None:
     prompt = build_chat_system_prompt(hostname="hosaka", cwd="/tmp")
     assert "list_games" in prompt
     assert "play_game" in prompt
+    assert "list_books" in prompt
+    assert "open_reader" in prompt
 
 
 def test_openai_tool_loop_dispatches_play_game() -> None:
@@ -275,3 +343,79 @@ def test_openai_tool_loop_dispatches_play_game() -> None:
         )
     assert seen == [("play_game", {"name": "tony hawk"})]
     assert "launching Tony Hawk" in text
+
+
+def test_list_books_reads_real_library_shape(tmp_path, monkeypatch) -> None:
+    from hosaka.voice import tools
+
+    (tmp_path / "alice-in-wonderland.epub").write_bytes(b"epub")
+    (tmp_path / "war-of-the-worlds.epub").write_bytes(b"epub")
+    (tmp_path / "ignore.txt").write_text("not a book")
+    monkeypatch.setenv("HOSAKA_BOOKS_DIR", str(tmp_path))
+
+    result = tools.dispatch("list_books")
+
+    assert result == "2 books available: Alice In Wonderland, War Of The Worlds"
+
+
+def test_open_reader_uses_hosaka_foliate_launcher(monkeypatch) -> None:
+    from hosaka.voice import tools
+
+    calls: list[tuple[list[str], dict]] = []
+    monkeypatch.setenv("HOSAKA_CLI", "/home/operator/.local/bin/hosaka")
+
+    def fake_popen(cmd, **kwargs):
+        calls.append((list(cmd), kwargs))
+        return object()
+
+    monkeypatch.setattr(tools.subprocess, "Popen", fake_popen)
+
+    result = tools.dispatch("open_reader")
+
+    assert result == "opening Foliate with the book library"
+    assert calls[0][0] == [
+        "/home/operator/.local/bin/hosaka",
+        "launch",
+        "foliate",
+    ]
+    assert calls[0][1]["start_new_session"] is True
+
+
+def test_open_reader_opens_matching_ebook(tmp_path, monkeypatch) -> None:
+    from hosaka.voice import tools
+
+    book = tmp_path / "frankenstein.epub"
+    book.write_bytes(b"epub")
+    monkeypatch.setenv("HOSAKA_BOOKS_DIR", str(tmp_path))
+    calls: list[list[str]] = []
+
+    def fake_popen(cmd, **kwargs):
+        calls.append(list(cmd))
+        return object()
+
+    monkeypatch.setattr(tools.subprocess, "Popen", fake_popen)
+
+    result = tools.dispatch("open_reader", {"name": "frankenstein"})
+
+    assert result == "opening Frankenstein in Foliate"
+    assert calls[0][-1] == str(book)
+    assert "com.github.johnfactotum.Foliate" in calls[0]
+    assert not any(arg.endswith("/Books") or arg == str(tmp_path) for arg in calls[0][:-1])
+
+
+def test_open_reader_reports_ambiguous_and_missing_titles(tmp_path, monkeypatch) -> None:
+    from hosaka.voice import tools
+
+    (tmp_path / "war-of-the-worlds.epub").write_bytes(b"epub")
+    (tmp_path / "war-and-peace.epub").write_bytes(b"epub")
+    monkeypatch.setenv("HOSAKA_BOOKS_DIR", str(tmp_path))
+    monkeypatch.setattr(tools.subprocess, "Popen", lambda *a, **k: object())
+
+    ambiguous = tools.dispatch("open_reader", {"name": "war"})
+    missing = tools.dispatch("open_reader", {"name": "dune"})
+
+    assert ambiguous.startswith("several matches:")
+    assert "War Of The Worlds" in ambiguous
+    assert "War And Peace" in ambiguous
+    assert "no book matching 'dune'" in missing
+    assert "2 books available" in missing
