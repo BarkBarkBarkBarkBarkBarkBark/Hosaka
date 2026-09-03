@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+artifact_root="${HOSAKA_ARTIFACT_ROOT:-/opt/hosaka}"
+checksum_file="${HOSAKA_ARTIFACT_CHECKSUMS:-$artifact_root/artifacts.sha256}"
+
+required=(
+  "$artifact_root/bin/whisper-cli"
+  "$artifact_root/models/whisper/ggml-tiny.en.bin"
+  "$artifact_root/models/whisper/ggml-base.en.bin"
+  "$artifact_root/models/whisper/ggml-silero-v6.2.0.bin"
+  "$artifact_root/bin/piper"
+  "$artifact_root/models/piper/en_US-lessac-medium.onnx"
+  "$artifact_root/models/piper/en_US-lessac-medium.onnx.json"
+  "$artifact_root/models/piper/en_US-lessac-medium.MODEL_CARD"
+)
+
+for artifact in "${required[@]}"; do
+  if [[ ! -s "$artifact" ]]; then
+    printf 'missing artifact: %s\n' "$artifact" >&2
+    exit 1
+  fi
+done
+
+if [[ ! -s "$checksum_file" ]]; then
+  printf 'missing checksum manifest: %s\n' "$checksum_file" >&2
+  exit 1
+fi
+
+(cd / && sha256sum --check "$checksum_file")
+"$artifact_root/bin/whisper-cli" --help >/dev/null 2>&1
+"$artifact_root/venvs/piper/bin/python" -c 'import importlib.metadata; assert importlib.metadata.version("piper-tts") == "1.7.0"'
+curl --fail --silent --show-error --max-time 3 http://127.0.0.1:11434/api/version >/dev/null
+ollama list | grep -Fq 'qwen3:4b'
+printf 'Hosaka Jetson inference artifacts are ready.\n'

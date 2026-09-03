@@ -1,0 +1,8 @@
+1ce03a63b04ed59823d7f6b1b4fa0cb2d70086c7448bd42009a62f55f5b3e39c  /opt/hosaka/bin/whisper-cli
+921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f  /opt/hosaka/models/whisper/ggml-tiny.en.bin
+a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002  /opt/hosaka/models/whisper/ggml-base.en.bin
+2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987  /opt/hosaka/models/whisper/ggml-silero-v6.2.0.bin
+a386bfcd6c244bfbf7fe28fb2530b97239e5c1c2d32dc21de3a12975164391b2  /opt/hosaka/venvs/piper/bin/piper
+5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f  /opt/hosaka/models/piper/en_US-lessac-medium.onnx
+efe19c417bed055f2d69908248c6ba650fa135bc868b0e6abb3da181dab690a0  /opt/hosaka/models/piper/en_US-lessac-medium.onnx.json
+ce49eb457742208166d399a40cdec2c7fa9db77960930031564ab56f12882645  /opt/hosaka/models/piper/en_US-lessac-medium.MODEL_CARD
