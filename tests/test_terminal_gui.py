@@ -214,7 +214,7 @@ def test_graphical_boot_default_is_gui(tmp_path, script):
     systemctl.write_text("#!/bin/sh\nexit 1\n")
     systemctl.chmod(0o755)
     launcher = tools / "electron"
-    launcher.write_text('#!/bin/sh\nprintf "CANONICAL_GUI\\n"\nprintf "device\\n" >"$HOSAKA_STATE_DIR/mode"\n')
+    launcher.write_text('#!/bin/sh\nprintf "CANONICAL_GUI\\n"\nkill -TERM "$PPID"\n')
     launcher.chmod(0o755)
     env = dict(os.environ, HOME=str(tmp_path), XDG_CONFIG_HOME=str(tmp_path / ".config"),
                HOSAKA_STATE_DIR=str(state), HOSAKA_KIOSK_LAUNCHER=str(launcher),
@@ -222,8 +222,18 @@ def test_graphical_boot_default_is_gui(tmp_path, script):
                HOSAKA_DESKTOP_BRANDING=str(tools / "curl"), PATH=str(tools) + os.pathsep + os.environ["PATH"])
     env.pop("HOSAKA_DISPLAY_MODE", None)
     source = Path(__file__).resolve().parents[1] / script
-    result = subprocess.run(["bash", str(source)], env=env, capture_output=True, text=True, timeout=10, check=True)
+    result = subprocess.run(["bash", str(source)], env=env, capture_output=True, text=True, timeout=10)
+    assert result.returncode in (0, -15)
     assert "CANONICAL_GUI" in (tmp_path / "kiosk.log").read_text()
+
+
+def test_lxqt_autostart_is_enabled():
+    entry = Path(__file__).resolve().parents[1] / "dotfiles/autostart/hosaka-kiosk.desktop"
+    values = dict(line.split("=", 1) for line in entry.read_text().splitlines() if "=" in line and not line.startswith("#"))
+    assert values["Hidden"] == "false"
+    assert values["X-GNOME-Autostart-enabled"] == "true"
+    assert values["OnlyShowIn"] == "LXQt;"
+    assert values["Exec"] == "/usr/local/bin/hosaka-lxqt-kiosk"
 
 
 @pytest.mark.parametrize("stalled", ["backend", "frontend"])

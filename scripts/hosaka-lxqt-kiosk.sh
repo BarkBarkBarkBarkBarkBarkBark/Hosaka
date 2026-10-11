@@ -71,6 +71,11 @@ case "$DISPLAY_MODE" in
   *) log "invalid display mode: $DISPLAY_MODE"; exit 1 ;;
 esac
 
+if systemctl is-active --quiet hosaka-kiosk.service 2>/dev/null; then
+  log "systemd already owns the kiosk — not starting a second supervisor"
+  exit 0
+fi
+
 # Brand the desktop substrate before Hosaka appears. If the kiosk is hidden
 # later via right-click / desktop mode, the operator lands on a Hosaka app-drawer
 # desktop rather than a generic LXQt session.
@@ -92,11 +97,8 @@ fi
 # Respawn loop: keep Hosaka on top. Bail cleanly if the operator switches to
 # device mode at runtime (the next iteration sees it and exits).
 while true; do
+  while is_device_mode; do sleep 3; done
   log "launching electron kiosk"
   "$ELECTRON_LAUNCHER" >>"$LOG" 2>&1 || true
   sleep 3
-  if is_device_mode; then
-    log "device mode at respawn — exiting"
-    exit 0
-  fi
 done

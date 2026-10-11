@@ -6,7 +6,7 @@ Description=Hosaka Kiosk (Electron)
 # The launcher waits on the webserver health check anyway, but declaring
 # the dependency here makes journald traces much more readable.
 After=graphical.target hosaka-webserver.service hosaka-mode.service
-Wants=graphical.target hosaka-webserver.service
+Wants=hosaka-webserver.service
 PartOf=graphical.target
 # install_hosaka.sh rewrites the placeholders below at install time.
 

@@ -33,7 +33,15 @@ restore() {
   done
   printf '%s\n' "$previous_mode" >"$STATE_DIR/mode" || restore_failed=1
   if (( ui_paused )) && [[ "$previous_mode" == "console" || "$previous_mode" == "kiosk" ]]; then
-    systemctl restart getty@tty1.service || restore_failed=1
+    local home display_mode
+    home="$(getent passwd "$OPERATOR" | cut -d: -f6)"
+    display_mode="$(cat "$home/.config/hosaka/display-mode" 2>/dev/null || echo gui)"
+    # Existing graphical supervisors wait through the update. Only start a
+    # service when no supervisor owns the window; never reset the login/TTY.
+    if [[ "$display_mode" == "gui" ]] && pgrep -x Xorg >/dev/null \
+      && ! pgrep -u "$OPERATOR" -f 'hosaka-lxqt-kiosk|/\.config/openbox/autostart' >/dev/null; then
+      systemctl start hosaka-kiosk.service || restore_failed=1
+    fi
   fi
   if (( result != 0 || restore_failed )); then
     echo "UPDATE FAILED (exit $result, restore errors $restore_failed). See hosaka update status."
@@ -69,8 +77,7 @@ chown "$OPERATOR" "$STATE_DIR/mode"
 ui_paused=1
 for unit in hosaka-webserver.service picoclaw-gateway.service hosaka-voice.service hosaka-kiosk.service; do
   if systemctl is-active --quiet "$unit"; then
-    # The graphical autostart owns kiosk restoration, not a second supervisor.
-    [[ "$unit" == "hosaka-kiosk.service" ]] || services+=("$unit")
+    services+=("$unit")
     systemctl stop "$unit"
   fi
 done
@@ -79,7 +86,7 @@ if [[ " ${services[*]} " != *" hosaka-webserver.service "* ]]; then
 fi
 while read -r pid; do
   [[ -n "$pid" ]] && kill "$pid"
-done < <(pgrep -u "$OPERATOR" -f 'hosaka-lxqt-kiosk|/\.config/openbox/autostart|kiosk/node_modules/electron/dist/electron' || true)
+done < <(pgrep -u "$OPERATOR" -f 'kiosk/node_modules/electron/dist/electron' || true)
 
 echo "Pulling, building, and deploying the requested checkout."
 bash "$REPO_ROOT/scripts/hosaka" update --foreground "$@"

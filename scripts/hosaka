@@ -1039,6 +1039,11 @@ refresh_appliance_launchers() {
   sudo install -m 0755 "$REPO_ROOT/scripts/hosaka" /usr/local/bin/hosaka
   sudo install -m 0755 "$REPO_ROOT/scripts/kiosk-electron.sh" /usr/local/bin/hosaka-kiosk-electron
   sudo install -m 0755 "$REPO_ROOT/scripts/hosaka-lxqt-kiosk.sh" /usr/local/bin/hosaka-lxqt-kiosk
+  sudo install -m 0644 "$REPO_ROOT/systemd/hosaka-kiosk.service" /etc/systemd/system/hosaka-kiosk.service
+  sudo sed -i -e "s/^User=.*/User=$user/" -e "s/^Group=.*/Group=$(id -gn "$user")/" \
+    -e "s|^Environment=XAUTHORITY=.*|Environment=XAUTHORITY=$home/.Xauthority|" \
+    /etc/systemd/system/hosaka-kiosk.service
+  sudo systemctl daemon-reload
   sudo systemctl enable hosaka-webserver.service
   sudo install -D -m 0755 -o "$user" "$REPO_ROOT/scripts/hosaka-tui-term" "$home/bin/hosaka-tui-term"
   sudo install -D -m 0755 -o "$user" "$REPO_ROOT/dotfiles/openbox/autostart" "$config/openbox/autostart"

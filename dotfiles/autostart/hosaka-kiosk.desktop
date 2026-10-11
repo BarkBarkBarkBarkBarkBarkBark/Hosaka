@@ -3,14 +3,12 @@ Type=Application
 Name=Hosaka
 GenericName=Hosaka Field Terminal
 Comment=Launch the Hosaka terminal fullscreen on top of the LXQt desktop
-Exec=sh -lc 'for r in "$HOSAKA_REPO" "$HOME/Hosaka" /opt/hosaka-field-terminal; do [ -x "$r/scripts/hosaka-lxqt-kiosk.sh" ] && exec "$r/scripts/hosaka-lxqt-kiosk.sh"; done; exec /usr/local/bin/hosaka-lxqt-kiosk'
+Exec=/usr/local/bin/hosaka-lxqt-kiosk
 Icon=utilities-terminal
 Terminal=false
 Categories=System;
-# Disabled for desktop-first mode: LXQt should open by itself, without
-# automatically placing the Hosaka Electron kiosk over the desktop.
-Hidden=true
+Hidden=false
 # Only autostart inside the LXQt session. Plain openbox-session has its own
 # kiosk supervisor in ~/.config/openbox/autostart, so this would double up.
 OnlyShowIn=LXQt;
-X-GNOME-Autostart-enabled=false
+X-GNOME-Autostart-enabled=true

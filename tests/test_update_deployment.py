@@ -105,7 +105,8 @@ def test_update_worker_restores_services_on_success_and_failure(tmp_path, deploy
         "flock": 'exit 0',
         "install": 'exit 0',
         "chown": 'exit 0',
-        "pgrep": 'exit 1',
+        "pgrep": 'if [ "$*" = "-x Xorg" ]; then exit 0; fi\nexit 1',
+        "getent": f'echo "operator:x:1000:1000:Operator:{tmp_path}:/bin/bash"',
         "curl": f'case "$*" in *build-stamp.json*) echo \'{{"sha":"{stamp}"}}\';; esac\nexit {health_exit}',
         "seq": 'echo 1',
         "sleep": 'exit 0',
@@ -135,5 +136,6 @@ def test_update_worker_restores_services_on_success_and_failure(tmp_path, deploy
     commands = log.read_text()
     assert "stop hosaka-webserver.service" in commands
     assert "start hosaka-webserver.service" in commands
-    assert "restart getty@tty1.service" in commands
+    assert "start hosaka-kiosk.service" in commands
+    assert "getty@tty1" not in commands
     assert ("UPDATE COMPLETE" if success else "UPDATE FAILED") in result.stdout + result.stderr

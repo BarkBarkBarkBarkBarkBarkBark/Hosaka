@@ -427,7 +427,8 @@ desktop and SSH up, limits build memory to 650 MB, pulls the current branch
 from `origin` with `--ff-only`, executes the freshly pulled deployment code,
 rebuilds assets, refreshes Python requirements when changed, and updates the
 installed CLI/kiosk launchers and graphical autostart files. It restores
-services and the screen on success or failure, verifies web-server health,
+services and the screen on success or failure without restarting the graphical
+login or tty1, verifies web-server health,
 and checks that the served frontend build stamp matches the deployed commit.
 Failures appear in `hosaka update status`; no successful deployment is claimed
 after a failed build. A sudo password may be requested when starting the job.

@@ -126,11 +126,9 @@ if [ -x "$ELECTRON_LAUNCHER" ] && [ -n "$ELECTRON_BIN" ]; then
 
     echo 800 > /proc/self/oom_score_adj 2>/dev/null || true
     while true; do
+        while [ "$(read_mode)" = "device" ]; do sleep 3; done
         "$ELECTRON_LAUNCHER" >>"$KIOSK_LOG" 2>&1 || true
         sleep 3
-        if [ "$(read_mode)" = "device" ]; then
-            exit 0
-        fi
         # Same defensive check on respawn: if something (operator, updater)
         # started the systemd unit between iterations, stop competing.
         if command -v systemctl >/dev/null 2>&1 \
