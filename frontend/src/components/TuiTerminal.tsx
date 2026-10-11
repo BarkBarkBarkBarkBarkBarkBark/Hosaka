@@ -6,6 +6,8 @@ import "@xterm/xterm/css/xterm.css";
 import { useTranslation } from "../i18n";
 import { FONT_SIZE_TERMINAL, loadUiConfig } from "../uiConfig";
 
+const hostedUrl = import.meta.env.VITE_HOSAKA_TUI_URL as string | undefined;
+
 export function TuiTerminal({ active, flash, onFlash }: {
   active: boolean;
   flash: string | null;
@@ -19,12 +21,14 @@ export function TuiTerminal({ active, flash, onFlash }: {
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState("connecting");
   const [detail, setDetail] = useState("");
+  const [accessCode, setAccessCode] = useState("");
+  const [credential, setCredential] = useState<string | null>(null);
   const flashRef = useRef(flash);
   flashRef.current = flash;
   const flashButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (!host.current) return;
+    if (!host.current || (hostedUrl && credential === null)) return;
     const mount = host.current;
     setStatus("connecting");
     setDetail("");
@@ -59,8 +63,8 @@ export function TuiTerminal({ active, flash, onFlash }: {
       term.open(mount);
       fit.fit();
       terminal.current = term;
-      const url = new URL("/ws/tui", location.href);
-      url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+      const url = new URL(hostedUrl || "/ws/tui", location.href);
+      if (!hostedUrl) url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
       url.searchParams.set("cols", String(Math.max(20, term.cols)));
       url.searchParams.set("rows", String(Math.max(5, term.rows)));
       const ws = new WebSocket(url);
@@ -71,12 +75,18 @@ export function TuiTerminal({ active, flash, onFlash }: {
       };
       ws.onopen = () => {
         if (disposed) return;
-        setStatus("connected");
-        send({ type: "resize", cols: Math.max(20, term.cols), rows: Math.max(5, term.rows) });
+        if (hostedUrl) send({ type: "auth", token: credential });
+        else {
+          setStatus("connected");
+          send({ type: "resize", cols: Math.max(20, term.cols), rows: Math.max(5, term.rows) });
+        }
         if (activeRef.current) term.focus();
       };
       ws.onmessage = (event: MessageEvent<ArrayBuffer>) => {
-        if (!disposed) term.write(new Uint8Array(event.data));
+        if (!disposed) {
+          setStatus("connected");
+          term.write(new Uint8Array(event.data));
+        }
       };
       ws.onerror = () => {
         if (!disposed) setStatus("failed");
@@ -85,6 +95,7 @@ export function TuiTerminal({ active, flash, onFlash }: {
         if (disposed) return;
         setStatus(event.code === 1000 ? "ended" : "failed");
         setDetail(event.reason);
+        if (event.code === 4401) setCredential(null);
       };
       const input = term.onData((data) => {
         if (activeRef.current && flashRef.current === null) send({ type: "input", data });
@@ -117,7 +128,7 @@ export function TuiTerminal({ active, flash, onFlash }: {
       cancelAnimationFrame(frame);
       cleanup();
     };
-  }, [attempt, onFlash]);
+  }, [attempt, onFlash, credential]);
 
   useEffect(() => {
     if (active && flash === null) terminal.current?.focus();
@@ -151,9 +162,22 @@ export function TuiTerminal({ active, flash, onFlash }: {
           <span className="deck-flash-word">{flash}</span>
         </button>
       )}
-      {status !== "connected" && (
+      {hostedUrl && credential === null ? (
+        <form className="native-tui-status hosted-access" onSubmit={(event) => {
+          event.preventDefault();
+          if (!accessCode.trim()) return;
+          setCredential(accessCode.trim());
+          setAccessCode("");
+        }}>
+          <p>{t("hosted.notice")}</p>
+          <label>{t("hosted.accessCode")}<input type="password" autoComplete="off"
+            value={accessCode} onChange={(event) => setAccessCode(event.target.value)} /></label>
+          <button type="submit" disabled={!accessCode.trim()}>{t("hosted.start")}</button>
+          {detail && <p role="alert">{detail}</p>}
+        </form>
+      ) : status !== "connected" && (
         <div className="native-tui-status" role="status">
-          <span>{t(`status.${status}`)} {detail}</span>
+          <span>{t(`${hostedUrl ? "hosted" : "status"}.${status}`)} {detail}</span>
           {status !== "connecting" && (
             <button onClick={() => setAttempt((value) => value + 1)}>{t("reconnect")}</button>
           )}

@@ -218,20 +218,24 @@ origins, and is disabled in public mode (`HOSAKA_PUBLIC_MODE=1`) or with
 remote/public hosts cannot expose the native terminal. Use the local screen or
 `hosaka tui` over SSH.
 
-### Public browser demo
+### Hosted terminal
 
-The public `terminal.hosaka.xyz` deployment builds this frontend with
-`VITE_HOSAKA_DEMO=1`. It is explicitly labelled **browser-only demo** and
-supports `/help`, `/commands`, `/lore`, `/orb`, `/signal`, `/about`, and `/clear`.
-Lore opens the bundled archive. The signal message is decorative, not a
-network check. There is no AI, shell execution, native PTY, or device access.
-The public menu only exposes the bundled lore; it does not offer host settings
-or a live API viewer.
+The `terminal.hosaka.xyz` wrapper selects `VITE_HOSAKA_TUI_URL`, a dedicated
+access-code-gated Fly gateway. It runs the real Python TUI in a disposable
+Machine per session, not the native appliance's `/ws/tui` endpoint. Sessions
+last at most 10 minutes, allow up to 30 capped model requests, and discard
+their workspace on disconnect. Three sessions can run concurrently.
+Provider/deployment credentials stay in the gateway; workers receive only
+their own expiring model-proxy token. Workers run unprivileged, cannot reach
+private networks or metadata endpoints, and have no deck hardware access.
+The hosted menu omits device settings and the live operator API viewer.
 
 The `hosaka-field-terminal` repository owns that hosted build, copying this
 repo's frontend at build time. The `cyber_deck` marketing site embeds it.
-Native GUI builds leave the demo flag unset and continue using `/ws/tui`.
-Do not loosen the local-only PTY policy to make a public demo work.
+Native GUI builds leave the hosted URL unset and continue using `/ws/tui`.
+Do not loosen the local-only PTY policy to make a hosted terminal work.
+`VITE_HOSAKA_DEMO=1` remains an optional, separate browser-only simulation;
+it is no longer the selected public experience.
 
 Wi-Fi uses the existing NetworkManager API on Linux. Bluetooth uses BlueZ to
 scan, pair, trust, and connect devices without a PIN; PIN/passkey pairing and
@@ -712,7 +716,7 @@ Hours of inactivity drain it. Reach colony state and it records a birth.
 ## Legacy browser voice architecture (archived UI)
 
 The following browser voice notes describe the archived desktop, not the
-current terminal-first GUI or public browser demo. That UI had a voice tab,
+current terminal-first GUI or hosted terminal. That UI had a voice tab,
 orb, transcript drawer, and camera controls. Voice backends and the optional
 native daemon are separate from the console's PicoClaw chat path; their
 presence does not mean those browser controls are still available.

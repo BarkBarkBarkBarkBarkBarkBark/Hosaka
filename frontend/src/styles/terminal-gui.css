@@ -53,6 +53,8 @@ html, body, #root { height: 100%; margin: 0; background: #0b0d10; color-scheme: 
   gap: 12px;
   align-items: center;
 }
+.hosted-access { flex-direction: column; align-items: stretch; max-width: 600px; margin: auto; }
+.hosted-access input { display: block; width: 100%; min-height: 44px; padding: 8px; background: #0b0d10; color: inherit; border: 1px solid #343c46; }
 .deck-scrim {
   position: absolute;
   inset: 52px 0 0;

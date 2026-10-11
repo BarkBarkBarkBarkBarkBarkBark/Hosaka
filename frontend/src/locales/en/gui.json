@@ -1,5 +1,14 @@
 {
   "terminal": "terminal",
+  "hosted": {
+    "title": "hosted terminal",
+    "notice": "Real Hosaka TUI in a disposable Fly Machine. Access code required. Workspace is discarded on disconnect or after 10 minutes. Up to 30 model requests; no deck hardware or host access.",
+    "accessCode": "Access code",
+    "start": "Start terminal",
+    "connecting": "Starting your isolated terminal...",
+    "failed": "Hosted terminal unavailable.",
+    "ended": "Hosted session ended."
+  },
   "demo": {
     "title": "browser-only demo",
     "welcome": "Signal steady. This is a browser-only Hosaka demo. Type /help to explore.",
