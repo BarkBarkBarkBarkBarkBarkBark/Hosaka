@@ -52,6 +52,15 @@ hosaka help        # see everything
 Requires [Docker](https://www.docker.com/products/docker-desktop).
 See [`install/`](./install/) for the installer internals.
 
+This installs the Docker client, not the Raspberry Pi's native services or
+fullscreen boot setup. It downloads the image before reporting success and
+refuses to replace an existing non-Docker Hosaka installation. On an existing
+Hosaka appliance, use its `hosaka update` instead.
+
+Successful container builds from `main` are smoke-tested before becoming
+`:latest`. Local edits reach Docker users only after they are committed,
+pushed, and the [image workflow](./.github/workflows/image.yml) succeeds.
+
 ---
 
 ## Boot Dev Container

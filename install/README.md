@@ -14,8 +14,17 @@ curl -fsSL https://install.hosaka.xyz | sh
 iwr https://install.hosaka.xyz/windows | iex
 ```
 
-Both drop a `hosaka` executable on the user's PATH and warm up the
-container image in the background.
+Both install the Docker client launcher and download the container image
+before reporting success. Docker must already be installed and running.
+They do not install native appliance services or configure fullscreen boot.
+The Unix installer refuses to replace a non-Docker Hosaka launcher; the
+Windows installer refuses to shadow a different Hosaka installation.
+
+Unix installs to `/usr/local/bin` by default (using sudo when needed).
+If you override `HOSAKA_PREFIX` and its `bin` directory is not on PATH, the
+installer prints the shell configuration change you need. Windows installs
+to `%LOCALAPPDATA%\Hosaka\bin` and adds it to both the user PATH and the
+current PowerShell session.
 
 ## What the user gets
 
@@ -26,7 +35,7 @@ container image in the background.
 | `hosaka open`                 | Open the web UI in the browser                                 |
 | `hosaka link <host[:port]>`   | Route `tui` / `open` at a remote Hosaka on the tailnet         |
 | `hosaka unlink`               | Go back to the local node                                      |
-| `hosaka update`               | `docker pull` the latest image                                 |
+| `hosaka update`               | Pull the latest image and recreate a running node when changed |
 | `hosaka status`               | What's running + where it points                               |
 | `hosaka uninstall`            | Remove launcher (keeps `~/.hosaka` state)                      |
 
@@ -43,10 +52,15 @@ install/
 └── README.md          # this file
 ```
 
-Both installers fetch the right launcher file(s) from
-`https://install.hosaka.xyz/bin/<name>` at install time, so **the
-launcher can ship new versions without re-running the installer** —
-`hosaka update` also re-pulls the image.
+Both installers fetch the launcher file(s) from
+`https://install.hosaka.xyz/bin/<name>` at install time. Re-run the
+installer to refresh the launcher itself; `hosaka update` refreshes the
+container image, not the installed CLI.
+
+Downloads are staged and checked before installation. Image download
+failures produce a nonzero exit instead of a misleading success message.
+Set `HOSAKA_NO_PULL=1` to install just the launcher; `hosaka up` will still
+need to obtain the image.
 
 ## Hosting
 
@@ -120,10 +134,20 @@ curl -fsSL https://install.hosaka.xyz/bin/hosaka | head -3
 ## Image registry
 
 The launcher pulls `ghcr.io/barkbarkbarkbarkbarkbarkbark/hosaka:latest`
-by default. CI builds and pushes the image on every push to `main`
+by default. CI builds the image on every push to `main`
 (multi-arch: `linux/amd64` + `linux/arm64`) and stamps the git commit
 SHA as `HOSAKA_COMMIT` so `/api/health` always reports the exact
-build in the running container.
+build in the running container and frontend build stamp.
+
+The workflow first runs the Unix and Windows installer regression tests,
+then publishes a candidate image under `:build-<full-commit-sha>`. It runs
+that exact image by digest and checks `/api/health` and `/build-stamp.json`
+against the commit. Only after those checks pass does it promote the image
+to `:latest`, `:main`, `:edge`, and the commit-specific tag. A failed build
+or smoke test does not move the default download.
+
+Tag pushes publish their version tag after verification; `:latest` currently
+tracks verified `main` builds, not tagged releases.
 
 ```yaml
 # .github/workflows/image.yml  (abbreviated)
@@ -134,9 +158,8 @@ build in the running container.
     platforms: linux/amd64,linux/arm64
     push: true
     build-args: HOSAKA_COMMIT=${{ github.sha }}
-    tags: |
-      ghcr.io/barkbarkbarkbarkbarkbarkbark/hosaka:latest
-      ghcr.io/barkbarkbarkbarkbarkbarkbark/hosaka:${{ github.ref_name }}
+    tags: ghcr.io/barkbarkbarkbarkbarkbarkbark/hosaka:build-${{ github.sha }}
+# Smoke-test the returned image digest, then promote the verified digest.
 ```
 
 Make the package public from the GitHub UI (Packages → hosaka →
@@ -155,17 +178,21 @@ Both `commit` (git SHA) and `ui_built: true` should be present after
 ## Verifying locally
 
 ```bash
-# pretend install.hosaka.xyz is your checkout
-python -m http.server 8000 --directory install &
+bash tests/test_install.sh
 
-HOSAKA_NO_PULL=1 \
-HOSAKA_PREFIX="$HOME/.local" \
-curl -fsSL http://127.0.0.1:8000/install.sh | sh
+# With PowerShell installed:
+pwsh -NoProfile -File tests/test_install.ps1
+
+# With an HTTP server already serving install/ on port 8000:
+curl -fsSL http://127.0.0.1:8000/install.sh | \
+  HOSAKA_INSTALL_BASE=http://127.0.0.1:8000 \
+  HOSAKA_NO_PULL=1 HOSAKA_PREFIX="$HOME/.local" sh
 ```
 
-(The `install.sh` hard-codes `install.hosaka.xyz` for the public flow —
-if you want this to work against your local server, temporarily swap the
-URL or add a `HOSAKA_INSTALL_BASE` override when you harden the script.)
+`HOSAKA_INSTALL_BASE` overrides the download host on Unix and Windows.
+Environment overrides must be passed to the installer shell, not just curl.
+The tests use temporary installation directories and mocked downloads/Docker;
+they do not replace your real launcher.
 
 ## Security notes
 

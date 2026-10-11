@@ -3,13 +3,11 @@ name: image
 # Publish multi-arch container images for the Hosaka client.
 #
 # Triggers:
-#   - push to main              → :main  + :edge
-#   - push of a v* tag          → :vX.Y.Z + :latest
+#   - push to main              → :main + :edge + :latest
+#   - push of a v* tag          → :vX.Y.Z
 #   - manual run                → whatever SHA you kick it off against
 #
-# Consumers (hosaka launcher) pull ghcr.io/<owner>/hosaka:latest by
-# default, so the "latest" tag only moves when you cut a real tag — not
-# on every push to main.
+# Default tags are promoted only after the published image passes smoke tests.
 
 on:
   push:
@@ -22,7 +20,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  installers:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test Unix installer
+        if: runner.os == 'Linux'
+        run: bash tests/test_install.sh
+      - name: Test Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tests/test_install.ps1
+
   build:
+    needs: installers
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -50,6 +64,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ steps.owner.outputs.name }}/hosaka
+          flavor: latest=false
           tags: |
             type=ref,event=branch
             type=ref,event=tag
@@ -63,13 +78,14 @@ jobs:
             org.opencontainers.image.licenses=MIT
 
       - name: Build + push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags:   ${{ steps.meta.outputs.tags }}
+          tags: ghcr.io/${{ steps.owner.outputs.name }}/hosaka:build-${{ github.sha }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             HOSAKA_COMMIT=${{ github.sha }}
@@ -78,32 +94,37 @@ jobs:
           cache-to:   type=gha,mode=max
 
       - name: Smoke test — ui_built
+        env:
+          IMAGE: ghcr.io/${{ steps.owner.outputs.name }}/hosaka@${{ steps.build.outputs.digest }}
+          EXPECTED_COMMIT: ${{ github.sha }}
         run: |
-          # Load the image that was just built (single-platform, for speed)
-          docker buildx build \
-            --load \
-            --platform linux/amd64 \
-            --build-arg HOSAKA_COMMIT=${{ github.sha }} \
-            -t hosaka:smoke \
-            -f docker/Dockerfile \
-            .
-          # Run it detached, wait for the web server, then check /api/health
-          docker run -d --name hosaka-smoke -p 18421:8421 hosaka:smoke
+          trap 'docker rm -f hosaka-smoke' EXIT
+          docker run -d --name hosaka-smoke -p 127.0.0.1:18421:8421 "$IMAGE"
+          STATUS=""
           for i in $(seq 1 20); do
             sleep 3
-            STATUS=$(curl -sf http://localhost:18421/api/health || true)
-            if [ -n "$STATUS" ]; then break; fi
+            if STATUS=$(curl -fsS http://127.0.0.1:18421/api/health); then break; fi
           done
-          docker stop hosaka-smoke && docker rm hosaka-smoke
           echo "Health response: $STATUS"
           if [ -z "$STATUS" ]; then
+            docker logs hosaka-smoke
             echo "::error::Container did not respond to /api/health" && exit 1
           fi
-          UI=$(echo "$STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('ui_built','false'))")
-          if [ "$UI" != "True" ]; then
-            echo "::error::ui_built is not True — frontend was not bundled into the image" && exit 1
-          fi
-          echo "ui_built=True — smoke test passed"
+          echo "$STATUS" | jq -e --arg sha "$EXPECTED_COMMIT" \
+            '.web == "ok" and .ui_built == true and .commit == $sha'
+          curl -fsS http://127.0.0.1:18421/build-stamp.json \
+            | jq -e --arg sha "$EXPECTED_COMMIT" '.sha == $sha'
+          echo "Published image and frontend match this commit — smoke test passed"
+
+      - name: Promote verified image
+        env:
+          IMAGE: ghcr.io/${{ steps.owner.outputs.name }}/hosaka@${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker buildx imagetools create --tag "$tag" "$IMAGE"
+          done <<< "$TAGS"
 
       - name: Summary
         run: |

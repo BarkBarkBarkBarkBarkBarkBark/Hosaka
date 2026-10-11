@@ -15,6 +15,8 @@
 # ── stage 1: build the frontend SPA ──────────────────────────────────────────
 FROM node:22-slim AS frontend-builder
 
+ARG HOSAKA_COMMIT=dev
+ENV HOSAKA_BUILD_SHA=${HOSAKA_COMMIT} HOSAKA_BUILD_REF=container
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci --prefer-offline
@@ -25,6 +27,7 @@ COPY frontend/ ./
 # YAML). They MUST be present at /build/hosaka-apps for vite/rollup to
 # resolve those imports during the SPA build.
 COPY hosaka-apps/ /build/hosaka-apps/
+COPY docs/ /build/docs/
 RUN npm run build
 # output lands in /build/hosaka/web/ui (vite.config.ts outDir)
 
