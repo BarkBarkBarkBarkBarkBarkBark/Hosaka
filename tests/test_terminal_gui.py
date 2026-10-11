@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -12,6 +14,14 @@ from starlette.websockets import WebSocketDisconnect
 
 from hosaka.web import bluetooth_api, tui_ws
 from hosaka.web.api_v1 import require_auth, require_write
+
+
+def test_menu_orbs_match_terminal_frames():
+    from hosaka.tui.style import _ORB_FRAMES
+
+    source = (Path(__file__).resolve().parents[1] / "frontend/src/orb.ts").read_text()
+    lines = [json.loads(line) for line in re.findall(r'^\s*(".*"),$', source, re.MULTILINE)]
+    assert lines == [line for frame in _ORB_FRAMES for line in frame]
 
 
 @pytest.fixture

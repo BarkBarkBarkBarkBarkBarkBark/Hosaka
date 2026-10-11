@@ -1036,73 +1036,50 @@ def _draw_ascii(subject: str, current_dir: Path) -> None:
 
 
 def _check_api_key() -> None:
-    """If no API key is configured, prompt the user to enter one."""
-    import json
+    """Onboard a fresh agent and save credentials without changing its schema."""
+    import getpass
+    from hosaka.llm import llm_config, picoclaw_adapter
+    from hosaka.llm.openai_adapter import _picoclaw_config_path, resolve_api_key
+    from hosaka.secrets import store
 
-    try:
-        from hosaka.llm.openai_adapter import _picoclaw_config_path, resolve_api_key
-        key, _src = resolve_api_key()
-        if key:
-            return
-    except Exception:
-        pass
-
+    if not picoclaw_adapter.is_available():
+        print(f"  {warn_style('PicoClaw is missing.')} Install it before using /llm:")
+        print(f"  {GRAY}bash scripts/install-picoclaw.sh --onboard{R}")
+        return
     cfg_path = _picoclaw_config_path()
     if not cfg_path.exists():
-        return  # picoclaw not set up yet — onboard handles this
-
-    try:
-        cfg = json.loads(cfg_path.read_text())
-    except Exception:
+        env = dict(os.environ, PICOCLAW_HOME=str(cfg_path.parent))
+        result = subprocess.run(
+            [picoclaw_adapter.PICOCLAW_BIN, "onboard"],
+            env=env, capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0 or not cfg_path.exists():
+            detail = result.stderr.strip() or result.stdout.strip() or "configuration was not created"
+            print(f"  {err_style('PicoClaw setup failed:')} {detail}")
+            return
+        print(f"  {ok_style('PicoClaw workspace initialized.')}")
+    key, _source = resolve_api_key()
+    if key:
         return
-
-    # Check if any model in model_list has an api_key set
-    model_list = cfg.get("model_list", [])
-    has_key = any(m.get("api_key") for m in model_list)
-    if has_key:
-        return
-
-    # Also check the default model
-    defaults = cfg.get("agents", {}).get("defaults", {})
-    model_name = defaults.get("model_name", "")
-
-    print(f"  {AMBER}No API key found in {cfg_path}{R}")
-    print(f"  {GRAY}Hosaka needs an OpenAI API key to talk to the AI.{R}")
-    print()
+    print(f"  {GRAY}Choose a local model with /select llm, or add an OpenAI key now.{R}")
     try:
-        key = input(f"  {CYAN}Paste your OpenAI API key (or Enter to skip): {R}").strip()
+        key = getpass.getpass("  OpenAI API key (hidden; Enter to skip): ").strip()
     except (EOFError, KeyboardInterrupt):
         print()
         return
-
     if not key:
-        print(f"  {GRAY}Skipped. You can add it later to {cfg_path}{R}")
+        print(f"  {GRAY}Skipped. Use hosaka secrets set OPENAI_API_KEY, then /select llm.{R}")
         return
-
-    # Find the active model entry or create one
-    target_entry = None
-    for m in model_list:
-        if m.get("model_name") == model_name:
-            target_entry = m
-            break
-
-    if target_entry:
-        target_entry["api_key"] = key
-    else:
-        # Add a default gpt-4o-mini entry
-        model_list.append({
-            "model_name": "gpt-4o-mini",
-            "model": "openai/gpt-4o-mini",
-            "api_key": key,
-            "api_base": "https://api.openai.com/v1",
-        })
-        if not model_name:
-            defaults["model_name"] = "gpt-4o-mini"
-            cfg.setdefault("agents", {}).setdefault("defaults", defaults)
-
-    cfg["model_list"] = model_list
-    cfg_path.write_text(json.dumps(cfg, indent=2))
-    print(f"  {ok_style('API key saved.')} You're ready to go.")
+    store.set("OPENAI_API_KEY", key, mirror=False)
+    config = llm_config.replace_active_config(llm_config.load(), {
+        "provider": "openai",
+        "model": llm_config.OPENAI_DEFAULT_MODEL,
+        "base_url": "https://api.openai.com",
+        "api_key": key,
+    })
+    llm_config.save(config)
+    llm_config.apply_to_env(config)
+    print(f"  {ok_style('API key saved privately.')} /llm will use OpenAI inside PicoClaw.")
     print()
 
 
@@ -1130,7 +1107,10 @@ def run_main_console() -> None:
     apply_to_env(load())
     install_terminal_guard()
     _print_banner()
-    _check_api_key()
+    try:
+        _check_api_key()
+    except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
+        _report_command_error("first-run setup", exc)
     current_dir = Path.cwd()
     input_mode = "llm"
     while True:

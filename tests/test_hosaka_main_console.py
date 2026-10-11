@@ -5,6 +5,95 @@ from hosaka import main_console
 from hosaka.tui import style as tui_style
 
 
+def test_first_run_saves_hidden_key_without_mutating_picoclaw(tmp_path, monkeypatch, capsys):
+    import json
+    from hosaka.llm import llm_config, openai_adapter, picoclaw_adapter
+    from hosaka.secrets import store
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"version": 3, "model_list": []}))
+    original = config_path.read_bytes()
+    monkeypatch.setattr(picoclaw_adapter, "is_available", lambda: True)
+    monkeypatch.setattr(openai_adapter, "_picoclaw_config_path", lambda: config_path)
+    monkeypatch.setattr(openai_adapter, "resolve_api_key", lambda: (None, None))
+    prompts = []
+    monkeypatch.setattr("getpass.getpass", lambda prompt: prompts.append(prompt) or "test-secret")
+    saved_secrets = []
+    monkeypatch.setattr(store, "set", lambda *args, **kwargs: saved_secrets.append((args, kwargs)))
+    monkeypatch.setattr(llm_config, "load", lambda: {"profiles": {"ollama": {"model": "local"}}})
+    saved_configs = []
+    monkeypatch.setattr(llm_config, "save", saved_configs.append)
+    applied = []
+    monkeypatch.setattr(llm_config, "apply_to_env", applied.append)
+    main_console._check_api_key()
+    assert prompts and "hidden" in prompts[0]
+    assert saved_secrets == [(("OPENAI_API_KEY", "test-secret"), {"mirror": False})]
+    assert saved_configs[0]["provider"] == "openai"
+    assert saved_configs[0]["profiles"]["ollama"]["model"] == "local"
+    assert applied == saved_configs
+    assert config_path.read_bytes() == original
+    assert "test-secret" not in capsys.readouterr().out
+
+
+def test_first_run_initializes_missing_picoclaw_config(tmp_path, monkeypatch):
+    import subprocess
+    from hosaka.llm import openai_adapter, picoclaw_adapter
+
+    config_path = tmp_path / "custom/config.json"
+    monkeypatch.setattr(picoclaw_adapter, "is_available", lambda: True)
+    monkeypatch.setattr(openai_adapter, "_picoclaw_config_path", lambda: config_path)
+    monkeypatch.setattr(openai_adapter, "resolve_api_key", lambda: ("existing", "env"))
+    calls = []
+
+    def onboard(command, **kwargs):
+        calls.append((command, kwargs))
+        config_path.parent.mkdir()
+        config_path.write_text("{}")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(main_console.subprocess, "run", onboard)
+    monkeypatch.setattr("getpass.getpass", lambda *a: pytest.fail("Existing credential was ignored"))
+    main_console._check_api_key()
+    assert calls[0][0][-1] == "onboard"
+    assert calls[0][1]["env"]["PICOCLAW_HOME"] == str(config_path.parent)
+
+
+def test_first_run_reports_missing_binary_without_prompt(monkeypatch, capsys):
+    from hosaka.llm import picoclaw_adapter
+
+    monkeypatch.setattr(picoclaw_adapter, "is_available", lambda: False)
+    monkeypatch.setattr("getpass.getpass", lambda *a: pytest.fail("Cannot use an uninstalled agent"))
+    main_console._check_api_key()
+    assert "install-picoclaw.sh --onboard" in capsys.readouterr().out
+
+
+def test_first_run_reports_failed_onboarding(tmp_path, monkeypatch, capsys):
+    import subprocess
+    from hosaka.llm import openai_adapter, picoclaw_adapter
+
+    monkeypatch.setattr(picoclaw_adapter, "is_available", lambda: True)
+    monkeypatch.setattr(openai_adapter, "_picoclaw_config_path", lambda: tmp_path / "config.json")
+    monkeypatch.setattr(main_console.subprocess, "run",
+                        lambda command, **kwargs: subprocess.CompletedProcess(command, 1, "", "cannot write config"))
+    main_console._check_api_key()
+    assert "PicoClaw setup failed" in capsys.readouterr().out
+
+
+def test_first_run_skip_does_not_write_credentials(tmp_path, monkeypatch, capsys):
+    from hosaka.llm import openai_adapter, picoclaw_adapter
+    from hosaka.secrets import store
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}")
+    monkeypatch.setattr(picoclaw_adapter, "is_available", lambda: True)
+    monkeypatch.setattr(openai_adapter, "_picoclaw_config_path", lambda: config_path)
+    monkeypatch.setattr(openai_adapter, "resolve_api_key", lambda: (None, None))
+    monkeypatch.setattr("getpass.getpass", lambda *a: "")
+    monkeypatch.setattr(store, "set", lambda *a, **k: pytest.fail("Skipped key was saved"))
+    main_console._check_api_key()
+    assert "Skipped" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("text", ["busted", "hands up", "\U0001f600" * 80])
 def test_flash_emits_gui_event_without_dispatching_chat(monkeypatch, capsys, tmp_path, text) -> None:
     import json

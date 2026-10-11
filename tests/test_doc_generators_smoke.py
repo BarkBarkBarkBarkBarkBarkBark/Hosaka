@@ -16,6 +16,26 @@ def _run(cmd: list[str], cwd: Path = REPO) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=30)
 
 
+def test_live_openapi_dump_imports_full_backend(tmp_path):
+    out = tmp_path / "openapi.json"
+    result = _run([sys.executable, str(SCRIPTS / "dump_openapi.py"), str(out)])
+    assert result.returncode == 0, result.stderr
+    schema = json.loads(out.read_text())
+    assert schema["openapi"].startswith("3.")
+    assert "/api/v1/health" in schema["paths"]
+    assert "/api/v1/games" in schema["paths"]
+
+
+def test_docs_workflow_uses_backend_manifest():
+    import yaml
+
+    workflow = yaml.safe_load((REPO / ".github/workflows/docs.yml").read_text())
+    install = next(step for step in workflow["jobs"]["build"]["steps"]
+                   if step.get("name") == "Install backend deps (for OpenAPI dump)")
+    assert "-r requirements-hosaka.txt" in install["run"]
+    assert "|| true" not in install["run"]
+
+
 def test_gen_user_manual_writes_index_and_per_feature_pages(tmp_path):
     out = tmp_path / "manual"
     r = _run([sys.executable, str(SCRIPTS / "gen_user_manual.py"), "--out", str(out),

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Iterable
 from urllib.error import URLError
@@ -150,7 +151,17 @@ def save(cfg: dict) -> None:
     f = _config_file()
     try:
         f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", prefix=".llm-", dir=f.parent, delete=False,
+        ) as temporary:
+            path = Path(temporary.name)
+            try:
+                temporary.write(json.dumps(cfg, indent=2))
+                temporary.flush()
+                os.fsync(temporary.fileno())
+                os.replace(path, f)
+            finally:
+                path.unlink(missing_ok=True)
     except OSError as exc:
         import logging
         logging.getLogger("hosaka.llm.llm_config").warning("could not save llm config: %s", exc)

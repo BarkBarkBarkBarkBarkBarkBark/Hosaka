@@ -38,6 +38,9 @@ printf '%s\n' "$REPO_ROOT" | sudo tee /etc/hosaka/repo_root >/dev/null
 sudo rsync -a --delete "$REPO_ROOT/hosaka"               "$APP_ROOT/"
 sudo rsync -a --delete "$REPO_ROOT/docs"                 "$APP_ROOT/"
 sudo rsync -a --delete "$REPO_ROOT/scripts"              "$APP_ROOT/"
+for runtime_dir in identity manager skills context; do
+  sudo rsync -a --delete "$REPO_ROOT/$runtime_dir/" "$APP_ROOT/$runtime_dir/"
+done
 # Flatpak app manifests (consumed by hosaka.web.api_v1 _read_app_manifests).
 # Exclude macOS AppleDouble sidecars (._*) so the YAML loader stays clean.
 if [[ -d "$REPO_ROOT/hosaka-apps" ]]; then

@@ -31,6 +31,36 @@ class TestDetectBackend:
             assert detect_backend() == LLMBackend.OFFLINE
 
 
+def test_llm_config_saved_atomically_with_private_permissions(tmp_path, monkeypatch):
+    from hosaka.llm import llm_config
+
+    path = tmp_path / "llm.json"
+    path.write_text('{"old": true}')
+    path.chmod(0o644)
+    monkeypatch.setattr(llm_config, "_config_file", lambda: path)
+    llm_config.save({"api_key": "private"})
+    assert json.loads(path.read_text()) == {"api_key": "private"}
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_llm_config_failed_replace_keeps_old_settings(tmp_path, monkeypatch):
+    from hosaka.llm import llm_config
+
+    path = tmp_path / "llm.json"
+    path.write_text('{"model": "old"}')
+    monkeypatch.setattr(llm_config, "_config_file", lambda: path)
+
+    def failed_replace(*args):
+        raise OSError("disk unavailable")
+
+    monkeypatch.setattr(llm_config.os, "replace", failed_replace)
+    with pytest.raises(OSError, match="disk unavailable"):
+        llm_config.save({"model": "new"})
+    assert json.loads(path.read_text()) == {"model": "old"}
+    assert list(tmp_path.iterdir()) == [path]
+
+
 class TestSyncChat:
     def test_picoclaw_used_when_available(self) -> None:
         messages = [{"role": "user", "content": "hello"}]
@@ -935,10 +965,9 @@ def test_provider_selection_save_failure_does_not_apply_or_claim_success(monkeyp
         "provider": "openai", "api_key": "saved-key", "model": "gpt-4.1",
     })
     with (
-        patch.object(llm_cli.llm_config, "_config_file") as config_file,
+        patch.object(llm_cli.llm_config, "save", side_effect=PermissionError("not writable")),
         patch.object(llm_cli.llm_config, "apply_to_env") as apply,
     ):
-        config_file.return_value.write_text.side_effect = PermissionError("not writable")
         with pytest.raises(PermissionError):
             llm_cli.use_openai("gpt-4.1")
     apply.assert_not_called()

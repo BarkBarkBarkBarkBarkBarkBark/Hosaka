@@ -1,5 +1,9 @@
 # Hosaka app framework progress
 
+Historical desktop-framework notes: the frontend described here is now
+archived. The active interface is the terminal and menu described in the
+[README](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/README.md).
+
 Hosaka already prefers Electron on-device, but gracefully falls back to the browser/web experience elsewhere.
 
 This note is for maintainers and agents. It explains what shipped, what is only modeled, and what remains to build.
@@ -22,7 +26,7 @@ This is meant for repo-local development, so you can iterate on the UI without:
 
 ### 2. Electron-first app registry metadata
 
-[frontend/src/ui/appRegistry.ts](../frontend/src/ui/appRegistry.ts) is now the source of truth for:
+[archived appRegistry.ts](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/archive/desktop-frontend/src/ui/appRegistry.ts) records:
 
 - launcher-visible built-ins
 - planned integrations
@@ -51,7 +55,7 @@ This does **not** mean they launch yet. It means the app directory, maintainers,
 
 ### 4. App directory metadata is visible
 
-[frontend/src/panels/DesktopPanel.tsx](../frontend/src/panels/DesktopPanel.tsx) now shows app-directory metadata badges and notes for:
+[archived DesktopPanel.tsx](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/archive/desktop-frontend/src/panels/DesktopPanel.tsx) shows app-directory metadata badges and notes for:
 
 - family (`core` or `integration`)
 - status

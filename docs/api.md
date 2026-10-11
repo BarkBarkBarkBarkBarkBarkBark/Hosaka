@@ -4,7 +4,7 @@ The Hosaka backend speaks one versioned JSON API at `/api/v1/*`. Every
 response is a Pydantic model, so the OpenAPI schema below is the contract.
 
 !!! tip
-    The schema is regenerated from the source on every commit by
+    The published schema is regenerated on docs workflow runs by
     `scripts/dump_openapi.py` and rendered live below by
     [mkdocs-render-swagger-plugin].
 
@@ -21,6 +21,12 @@ it any time by overwriting `/etc/hosaka/api-token` and restarting
 `hosaka-webserver.service`.
 
 ## Live OpenAPI
+
+On a running device, `/openapi.json` is generated directly by FastAPI and
+`/docs` provides its Swagger UI. In the terminal GUI, open **Menu > API help**
+for a searchable, read-only endpoint reference and this guide. It does not
+execute requests. The published schema below is a snapshot of its build commit;
+prefer the device's live schema when checking an installed version.
 
 !!swagger openapi.json!!
 

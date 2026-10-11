@@ -18,7 +18,7 @@ html, body, #root { height: 100%; margin: 0; background: #0b0d10; color-scheme: 
   color: inherit;
   background: #151a20;
   border: 1px solid #343c46;
-  border-radius: 6px;
+  border-radius: 1px;
   cursor: pointer;
 }
 .terminal-gui button:disabled { opacity: .55; cursor: wait; }
@@ -64,16 +64,84 @@ html, body, #root { height: 100%; margin: 0; background: #0b0d10; color-scheme: 
   border-left: 1px solid #343c46;
 }
 .deck-menu-games { width: min(800px, 100%); }
-.deck-menu > header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; gap: 8px; }
-.deck-menu > nav { display: flex; gap: 6px; padding: 0 12px 8px; }
+.deck-menu > header { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; padding: 8px 12px; gap: 8px; }
+.deck-menu > nav { display: flex; flex-shrink: 0; gap: 6px; padding: 0 12px 8px; }
 .deck-menu > nav button { flex: 1; padding: 8px 4px; }
 .deck-menu > nav button[aria-pressed="true"] { border-color: #ffbf46; color: #ffbf46; }
 .deck-menu-content { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
+.deck-menu-welcome {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  container-type: size;
+  display: grid;
+  grid-template-rows: 50% 50%;
+  align-items: center;
+  justify-items: center;
+  padding: 0 16px;
+}
+.deck-menu-orb {
+  margin: 0;
+  flex-shrink: 0;
+  font: min(12px, 4.5cqw, 3cqh)/1.1 "JetBrains Mono", Menlo, Consolas, monospace;
+  white-space: pre;
+}
+.deck-orb-stage {
+  position: relative;
+  transform: translate(var(--orb-x, 0px), var(--orb-y, 0px));
+  transition: transform 100ms steps(3, end);
+}
+.deck-pixel-orbit {
+  position: absolute;
+  inset: -6%;
+  pointer-events: none;
+  animation: deck-pixel-orbit 9s steps(36, end) infinite;
+}
+.deck-pixel-orbit span {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 3px;
+  height: 3px;
+  background: #ffbf46;
+}
+.deck-pixel-orbit-1 { inset: 4% -10%; animation-duration: 13s; animation-delay: -5s; animation-direction: reverse; }
+.deck-pixel-orbit-1 span { background: #00d7d7; }
+.deck-pixel-orbit-2 { inset: -12% 10%; animation-duration: 17s; animation-delay: -9s; }
+.deck-pixel-orbit-2 span { background: #bda2ef; }
+@keyframes deck-pixel-orbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.deck-lore-preview { display: grid; justify-items: center; gap: min(8px, 1cqh); }
+.deck-lore-links { display: flex; gap: 8px; }
+.terminal-gui .deck-lore-links button, .terminal-gui .deck-api-button {
+  min-height: min(44px, 8cqh);
+  padding: min(8px, 1cqh) min(12px, 2cqw);
+  font-size: min(11px, 3.5cqw, 3cqh);
+}
+.deck-lore h2 { font-size: 16px; }
+.deck-lore-record { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.7; }
+.deck-api-help a { color: #00d7d7; }
+.deck-api-help summary { cursor: pointer; overflow-wrap: anywhere; line-height: 1.6; }
+.deck-api-help summary:focus-visible { outline: 2px solid #ffbf46; outline-offset: 2px; }
+.deck-api-operation { margin-top: 12px; border-top: 1px solid #343c46; padding-top: 12px; }
+.deck-api-operation small { display: block; color: #9ba6b0; }
+.deck-orb-core { color: #00d7d7; }
+.deck-orb-glow { color: #00afaf; }
+.deck-menu-welcome blockquote {
+  max-width: 30ch;
+  margin: 0;
+  color: #9ba6b0;
+  font-size: min(11px, 3.8cqw, 2.4cqh);
+  line-height: 1.5;
+  text-align: center;
+}
 .deck-settings form, .deck-settings label { display: flex; flex-direction: column; gap: 8px; }
 .deck-settings form { gap: 16px; }
 .deck-flash-form { display: flex; flex-direction: column; gap: 16px; }
 .deck-actions { display: flex; gap: 8px; }
-.deck-settings input:not([type="checkbox"]) { width: 100%; box-sizing: border-box; min-height: 44px; background: #0b0d10; border: 1px solid #343c46; border-radius: 6px; color: inherit; padding: 8px; }
+.deck-settings input:not([type="checkbox"]) { width: 100%; box-sizing: border-box; min-height: 44px; background: #0b0d10; border: 1px solid #343c46; border-radius: 1px; color: inherit; padding: 8px; }
 .deck-settings .deck-checkbox { flex-direction: row; align-items: center; }
 .deck-device-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .deck-device-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -116,4 +184,6 @@ html, body, #root { height: 100%; margin: 0; background: #0b0d10; color-scheme: 
 }
 @media (prefers-reduced-motion: reduce) {
   .terminal-gui .deck-flash { animation: none; }
+  .deck-pixel-orbit { animation: none; }
+  .deck-orb-stage { transform: none; transition: none; }
 }

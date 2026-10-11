@@ -967,6 +967,12 @@ cmd_deploy() {
       "$REPO_ROOT/hosaka/" "$DEPLOY_ROOT/hosaka/"
     # Also refresh the operator-facing files most useful at runtime so a
     # stale README / scripts dir doesn't lie about what's deployed.
+    local runtime_dir
+    for runtime_dir in docs identity manager skills context; do
+      if [[ -d "$REPO_ROOT/$runtime_dir" ]]; then
+        sudo rsync -a --delete "$REPO_ROOT/$runtime_dir/" "$DEPLOY_ROOT/$runtime_dir/"
+      fi
+    done
     if [[ -d "$REPO_ROOT/scripts" ]]; then
       sudo rsync -a --delete \
         --exclude='__pycache__/' \

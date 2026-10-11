@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { TuiTerminal } from "./components/TuiTerminal";
 import { useTranslation } from "./i18n";
+import { menuOrbs, nextWelcomeIndex } from "./orb";
+import { LoreMenu } from "./components/LoreMenu";
+import { ApiHelp } from "./components/ApiHelp";
 import "./styles/terminal-gui.css";
 
-type Page = "wifi" | "bluetooth" | "games" | "flash";
+type Page = "wifi" | "bluetooth" | "games" | "flash" | "lore" | "api";
+const loreKeys = ["menuLore", "menuLoreStars", "menuLoreHum", "menuLoreMargins", "menuLoreWaiting"] as const;
 type WifiNetwork = { ssid: string; active: boolean; saved: boolean; signal: number | null };
 type BluetoothDevice = { address: string; name: string };
 
@@ -222,13 +226,16 @@ function FlashMenu({ onShow }: { onShow: (text: string) => void }) {
 export function TerminalGui() {
   const { t } = useTranslation("gui");
   const [menu, setMenu] = useState(false);
-  const [page, setPage] = useState<Page>("wifi");
+  const [page, setPage] = useState<Page | null>(null);
+  const [welcome, setWelcome] = useState({ orb: 0, lore: 0 });
+  const [loreSlug, setLoreSlug] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const button = useRef<HTMLButtonElement>(null);
   const drawer = useRef<HTMLElement>(null);
 
   const close = () => {
     setMenu(false);
+    setPage(null);
     button.current?.focus();
   };
   useEffect(() => {
@@ -260,7 +267,17 @@ export function TerminalGui() {
     <main className="terminal-gui">
       <header className="deck-bar">
         <span>HOSAKA <small>{t("terminal")}</small></span>
-        <button ref={button} aria-expanded={menu} aria-controls="deck-menu" onClick={() => setMenu(!menu)}>{t("menu")}</button>
+        <button ref={button} aria-expanded={menu} aria-controls="deck-menu" onClick={() => {
+          if (menu) close();
+          else {
+            setWelcome((previous) => ({
+              orb: nextWelcomeIndex(previous.orb, menuOrbs.length),
+              lore: nextWelcomeIndex(previous.lore, loreKeys.length),
+            }));
+            setPage(null);
+            setMenu(true);
+          }
+        }}>{t("menu")}</button>
       </header>
       <TuiTerminal active={!menu} flash={flash} onFlash={setFlash} />
       {menu && (
@@ -270,15 +287,52 @@ export function TerminalGui() {
             <header><strong>{t("menu")}</strong><button onClick={close}>{t("close")}</button></header>
             <nav aria-label={t("menu")}>
               {(["wifi", "bluetooth", "games", "flash"] as const).map((item) => (
-                <button key={item} aria-pressed={page === item} onClick={() => setPage(item)}>{t(item)}</button>
+                <button key={item} aria-pressed={page === item} onClick={() => setPage(page === item ? null : item)}>{t(item)}</button>
               ))}
             </nav>
-            <div className="deck-menu-content">
+            {page === null ? (
+              <div className="deck-menu-welcome" onPointerMove={(event) => {
+                if (event.pointerType !== "mouse" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+                const rect = event.currentTarget.getBoundingClientRect();
+                const x = Math.round(((event.clientX - rect.left) / rect.width - 0.5) * 8);
+                const y = Math.round(((event.clientY - rect.top) / rect.height - 0.5) * 8);
+                event.currentTarget.style.setProperty("--orb-x", `${x}px`);
+                event.currentTarget.style.setProperty("--orb-y", `${y}px`);
+              }} onPointerLeave={(event) => {
+                event.currentTarget.style.setProperty("--orb-x", "0px");
+                event.currentTarget.style.setProperty("--orb-y", "0px");
+              }}>
+                <div className="deck-orb-stage">
+                  {[0, 1, 2].map((orbit) => (
+                    <span key={orbit} className={`deck-pixel-orbit deck-pixel-orbit-${orbit}`} aria-hidden="true">
+                      <span />
+                    </span>
+                  ))}
+                  <pre className="deck-menu-orb" role="img" aria-label={t("orb")}>
+                  {Array.from(menuOrbs[welcome.orb]).map((character, index) => (
+                    <span key={index} aria-hidden="true" className={
+                      character === "█" ? "deck-orb-core" : "deck-orb-glow"
+                    }>{character}</span>
+                  ))}
+                  </pre>
+                </div>
+                <div className="deck-lore-preview">
+                  <blockquote>{t(loreKeys[welcome.lore])}</blockquote>
+                  <div className="deck-lore-links">
+                    <button onClick={() => { setLoreSlug("field-notes-on-the-orb"); setPage("lore"); }}>{t("orbNotes")}</button>
+                    <button onClick={() => { setLoreSlug(null); setPage("lore"); }}>{t("loreArchive")}</button>
+                  </div>
+                  <button className="deck-api-button" onClick={() => setPage("api")}>{t("apiHelp")}</button>
+                </div>
+              </div>
+            ) : <div className="deck-menu-content">
               {page === "wifi" && <WifiMenu />}
               {page === "bluetooth" && <BluetoothMenu />}
               {page === "games" && <GamesMenu />}
               {page === "flash" && <FlashMenu onShow={(text) => { setMenu(false); setFlash(text); }} />}
-            </div>
+              {page === "lore" && <LoreMenu initialSlug={loreSlug} />}
+              {page === "api" && <ApiHelp />}
+            </div>}
           </aside>
         </>
       )}

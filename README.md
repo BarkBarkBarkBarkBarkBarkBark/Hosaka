@@ -77,6 +77,17 @@ The Python TUI is the canonical console. The default graphical Hosaka now
 hosts that exact `python -m hosaka tui` process in a resizable terminal, with
 one **Menu** button for **Wi-Fi**, **Bluetooth**, **Games**, and **Flash**. Opening or
 closing the menu does not restart the TUI or discard its scrollback.
+The menu opens with no section selected; forms, device requests, and status
+messages appear only after choosing a section. Select it again to collapse it.
+When no section is selected, the cyan block-art orb from `/orb` and a short fragment from the lore
+archive accompany the menu. The orb is decorative, not a voice control.
+Both change on each reopening without immediate repeats. The compact welcome
+display scales to the drawer's available space without scrolling; selected
+settings sections can still scroll.
+Square pixels orbit the artwork with a stepped retro animation, and mouse
+movement gives it a subtle bounded offset. Reduced-motion mode disables both.
+**Orb notes** opens the complete orb record; **Complete lore** opens the full
+archive in the drawer. Reading does not restart the terminal.
 
 In this GUI, `/flash` fills the window with alternating blue/red colors and
 **BUSTED** in black, white-outlined text. `/flash your text` replaces **BUSTED**
