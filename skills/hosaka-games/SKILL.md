@@ -4,34 +4,38 @@ description: >
   List and launch PlayStation games on this Hosaka field terminal.
   Use whenever anyone asks what games are available, what's on this machine,
   play Spyro, launch a game, start a ROM, or similar. Walk-up visitors count.
-  Never guess or list_dir ROM folders — they will fail. Run the play command.
+  Never guess ROM folders. Use Hosaka's native play command.
 ---
 
 # Hosaka Games
 
-This machine's public library is **PlayStation 1**. Other folders are homebrew test ROMs — do not offer them unless asked.
+Hosaka's native public library is **PlayStation 1**. List the installed catalog; never invent titles.
 
 ## Do this
 
 ```bash
-play list psx              # catalog (always this, never list_dir)
-play spyro                 # launch by name
-play --json list psx       # machine-readable
-play --json crash          # launch; may return action=ambiguous
-play stop                  # quit the running game
+hosaka play list psx       # catalog (always this, never list_dir)
+hosaka play spyro          # launch by name
+hosaka play --json list psx
+hosaka play --json crash   # may return action=ambiguous
+hosaka play stop           # quit the game launched by Hosaka
 ```
 
-Full path if `play` is missing from PATH: `/home/operator/bin/play`
+If `hosaka` is not on PATH, use `python -m hosaka.play` from the repository/runtime.
+In the Hosaka terminal, the equivalent is `/play <name>` or `/play stop`.
 
 ## Rules for strangers
 
-1. Someone asks "what games do you have?" → `play list psx`, then speak the titles. Do not mention paths.
-2. Someone asks to play a game → `play --json <name>`. If `ok`, say you launched it. If `ambiguous`, ask which title, then run `play --json` with the exact title.
+1. Someone asks "what games do you have?" → `hosaka play list psx`, then speak the titles. Do not mention paths.
+2. Someone asks to play a game → `hosaka play --json <name>`. If `ok`, say you launched it. If `ambiguous`, ask which title, then run the command with the exact title.
 3. Do **not** `list_dir` `/roms`, `~/roms`, or any guessed PlayStation path. The catalog command is the API.
-4. If `play` fails, read `~/.picoclaw/workspace/GAMES.md` and still list titles.
+4. If the command fails, report the error. Never substitute a stale catalog or claim a failed launch succeeded.
 5. Launch is fire-and-forget (background on the screen). Do not wait for the game to end.
 
-## Paths (only if play is broken)
+## Configuration
 
-- ROMs: `/home/operator/RetroPie/roms/psx`
-- Catalog: `~/.picoclaw/workspace/GAMES.md`
+- Default ROM root: `~/RetroPie/roms/psx`; override with `HOSAKA_PSX_ROMS`.
+- RetroPie core/config are discovered from `/opt/retropie/configs/psx/emulators.cfg`.
+- Other installations need `HOSAKA_PSX_CORE` and installed RetroArch.
+- ROMs and BIOS are device-owned, not bundled. Logs: `~/.local/state/hosaka/play.log`.
+- Do not stop a RetroArch game launched outside Hosaka.

@@ -46,6 +46,8 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("/voice",          "Talk to Hosaka (wake-word + TUI orb)",           "Chat & AI"),
     ("/desktop",        "Show LXQt desktop (Ctrl+D in locked mode)",     "System"),
     ("/flash [text]",   "2 Hz blue/red GUI flash (default: BUSTED)",    "System"),
+    ("/play [name]",    "List or launch PlayStation games via RetroArch", "Games"),
+    ("/play stop",      "Stop the game launched by Hosaka",              "Games"),
     # ── System ──
     ("/status",         "System overview — uptime, IP, model, services", "System"),
     ("/doctor",         "Diagnose picoclaw config and connectivity",     "System"),
@@ -1205,6 +1207,13 @@ def _dispatch_command(raw: str, current_dir: Path, input_mode: str) -> tuple[Pat
             _restart_service(target or "all")
         elif raw == "/update":
             _run_update_flow()
+        elif raw == "/play" or raw.startswith("/play "):
+            from hosaka.games import run_play
+            from hosaka.play import render
+
+            text = raw[len("/play"):].strip()
+            args = text.split() if text.startswith("list ") or text in {"list", "stop"} else ([text] if text else [])
+            render(run_play(*args, wait_s=45))
         elif raw == "/uptime":
             _show_uptime()
         elif raw == "/logs":

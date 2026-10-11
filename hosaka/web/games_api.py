@@ -1,4 +1,4 @@
-"""PlayStation-only menu backed by the deck's existing play command."""
+"""PlayStation-only menu backed by Hosaka's native RetroArch launcher."""
 from __future__ import annotations
 
 import logging
@@ -54,7 +54,7 @@ def launch(body: LaunchRequest) -> ActionResult:
         raise HTTPException(422, "This title conflicts with a play command")
     payload = run_play(body.title, wait_s=20)
     if payload.get("action") == "ambiguous":
-        raise HTTPException(409, "The play launcher found multiple matches; use play in the terminal to choose the exact game")
+        raise HTTPException(409, "The launcher found multiple matches; use /play with the exact title")
     if not payload["ok"] or payload.get("action") != "launch":
         raise HTTPException(502, payload.get("error") or payload.get("message") or "Game launch was not confirmed")
     return ActionResult(ok=True, message=f"Launching {body.title} through RetroArch")

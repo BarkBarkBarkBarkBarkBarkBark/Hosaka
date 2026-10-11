@@ -1745,11 +1745,13 @@ Daily
   hosaka tui          terminal UI (boot default)
   hosaka voice        voice daemon
   hosaka gui          Electron app
-  hosaka display tui  boot into the TUI (default; no Chromium)
-  hosaka display gui  boot into the terminal + Wi-Fi / Bluetooth / Games menu
+  hosaka display tui  opt into the plain TUI (no Chromium)
+  hosaka display gui  boot into the terminal + Wi-Fi / Bluetooth / Games / Flash menu (default)
   hosaka mode desktop desktop (Ctrl+D)
   hosaka status       RAM / services
-  play spyro          launch a game by name
+  hosaka play spyro   launch a PS1 game with Hosaka's native RetroArch launcher
+  hosaka play list psx  list the installed PlayStation library
+  hosaka play stop    stop the game launched by Hosaka
   controller          list / connect / test a pad
   emulationstation    games browser
 
@@ -1852,6 +1854,7 @@ main() {
   fi
   shift || true
   case "$cmd" in
+    play) (cd "$REPO_ROOT" && exec "$(_hosaka_python)" -m hosaka.play "$@") ;;
     gui)       cmd_gui "$@" ;;
     display)   cmd_display "$@" ;;
     mode)

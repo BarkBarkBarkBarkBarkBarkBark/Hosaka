@@ -111,10 +111,10 @@ macOS network/Bluetooth changes currently use system settings. Unsupported
 hosts show an explicit error rather than simulated devices.
 
 **Games** lists only the installed PlayStation 1 catalog using
-`play --json list psx`, launches an exact title with `play --json "<title>"`,
+Hosaka's native launcher, launches an exact title through RetroArch,
 and provides **Stop game**. It does not offer Pong/Snake or guess ROM folders.
-The existing `play` launcher must be installed (`~/bin/play`, on the command
-path, or configured with `HOSAKA_PLAY`). Missing launchers, cores, and failed
+The device-specific `~/bin/play` and `rp-run` scripts are no longer required.
+Missing libraries, cores, and failed
 launches are shown as errors, never as a fake successful launch. RetroArch
 can take focus over Hosaka; closing it reveals the terminal window again.
 Super+H also brings Hosaka back.
@@ -124,6 +124,48 @@ It uses the same overlay as `/flash` without restarting or typing into the TUI.
 
 The Linux installer installs RetroArch by default (`INSTALL_RETROARCH=0` to
 skip). It does not bundle games, emulator cores, or BIOS files.
+
+### Native PlayStation launcher
+
+In the Hosaka terminal:
+
+```text
+/play                         list the installed PS1 library
+/play spyro                   fuzzy-match and launch a title
+/play Crash Bandicoot (USA)    use an exact title
+/play stop                    stop the emulator launched by Hosaka
+```
+
+In a normal shell, use `hosaka play` with the same arguments, or
+`python -m hosaka.play`. Add `--json` for a machine-readable result. Ambiguous
+names return matching titles rather than guessing or waiting for keyboard
+input. The terminal, Games menu, and agent all use this implementation.
+
+On RetroPie, Hosaka automatically uses `~/RetroPie/roms/psx` and the PS1
+command in `/opt/retropie/configs/psx/emulators.cfg`, including the existing
+core and RetroArch configuration. Commands are parsed as arguments, not
+executed through a shell. On other Linux/macOS installations, configure:
+
+```bash
+export HOSAKA_PSX_ROMS="$HOME/Games/psx"
+export HOSAKA_PSX_CORE="/path/to/pcsx_rearmed_libretro.so"
+export HOSAKA_RETROARCH="/path/to/retroarch"          # optional if on PATH
+export HOSAKA_RETROARCH_CONFIG="/path/to/config.cfg" # optional
+hosaka play list psx
+```
+
+Use the appropriate installed libretro core for your OS/architecture. A
+graphical session, compatible RetroArch/core, and any BIOS required by that
+core must already exist. ROMs/BIOS are local files; Hosaka does not download
+or bundle them. The native launcher currently supports PS1 only.
+
+Hosaka records its emulator PID and process identity, stops only that
+verified process, and refuses to interrupt a RetroArch game launched outside
+Hosaka. Logs and launch state live under `~/.local/state/hosaka/`.
+`HOSAKA_PLAY=/path/to/custom-launcher` remains an explicit compatibility
+override for a launcher supporting the existing `--json` protocol.
+The old standalone `play` command is left untouched; use `hosaka play` or
+`/play` for the ecosystem-owned launcher.
 
 ## Electron host
 

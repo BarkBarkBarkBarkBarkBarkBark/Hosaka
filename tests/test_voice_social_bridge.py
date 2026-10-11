@@ -413,7 +413,7 @@ async def test_handle_ga_output_audio_delta() -> None:
     assert got == [pcm]
 
 
-def test_play_argv_is_path_command_not_python(monkeypatch) -> None:
+def test_play_argv_uses_native_hosaka_module(monkeypatch) -> None:
     from hosaka.voice import tools as voice_tools
 
     monkeypatch.delenv("HOSAKA_PLAY", raising=False)
@@ -421,7 +421,8 @@ def test_play_argv_is_path_command_not_python(monkeypatch) -> None:
         voice_tools.shutil, "which", lambda name: "/home/operator/bin/play" if name == "play" else None
     )
     argv = voice_tools._play_argv("Crash Bandicoot")
-    assert argv == ["/home/operator/bin/play", "--json", "Crash Bandicoot"]
+    import sys
+    assert argv == [sys.executable, "-m", "hosaka.play", "--json", "Crash Bandicoot"]
     assert argv[0] != "python"
 
 

@@ -101,6 +101,9 @@ def _dispatch_argv() -> int | None:
     if len(sys.argv) < 2:
         return None
     cmd = sys.argv[1]
+    if cmd == "play":
+        from hosaka.play import main as play_main
+        return play_main(sys.argv[2:])
     if cmd in {"tui", "console"}:
         from hosaka.boot.launcher import run_console_supervised
         run_console_supervised()

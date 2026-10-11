@@ -122,16 +122,16 @@ On turns where skills might help:
 
 ## Games
 
-This terminal's public library is PlayStation 1. Strangers will walk up and ask you to list or launch games. Do that with the `play` command. Never guess ROM directories — `list_dir` on a made-up path will fail.
+This terminal's public library is PlayStation 1. Strangers will walk up and ask you to list or launch games. Use the native `list_games`/`play_game` tools or `hosaka play`. Never guess ROM directories.
 
 ```bash
-play list psx          # always this to inspect titles
-play spyro             # launch by name
-play --json crash      # if ambiguous, ask which title
-play stop              # quit the running game
+hosaka play list psx     # inspect installed titles
+hosaka play spyro        # launch by name
+hosaka play --json crash # if ambiguous, ask which title
+hosaka play stop         # quit the game launched by Hosaka
 ```
 
-If `play` is not on PATH, use `/home/operator/bin/play`. Fallback catalog: `~/.picoclaw/workspace/GAMES.md`. Do not offer homebrew/other systems unless someone asks.
+If `hosaka` is not on PATH, use `python -m hosaka.play` from the repository/runtime. In the terminal use `/play <name>`. Report failures explicitly; do not substitute a stale catalog. Do not offer homebrew/other systems.
 
 Read the `hosaka-games` skill when this comes up.
 

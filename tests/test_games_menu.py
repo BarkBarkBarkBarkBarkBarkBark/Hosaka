@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -96,14 +97,14 @@ def test_real_play_json_command(tmp_path, monkeypatch):
     assert games.run_play("list", "psx") == {"ok": True, "games": []}
     assert games.play_env()["PLAY_FOREGROUND"] == "0"
 
-def test_operator_catalog_takes_priority_over_system_play(tmp_path, monkeypatch):
+def test_native_catalog_does_not_depend_on_device_play(tmp_path, monkeypatch):
     local = tmp_path / "bin/play"
     local.parent.mkdir()
     local.write_text("#!/bin/sh\n")
     monkeypatch.delenv("HOSAKA_PLAY", raising=False)
     monkeypatch.setattr(games, "play_home", lambda: tmp_path)
     monkeypatch.setattr(games.shutil, "which", lambda _: "/usr/bin/play")
-    assert games.play_argv("list", "psx")[0] == str(local)
+    assert games.play_argv("list", "psx") == [sys.executable, "-m", "hosaka.play", "--json", "list", "psx"]
 
 
 def test_nonzero_ambiguous_response_is_preserved(tmp_path, monkeypatch):

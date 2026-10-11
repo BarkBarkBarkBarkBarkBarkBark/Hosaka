@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -20,9 +21,10 @@ def play_home() -> Path:
 
 
 def play_argv(*args: str) -> list[str]:
-    local = play_home() / "bin" / "play"
-    executable = os.getenv("HOSAKA_PLAY", "").strip() or (str(local) if local.is_file() else shutil.which("play")) or str(local)
-    return [executable, "--json", *args]
+    override = os.getenv("HOSAKA_PLAY", "").strip()
+    if override:
+        return [override, "--json", *args]
+    return [sys.executable, "-m", "hosaka.play", "--json", *args]
 
 
 def play_env() -> dict[str, str]:
@@ -39,7 +41,7 @@ def play_env() -> dict[str, str]:
 def run_play(*args: str, wait_s: float = 15.0) -> dict[str, Any]:
     argv = play_argv(*args)
     if not Path(argv[0]).is_file() and shutil.which(argv[0]) is None:
-        error = f"play not found ({argv[0]}); install the deck's PlayStation catalog launcher"
+        error = f"Game runtime not found ({argv[0]})"
         log.error(error)
         return {"ok": False, "error": error}
     # The system web service may run as root; games belong to the graphical operator.

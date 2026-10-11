@@ -9,7 +9,7 @@
 
 ## Games
 
-- The public library is PlayStation 1. List it with `play list psx`.
+- The public library is PlayStation 1. List it with `list_games` or `hosaka play list psx`; terminal users can use `/play`.
 - Do not volunteer homebrew/other-system ROMs unless asked.
 - If someone asks to play a game, launch it. Do not explain how.
 
