@@ -12,6 +12,15 @@ INSTALL_TAILSCALE="${INSTALL_TAILSCALE:-1}"    # default ON for appliance
 INSTALL_CADDY="${INSTALL_CADDY:-0}"
 INSTALL_DOCKER="${INSTALL_DOCKER:-0}"
 HOSAKA_BOOT_MODE="${HOSAKA_BOOT_MODE:-kiosk}"  # kiosk | console | headless
+display_preference="${XDG_CONFIG_HOME:-$HOME/.config}/hosaka/display-mode"
+if [[ -z "${HOSAKA_DISPLAY_MODE:-}" && -f "$display_preference" ]]; then
+  HOSAKA_DISPLAY_MODE="$(cat "$display_preference")"
+fi
+HOSAKA_DISPLAY_MODE="${HOSAKA_DISPLAY_MODE:-gui}"  # tui | gui
+if [[ ! "$HOSAKA_DISPLAY_MODE" =~ ^(tui|gui)$ ]]; then
+  echo "HOSAKA_DISPLAY_MODE must be tui or gui" >&2
+  exit 1
+fi
 
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
 info() { echo -e "${CYAN}[install]${NC} $*"; }
@@ -94,7 +103,7 @@ else
 fi
 
 # ── Chromium + kiosk utilities ────────────────────────────────────────────────
-if [[ "$HOSAKA_BOOT_MODE" == "kiosk" ]]; then
+if [[ "$HOSAKA_BOOT_MODE" == "kiosk" && "$HOSAKA_DISPLAY_MODE" == "gui" ]]; then
   info "Installing Chromium and kiosk utilities..."
   sudo apt-get update -qq
   chromium_ok=0
@@ -127,6 +136,15 @@ info "Installing network tools..."
 sudo apt-get install -y arp-scan nmap 2>/dev/null || true
 ok "Network tools ready."
 
+if [[ "${INSTALL_RETROARCH:-1}" == "1" ]]; then
+  info "Installing RetroArch (no games, cores, or BIOS files are bundled)..."
+  sudo apt-get install -y retroarch
+  ok "RetroArch installed."
+fi
+if [[ "$HOSAKA_DISPLAY_MODE" == "gui" ]]; then
+  sudo apt-get install -y bluez
+fi
+
 # ── Python venv ───────────────────────────────────────────────────────────────
 info "Setting up Python virtualenv..."
 sudo "$PYTHON_BIN" -m venv "$APP_ROOT/.venv"
@@ -158,9 +176,13 @@ else
   echo "Clone hosaka_field-terminal/frontend alongside this repo, or build manually." >&2
 fi
 
-# ── Electron kiosk deps (only installed when kiosk mode is the target) ───────
+# Stage the optional GUI host even for TUI installs, without its Chromium runtime.
 KIOSK_SRC="$REPO_ROOT/kiosk"
-if [[ "$HOSAKA_BOOT_MODE" == "kiosk" && -d "$KIOSK_SRC" ]]; then
+if [[ -d "$KIOSK_SRC" ]]; then
+  sudo mkdir -p "$APP_ROOT/kiosk"
+  sudo rsync -a --exclude=node_modules "$KIOSK_SRC/" "$APP_ROOT/kiosk/"
+fi
+if [[ "$HOSAKA_BOOT_MODE" == "kiosk" && "$HOSAKA_DISPLAY_MODE" == "gui" && -d "$KIOSK_SRC" ]]; then
   info "Installing Electron kiosk dependencies..."
   cd "$KIOSK_SRC"
   # --omit=dev skips nothing meaningful here (electron itself is a devDep
@@ -196,6 +218,11 @@ done
 # Patch picoclaw service user to match whoever is running the install
 CURRENT_USER="$(id -un)"
 CURRENT_HOME="$(getent passwd "$CURRENT_USER" | cut -d: -f6)"
+if [[ -n "$CURRENT_HOME" ]]; then
+  sudo install -d -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" "$CURRENT_HOME/.config/hosaka"
+  printf '%s\n' "$HOSAKA_DISPLAY_MODE" | sudo tee "$CURRENT_HOME/.config/hosaka/display-mode" >/dev/null
+  sudo chown "$CURRENT_USER:$CURRENT_USER" "$CURRENT_HOME/.config/hosaka/display-mode"
+fi
 sudo sed -i "s/^User=operator/User=${CURRENT_USER}/" "/etc/systemd/system/$PICOCLAW_SERVICE_NAME" 2>/dev/null || true
 
 # Openbox owns the actual X11 kiosk session on the appliance. Keep the
@@ -216,6 +243,9 @@ if [[ -n "$CURRENT_HOME" ]]; then
       "$REPO_ROOT/dotfiles/autostart/hosaka-kiosk.desktop" \
       "$CURRENT_HOME/.config/autostart/hosaka-kiosk.desktop"
   fi
+  sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    "$REPO_ROOT/dotfiles/autostart/hosaka-tui.desktop" \
+    "$CURRENT_HOME/.config/autostart/hosaka-tui.desktop"
   if [[ -f "$REPO_ROOT/dotfiles/wallpaper/hosaka-desktop.png" ]]; then
     sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
       "$REPO_ROOT/dotfiles/wallpaper/hosaka-desktop.png" \
@@ -394,7 +424,7 @@ case "$HOSAKA_BOOT_MODE" in
     # and makes the wall flash. Keep the unit installed for manual debugging,
     # but disabled by default.
     sudo systemctl disable "$SERVICE_KIOSK" 2>/dev/null || true
-    ok "Kiosk mode enabled: webserver on boot; openbox supervises Electron on tty1."
+    ok "Appliance mode enabled: webserver on boot; graphical session starts $HOSAKA_DISPLAY_MODE."
     ;;
   headless)
     sudo systemctl enable "$SERVICE_WEBSERVER"
@@ -412,6 +442,7 @@ esac
 echo ""
 ok "Hosaka installation complete."
 echo "  Boot mode:  $HOSAKA_BOOT_MODE"
+echo "  Display:    $HOSAKA_DISPLAY_MODE (change with hosaka display tui|gui)"
 echo "  Web UI:     http://$(hostname -I | awk '{print $1}'):8421"
 echo "  Setup:      http://$(hostname -I | awk '{print $1}'):8421/setup"
 echo "  Smoke test: $APP_ROOT/scripts/smoke_test.sh"

@@ -27,6 +27,12 @@ SUDO="sudo"
 TARGET_USER="${SUDO_USER:-operator}"
 TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
 [[ -z "$TARGET_HOME" ]] && TARGET_HOME="/home/$TARGET_USER"
+DISPLAY_PREFERENCE="$TARGET_HOME/.config/hosaka/display-mode"
+if [[ -z "${HOSAKA_DISPLAY_MODE:-}" && -f "$DISPLAY_PREFERENCE" ]]; then
+  HOSAKA_DISPLAY_MODE="$(cat "$DISPLAY_PREFERENCE")"
+fi
+HOSAKA_DISPLAY_MODE="${HOSAKA_DISPLAY_MODE:-gui}"
+[[ "$HOSAKA_DISPLAY_MODE" =~ ^(tui|gui)$ ]] || { echo "HOSAKA_DISPLAY_MODE must be tui or gui" >&2; exit 1; }
 
 say() { printf '[hosaka-lean] %s\n' "$*"; }
 
@@ -98,7 +104,9 @@ if [[ -d "$KIOSK_SRC" ]]; then
     --exclude node_modules --exclude out --exclude dist \
     "$KIOSK_SRC/" "$KIOSK_DEST/"
   $SUDO chown -R "$TARGET_USER:$TARGET_USER" "$KIOSK_DEST"
-  if command -v npm >/dev/null 2>&1; then
+  if [[ "$HOSAKA_DISPLAY_MODE" == "tui" ]]; then
+    say "TUI boot selected — not installing Electron"
+  elif command -v npm >/dev/null 2>&1; then
     say "running npm install in $KIOSK_DEST (pulls native electron for $(uname -m))"
     # Run as the operator user so the resulting node_modules is owned by
     # them — otherwise `hosaka deploy` can't blow it away later.
@@ -152,6 +160,17 @@ if [[ -f /var/lib/hosaka/mode ]]; then
 fi
 
 # ── 7. operator-side config files ─────────────────────────────────────────────
+$SUDO install -d -m 0755 -o "$TARGET_USER" -g "$TARGET_USER" "$TARGET_HOME/.config/hosaka"
+printf '%s\n' "$HOSAKA_DISPLAY_MODE" | $SUDO tee "$DISPLAY_PREFERENCE" >/dev/null
+$SUDO chown "$TARGET_USER:$TARGET_USER" "$DISPLAY_PREFERENCE"
+$SUDO install -D -m 0755 -o "$TARGET_USER" -g "$TARGET_USER" \
+  "$REPO_ROOT/scripts/hosaka-lxqt-kiosk.sh" /usr/local/bin/hosaka-lxqt-kiosk
+for name in hosaka-ui-session hosaka-ui-switch hosaka-tui-term; do
+  $SUDO install -D -m 0755 -o "$TARGET_USER" -g "$TARGET_USER" \
+    "$REPO_ROOT/scripts/$name" "$TARGET_HOME/bin/$name"
+done
+$SUDO install -D -m 0644 -o "$TARGET_USER" -g "$TARGET_USER" \
+  "$REPO_ROOT/dotfiles/autostart/hosaka-tui.desktop" "$TARGET_HOME/.config/autostart/hosaka-tui.desktop"
 # We only overwrite if the in-repo source has the device-mode guard (so we
 # don't clobber operator hand-edits with an outdated copy).
 SRC_AUTOSTART="$REPO_ROOT/dotfiles/openbox/autostart"
@@ -204,7 +223,10 @@ $SUDO systemctl enable hosaka-webserver.service picoclaw-gateway.service 2>/dev/
 # Enable the kiosk only if we actually have a working electron on disk —
 # otherwise systemd will restart-loop forever. The openbox autostart still
 # provides a Chromium fallback in that case.
-if [[ -x "$KIOSK_DEST/node_modules/electron/dist/electron" ]]; then
+if [[ "$HOSAKA_DISPLAY_MODE" == "tui" ]]; then
+  $SUDO systemctl disable hosaka-kiosk.service
+  say "TUI boot selected — kiosk service disabled"
+elif [[ -x "$KIOSK_DEST/node_modules/electron/dist/electron" ]]; then
   $SUDO systemctl enable hosaka-kiosk.service 2>/dev/null || true
   say "hosaka-kiosk.service enabled"
 else

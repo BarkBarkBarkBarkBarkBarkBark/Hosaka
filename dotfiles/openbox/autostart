@@ -7,8 +7,9 @@
 # says so), we do NOT launch Chromium. The hosaka-device-dashboard service
 # owns tty1 in this mode, showing IP/ports/RAM live so the operator has
 # something to look at while they SSH in. `hosaka mode console` flips back.
-HOSAKA_MODE_FILE="/var/lib/hosaka/mode"
+HOSAKA_MODE_FILE="${HOSAKA_STATE_DIR:-/var/lib/hosaka}/mode"
 HOSAKA_BOOT_MARK="/boot/firmware/hosaka-build-mode"
+KIOSK_LOG="${HOSAKA_KIOSK_LOG:-/tmp/hosaka-kiosk-electron.log}"
 read_mode() {
     local m=""
     [ -f "$HOSAKA_MODE_FILE" ] && m="$(cat "$HOSAKA_MODE_FILE" 2>/dev/null)"
@@ -28,6 +29,21 @@ if [ "$(read_mode)" = "device" ]; then
     fi
     exit 0
 fi
+
+display_mode="${HOSAKA_DISPLAY_MODE:-}"
+if [ -z "$display_mode" ]; then
+    preference="${XDG_CONFIG_HOME:-$HOME/.config}/hosaka/display-mode"
+    if [ -f "$preference" ]; then
+        display_mode="$(cat "$preference")"
+    else
+        display_mode="gui"
+    fi
+fi
+case "$display_mode" in
+    tui) exec "$HOME/bin/hosaka-tui-term" ;;
+    gui) ;;
+    *) echo "[hosaka] invalid display mode: $display_mode" >&2; exit 1 ;;
+esac
 
 # Teach the operator's user-systemd + dbus activation environment about
 # the real X11 seat. Flatpak apps ask xdg-desktop-portal to start helpers
@@ -74,9 +90,10 @@ done
 #
 # Fall back to Chromium if electron isn't installed or is half-installed
 # (fresh clone, interrupted npm install, macOS-checked-in node_modules…).
-ELECTRON_LAUNCHER="/usr/local/bin/hosaka-kiosk-electron"
-ELECTRON_BIN=""
+ELECTRON_LAUNCHER="${HOSAKA_KIOSK_LAUNCHER:-/usr/local/bin/hosaka-kiosk-electron}"
+ELECTRON_BIN="${HOSAKA_KIOSK_ELECTRON_BIN:-}"
 for d in /opt/hosaka-field-terminal/kiosk /home/operator/Hosaka/kiosk; do
+    [ -n "$ELECTRON_BIN" ] && break
     if [ -x "$d/node_modules/electron/dist/electron" ]; then
         ELECTRON_BIN="$d/node_modules/electron/dist/electron"
         break
@@ -99,7 +116,7 @@ if [ -x "$ELECTRON_LAUNCHER" ] && [ -n "$ELECTRON_BIN" ]; then
     if command -v systemctl >/dev/null 2>&1 \
        && systemctl is-active --quiet hosaka-kiosk.service; then
         echo "[autostart] hosaka-kiosk.service is active — yielding to systemd, not launching a second electron" \
-            >>/tmp/hosaka-kiosk-electron.log
+            >>"$KIOSK_LOG"
         # Background paint stays; just sleep forever so openbox doesn't exit.
         # `tail -f /dev/null` is the cheapest portable "wait forever".
         tail -f /dev/null &
@@ -109,7 +126,7 @@ if [ -x "$ELECTRON_LAUNCHER" ] && [ -n "$ELECTRON_BIN" ]; then
 
     echo 800 > /proc/self/oom_score_adj 2>/dev/null || true
     while true; do
-        "$ELECTRON_LAUNCHER" >>/tmp/hosaka-kiosk-electron.log 2>&1 || true
+        "$ELECTRON_LAUNCHER" >>"$KIOSK_LOG" 2>&1 || true
         sleep 3
         if [ "$(read_mode)" = "device" ]; then
             exit 0
@@ -119,7 +136,7 @@ if [ -x "$ELECTRON_LAUNCHER" ] && [ -n "$ELECTRON_BIN" ]; then
         if command -v systemctl >/dev/null 2>&1 \
            && systemctl is-active --quiet hosaka-kiosk.service; then
             echo "[autostart] hosaka-kiosk.service came up mid-loop — yielding" \
-                >>/tmp/hosaka-kiosk-electron.log
+                >>"$KIOSK_LOG"
             tail -f /dev/null &
             wait
             exit 0
@@ -130,7 +147,7 @@ if [ -x "$ELECTRON_LAUNCHER" ] && [ -n "$ELECTRON_BIN" ]; then
 fi
 [ -x "$ELECTRON_LAUNCHER" ] && \
     echo "[autostart] electron not installed (no dist/electron), using chromium" \
-        >>/tmp/hosaka-kiosk-electron.log
+        >>"$KIOSK_LOG"
 
 # Pick whichever Chromium binary is installed on this Debian/RPi build
 CHROMIUM=""

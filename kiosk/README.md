@@ -1,30 +1,32 @@
 # hosaka-kiosk
 
-The canonical entrypoint to the Hosaka field terminal.
+The default graphical host for the Hosaka field terminal.
 
-An Electron host that wraps the SPA in a single fullscreen Chromium window
-and enables Electron's `<webview>` tag so the **Web** panel can render
-*any* URL — github, youtube, reddit, cyberspace.online — inline, with zero
-`X-Frame-Options` / CSP `frame-ancestors` grief.
+On localhost the GUI exposes the canonical Python TUI via `/ws/tui`, with a
+small Wi-Fi / Bluetooth / PlayStation Games / Flash menu. The TUI stays mounted
+while the menu is open. The old desktop is retired and archived, not available
+at `/?desktop=1`. The backend must be running; use `hosaka dev` to start backend, Vite,
+and Electron together (the bare `npm run dev` here starts only Vite/Electron).
 
-Everything stays inside the one kiosk window. `window.open()` calls and
-`<webview>` pop-ups are routed to the system browser (if present), so a
-stray link never displaces the kiosk session.
+Electron wraps the terminal GUI in a single fullscreen Chromium window.
+It has no webviews, preload bridges, app-store IPC, or automatic browser
+microphone/camera grants. Pop-ups are denied. The window is not always-on-top
+so RetroArch can take focus; closing a game reveals Hosaka. Super+H or
+`hosaka mode console` also brings the existing terminal window back.
 
 ```
 kiosk/
 ├── package.json                ← electron dep + run scripts
-├── main.js                     ← main process: kiosk window, webview policy
-├── preload.js                  ← injects window.hosakaBrowserAdapter
+├── main.js                     ← terminal window, singleton, desktop signals
+├── tests/main.test.cjs         ← native host regression tests
 ├── scripts/dev.sh              ← one-command dev (vite + electron)
 └── README.md                   ← this file
 ```
 
-The SPA's `browserAdapter.ts` feature-detects `window.hosakaBrowserAdapter`.
-With the preload in play it reports `mode: "native-webview"` and `WebPanel`
-renders `<webview>` instead of a plain iframe. No code in the SPA branches
-on runtime — the exact same bundle loads in Electron, in a plain browser,
-and on Vercel.
+The retired host and preload are preserved in
+[`archive/desktop-frontend/kiosk/`](../archive/desktop-frontend/kiosk/).
+Run `npm test` here to check window/singleton/signal behavior without starting
+Electron.
 
 ## Local dev — one command
 
@@ -65,14 +67,14 @@ in the terminal tears both down.
 | ---------------------- | ------------------------------------------ | ------------- |
 | `npm run dev`          | `http://localhost:5173` (vite dev server)  | windowed      |
 | `npm run start:server` | `http://127.0.0.1:8421/` (FastAPI)         | fullscreen    |
-| `npm run start`        | built SPA at `../hosaka/web/ui/index.html` | fullscreen    |
+| `npm run start`        | `http://127.0.0.1:8421/` (FastAPI)         | fullscreen    |
 | `npm run start:windowed` | same as `start` but non-fullscreen       | windowed      |
 
 Env overrides (all optional):
 
 | Variable                   | Default                                           | Purpose                                 |
 | -------------------------- | ------------------------------------------------- | --------------------------------------- |
-| `HOSAKA_KIOSK_URL`         | built SPA → else `http://127.0.0.1:8421/`         | the URL Electron loads                  |
+| `HOSAKA_KIOSK_URL`         | `http://127.0.0.1:8421/`                         | the URL Electron loads                  |
 | `HOSAKA_KIOSK_FULLSCREEN`  | unset (fullscreen)                                | `0` → windowed dev mode                 |
 | `HOSAKA_KIOSK_DEVTOOLS`    | unset                                             | `1` → open devtools on launch           |
 | `HOSAKA_KIOSK_WIDTH`       | `1024`                                            | windowed width                          |
@@ -80,23 +82,29 @@ Env overrides (all optional):
 
 ## Edge-device boot
 
-The Pi boots into kiosk mode by default (via `./scripts/setup_hosaka.sh`
-or `HOSAKA_BOOT_MODE=kiosk ./scripts/install_hosaka.sh`). That installer:
+New cyberdecks default to the terminal GUI. To opt into the plain TUI instead,
+use `HOSAKA_DISPLAY_MODE=tui ./scripts/install_hosaka.sh`;
+`hosaka display tui|gui` persists the choice for the next graphical login.
+The appliance installer:
 
 1. Installs Node 20, Python venv, FastAPI deps.
 2. Builds the SPA (`frontend/ → hosaka/web/ui/`).
-3. Runs `npm install` inside `kiosk/` so the Electron binary is on disk.
+3. Installs Electron only when GUI display mode is selected.
 4. Drops `scripts/kiosk-electron.sh` at `/usr/local/bin/hosaka-kiosk-electron`.
-5. Installs the systemd units (`hosaka-webserver.service`,
-   `hosaka-kiosk.service`) and enables them on `graphical.target`.
+5. Enables the webserver; the LXQt/Openbox session launcher chooses TUI or GUI.
+   The kiosk systemd unit remains disabled to avoid duplicate GUI supervisors.
+
+`hosaka update` pulls/builds/deploys in an independent, memory-limited systemd
+job and refreshes installed launchers/autostart. The first deployment migrates
+old boot preferences to GUI; later explicit display choices are preserved.
+See the [Pi update bootstrap](../README.md#one-command-raspberry-pi-updates)
+for installations that still have the old CLI.
 
 At boot:
 
 ```
-graphical.target
-   ├── hosaka-webserver.service   uvicorn @ 127.0.0.1:8421  (FastAPI + SPA + /api)
-   └── hosaka-kiosk.service       hosaka-kiosk-electron     (Electron fullscreen
-                                                             kiosk pointed at :8421)
+hosaka-webserver.service   uvicorn @ 127.0.0.1:8421
+graphical login            TUI (default) or Electron terminal + menu (opt-in)
 ```
 
 `hosaka-kiosk-electron` waits on `/api/health`, biases the process HIGH

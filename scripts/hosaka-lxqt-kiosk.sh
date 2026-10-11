@@ -12,9 +12,9 @@
 # lands you straight back in Hosaka instead of a bare desktop.
 set -u
 
-HOSAKA_MODE_FILE="/var/lib/hosaka/mode"
+HOSAKA_MODE_FILE="${HOSAKA_STATE_DIR:-/var/lib/hosaka}/mode"
 HOSAKA_BOOT_MARK="/boot/firmware/hosaka-build-mode"
-LOG="/tmp/hosaka-lxqt-kiosk.log"
+LOG="${HOSAKA_KIOSK_LOG:-/tmp/hosaka-lxqt-kiosk.log}"
 HEALTH_URL="${HOSAKA_KIOSK_HEALTH_URL:-http://127.0.0.1:8421/api/health}"
 ELECTRON_LAUNCHER="${HOSAKA_KIOSK_LAUNCHER:-/usr/local/bin/hosaka-kiosk-electron}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
@@ -46,6 +46,30 @@ if is_device_mode; then
   log "device mode — not launching kiosk"
   exit 0
 fi
+
+DISPLAY_MODE="${HOSAKA_DISPLAY_MODE:-}"
+if [ -z "$DISPLAY_MODE" ]; then
+  preference="${XDG_CONFIG_HOME:-$HOME/.config}/hosaka/display-mode"
+  if [ -f "$preference" ]; then
+    DISPLAY_MODE="$(cat "$preference")"
+  else
+    DISPLAY_MODE="gui"
+  fi
+fi
+case "$DISPLAY_MODE" in
+  tui)
+    for launcher in "$HOME/bin/hosaka-tui-term" "$SCRIPT_DIR/hosaka-tui-term"; do
+      if [ -x "$launcher" ]; then
+        log "starting canonical TUI (no Electron)"
+        exec "$launcher"
+      fi
+    done
+    log "TUI launcher missing"
+    exit 1
+    ;;
+  gui) ;;
+  *) log "invalid display mode: $DISPLAY_MODE"; exit 1 ;;
+esac
 
 # Brand the desktop substrate before Hosaka appears. If the kiosk is hidden
 # later via right-click / desktop mode, the operator lands on a Hosaka app-drawer

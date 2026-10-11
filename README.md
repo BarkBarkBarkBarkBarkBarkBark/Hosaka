@@ -65,13 +65,73 @@ hosaka down
 ## Boot Docker Instance
 
 ```bash
+./docker/dev.sh up
+```
 
-## The single entrypoint
+## Terminal-first GUI and boot choice
 
-The canonical way to run Hosaka — on the Pi, on your laptop, anywhere —
-is the **Electron kiosk host** at [`kiosk/`](./kiosk/). It wraps the
-SPA in a native Chromium window and turns on Electron's `<webview>` tag
-so the Web panel renders any URL inline, with no X-Frame-Options grief.
+The Python TUI is the canonical console. The default graphical Hosaka now
+hosts that exact `python -m hosaka tui` process in a resizable terminal, with
+one **Menu** button for **Wi-Fi**, **Bluetooth**, **Games**, and **Flash**. Opening or
+closing the menu does not restart the TUI or discard its scrollback.
+
+In this GUI, `/flash` fills the window with alternating blue/red colors and
+**BUSTED** in black, white-outlined text. `/flash your text` replaces **BUSTED**
+with your custom text (up to 80 characters, displayed uppercase). No return hint
+is shown. Tap anywhere or press Escape, Enter, or Space to dismiss without
+restarting the terminal. The background switches every 250 ms (two complete
+blue/red cycles per second) while the text stays steady. Reduced-motion
+preferences use a static blue background. Flashing colors may affect
+photosensitive viewers. Plain terminal sessions explain that the GUI is required.
+
+```bash
+hosaka              # terminal + menu in a graphical session; plain TUI over SSH
+hosaka tui          # canonical terminal, no Chromium
+hosaka gui          # Electron terminal + menu
+hosaka display tui  # opt into a plain TUI at next graphical login
+hosaka display gui  # terminal + menu at next graphical login (fresh-deck default)
+hosaka display show # saved boot display choice
+```
+
+For fresh Linux appliances, use `HOSAKA_DISPLAY_MODE=gui` (default) or
+`HOSAKA_DISPLAY_MODE=tui` with the installer. The TUI path does not install or
+autostart Electron; selecting GUI during installation installs its runtime.
+Existing saved display choices are preserved when reinstalling unless explicitly
+overridden. A graphical login/session is still required for these display modes.
+
+The GUI's `/ws/tui` endpoint only accepts loopback clients and loopback browser
+origins, and is disabled in public mode (`HOSAKA_PUBLIC_MODE=1`) or with
+`HOSAKA_TUI_ENABLED=0`. The old web desktop is retired, including `/?desktop=1`;
+remote/public hosts cannot expose the native terminal. Use the local screen or
+`hosaka tui` over SSH.
+
+Wi-Fi uses the existing NetworkManager API on Linux. Bluetooth uses BlueZ to
+scan, pair, trust, and connect devices without a PIN; PIN/passkey pairing and
+macOS network/Bluetooth changes currently use system settings. Unsupported
+hosts show an explicit error rather than simulated devices.
+
+**Games** lists only the installed PlayStation 1 catalog using
+`play --json list psx`, launches an exact title with `play --json "<title>"`,
+and provides **Stop game**. It does not offer Pong/Snake or guess ROM folders.
+The existing `play` launcher must be installed (`~/bin/play`, on the command
+path, or configured with `HOSAKA_PLAY`). Missing launchers, cores, and failed
+launches are shown as errors, never as a fake successful launch. RetroArch
+can take focus over Hosaka; closing it reveals the terminal window again.
+Super+H also brings Hosaka back.
+
+**Flash** has an optional text field (blank means **BUSTED**) and **Show flash**.
+It uses the same overlay as `/flash` without restarting or typing into the TUI.
+
+The Linux installer installs RetroArch by default (`INSTALL_RETROARCH=0` to
+skip). It does not bundle games, emulator cores, or BIOS files.
+
+## Electron host
+
+The **Electron kiosk host** at [`kiosk/`](./kiosk/) wraps the terminal GUI
+in a native Chromium window. The retired desktop, arcade, app-store/webview
+bridges, browser voice UI, and associated frontend code are preserved under
+[`archive/desktop-frontend/`](./archive/desktop-frontend/) outside the active build.
+Shared Python terminal, LLM, voice, and application-launch tools are retained.
 
 ```bash
 cd kiosk
@@ -119,7 +179,10 @@ session. If you want a clean restart instead:
 hosaka dev -fresh
 ```
 
-- `hosaka dev` opens or focuses the existing dev session instead of failing.
+- `hosaka dev` reuses a session only when both backend and frontend answer HTTP.
+  An occupied port on a suspended or stalled process is reported explicitly;
+  use `hosaka dev -fresh` to restart the pair.
+- `hosaka gui` opens the terminal-first GUI, not the legacy desktop test route.
 - `hosaka dev -fresh` stops the current listener on that port, then relaunches Hosaka.
 
 If you ever want to cleanly stop the local dev host and window without changing
@@ -140,17 +203,10 @@ way. Electron-first is now the default dev path.
 
 ### App framework direction
 
-Hosaka now treats Electron as the primary local and on-device app shell,
-while browser access serves as an explicit fallback for other environments.
-
-The app registry now also documents host requirements and install policy for:
-
-- built-in surfaces
-- planned integrations like Spotify, Kindle, Discord, and Hosaka Radio
-- future catalog and simulcast work
-
-See [docs/app_framework_progress.md](./docs/app_framework_progress.md) for the
-implementation status and remaining work.
+Hosaka defaults to the terminal-plus-menu GUI on new cyberdecks. The desktop
+frontend is archived, not an opt-in route. Host applications remain available
+through `hosaka launch` and the Linux desktop rather than a second Hosaka shell.
+Older app-framework documents describe the retired UI, not the current menu.
 
 ---
 
@@ -340,6 +396,9 @@ hosaka mode build [--persist]  # stop kiosk, free RAM/CPU for SSH workflows
 hosaka mode kiosk [--persist]  # restore the touchscreen kiosk
 hosaka build [--check]         # cd frontend && npm run build (--check runs tsc gate)
 hosaka deploy [--check]        # build + rsync into /opt + restart webserver
+hosaka update                 # pull GitHub + build + deploy in an independent Pi job
+hosaka update logs            # follow progress (Ctrl-C only stops the log viewer)
+hosaka update status          # last job result: UPDATE COMPLETE / UPDATE FAILED
 hosaka logs [web|pico|<unit>]  # tail journalctl
 hosaka reboot                  # safe sync + reboot
 hosaka issue <verb>            # GitHub-backed dev tracking (see docs/issue-tracking.md)
@@ -355,34 +414,60 @@ to free ~700 MiB before you build. `--persist` writes a marker to
 `/boot/firmware/hosaka-build-mode` so the Pi stays in build mode across
 reboots until you flip back with `hosaka mode kiosk --persist`.
 
-A typical SSH-then-deploy session looks like:
+### One-command Raspberry Pi updates
 
 ```bash
-ssh operator@hosaka
-hosaka mode build
-cd ~/Hosaka && git pull
-hosaka deploy
-hosaka mode kiosk
+hosaka update
 ```
+
+On a systemd Pi this starts a separate root-owned, journaled job, so closing
+the terminal or losing SSH does not cancel deployment. Git and npm run as the
+operator, not root. The job pauses the kiosk/web/agent/voice services, keeps the
+desktop and SSH up, limits build memory to 650 MB, pulls the current branch
+from `origin` with `--ff-only`, executes the freshly pulled deployment code,
+rebuilds assets, refreshes Python requirements when changed, and updates the
+installed CLI/kiosk launchers and graphical autostart files. It restores
+services and the screen on success or failure, verifies web-server health,
+and checks that the served frontend build stamp matches the deployed commit.
+Failures appear in `hosaka update status`; no successful deployment is claimed
+after a failed build. A sudo password may be requested when starting the job.
+
+The first deployment migrates saved graphical boot from the old plain-TUI
+default to **terminal + menu**. Subsequent deployments preserve explicit
+`hosaka display tui|gui` choices. An intentionally selected device/build mode
+is preserved; use `hosaka mode console` to return to the graphical screen.
+The `/update` TUI command uses this same workflow and reports that a job was
+started, not that a background deployment already finished.
+
+**One-time bootstrap from an older installed CLI:**
+
+```bash
+cd ~/Hosaka
+git pull --ff-only origin main
+bash scripts/hosaka update
+```
+
+After that, the installed `hosaka update` is sufficient. The bootstrap is
+necessary because the older CLI continues executing its old deployment
+functions after pulling newer scripts. The checkout must be clean, including
+untracked files; updates stop rather than overwriting local work. Only changes
+committed and pushed to GitHub can reach the Pi.
+
+`hosaka update local` deploys the working tree without pulling. `--check`
+adds the TypeScript gate; `--branch BRANCH` selects another branch.
+`--foreground` is available for a stable local shell, but does not provide
+disconnect protection or the worker's automatic pause/restore sequence.
 
 ### Why is the build so much lighter now?
 
-We aggressively stripped the frontend in 2026-04 (see
-`.cursor/plans/hosaka_lean_&_build_mode_*.plan.md`):
+The terminal-only build transforms **44 modules instead of 237** and ships
+roughly **463 KB** of JS/CSS before compression. The 3.7 MB Automerge bundle,
+arcade, old panels, webview/app-store bridges, and browser audio dependencies
+are no longer part of the build. This is an asset-size measurement, not a
+claim about peak build RAM on every Pi.
 
-- `tsc -b` is no longer in the default build path — `npm run build` is just
-  `vite build` (~250 MB peak vs. ~750 MB before). Use `npm run build:check`
-  on a dev machine for the type-safety gate.
-- Sourcemaps off by default (`HOSAKA_SOURCEMAP=1` to re-enable).
-- All panels are `React.lazy`'d so first paint is just the shell.
-- `react-markdown` + `remark-gfm` (~1 MB of `node_modules`, 15 transitive
-  deps) replaced with `marked` (~50 KB, zero deps).
-- The whole `i18next` + `react-i18next` + http-backend + language-detector
-  stack (~2 MB) replaced with a 200-line in-house hook in
-  [`frontend/src/i18n.ts`](frontend/src/i18n.ts) that bundles all 6 locales
-  via `import.meta.glob`.
-
-Net bundle: **~4.8 MB → ~700 KB**. Build memory peak: **~750 MB → ~250 MB**.
+`npm run build` remains Vite-only; `npm run build:check` adds the TypeScript
+gate. Sourcemaps stay off by default (`HOSAKA_SOURCEMAP=1` to re-enable).
 
 ---
 
@@ -583,13 +668,19 @@ the **inline terminal prompt** on first keystroke, or via env vars:
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPENAI_API_KEY` | `ollama` | Required for OpenAI; placeholder accepted by Ollama |
-| `OPENAI_MODEL` | `qwen2.5:0.5b` | Model name |
-| `OPENAI_BASE_URL` | `http://100.78.174.79:11434/v1` | OpenAI-compatible endpoint for Ollama, LM Studio, etc. |
+| `OPENAI_API_KEY` | unset | Required for OpenAI; placeholder accepted by Ollama |
+| `OPENAI_MODEL` | `gpt-4.1` | Main model for an unconfigured install |
+| `OPENAI_BASE_URL` | `https://api.openai.com` | OpenAI endpoint; can be changed for Ollama, LM Studio, etc. |
 
 Persisted config lives in `/var/lib/hosaka/llm.json` (or
 `~/.hosaka/llm.json` for non-root installs) and is applied on startup.
 PATCH `/api/llm-key` applies it to the running process without restart.
+
+`/select llm <number>` saves the provider/model for future sessions, including
+GUI refreshes. Every TUI startup reloads that choice over stale inherited
+backend settings. Choice `0` is OpenAI GPT-4.1. Existing saved choices are
+preserved; `HOSAKA_LOCAL_FIRST=1` explicitly opts into the Ollama defaults
+instead of GPT-4.1 when no configuration has been saved.
 
 Hosaka can persist a live local Ollama selection by probing the configured
 hosts' `/api/tags` endpoints:
@@ -632,6 +723,42 @@ hosaka llm
 ```
 
 `hosaka llm list` means the same thing.
+
+In the terminal, `/help` includes a numbered provider/model selector:
+
+```text
+/select llm
+0 openai gpt-4.1
+1 openai gpt-4.1-mini
+2 openai gpt-4o-mini
+3 ollama qwen3:4b — http://127.0.0.1:11434/v1
+
+/select llm 0
+```
+
+The OpenAI entries start with this small fixed list and include additional
+models from saved OpenAI profiles. The fixed entries are not a guarantee of
+API-account access. Ollama entries come from saved selections and installed
+models reported by known servers; the Qwen entry above is an example, not a
+bundled model. Unavailable saved Ollama choices are labelled, and cannot be
+selected until their server and model are available.
+
+Run `/select llm` before choosing a number. Numbers refer to the last displayed
+list and remain stable until you list again. Selection switches the running
+console immediately and saves the provider, endpoint, and model for future
+starts. Saved non-Ollama OpenAI-compatible profiles are also listed without
+being treated as Ollama servers. OpenAI uses its saved key or `OPENAI_API_KEY`
+from the environment, Hosaka secrets store, or Picoclaw configuration/security
+file; if none exists, run `hosaka secrets set OPENAI_API_KEY`
+from a real shell. Keys are never printed by the menu.
+
+The menu only checks saved endpoints and `HOSAKA_OLLAMA_DISCOVERY_URLS`, with
+a one-second probe per host; it does not scan the LAN. Use `/scan llm` to
+discover other hosts. Before an Ollama completion, Hosaka checks that the
+selected server reports the selected model via `/api/tags`. If the server
+is absent or the model is missing, it reports the problem without sending
+a chat request. This is a runtime guard, not a Python `assert` that could be
+disabled with optimization.
 
 To switch back to OpenAI (using its saved profile and key):
 

@@ -86,8 +86,9 @@ def stream_chat(
                     messages, tools=tools, dispatch=dispatch
                 )
                 return
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                log.warning("OpenAI-compatible stream failed: %s — falling back", exc)
+                yield f"(LLM connection failed: {exc}; using offline guidance.)\n"
 
     result = classify_intent(_last_user_msg(messages))
     yield f"[offline] {result.guidance}"

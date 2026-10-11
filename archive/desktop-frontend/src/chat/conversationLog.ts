@@ -45,7 +45,10 @@ export function appendConversationEntry(
   if (!text) return;
   getStore().update<ConversationDoc>("conversation", INITIAL_CONVERSATION_DOC, (doc) => {
     if (!Array.isArray(doc.entries)) doc.entries = [];
-    doc.entries.push({
+    // Automerge rejects `undefined` values (it throws "Cannot assign undefined
+    // value at /entries/N/meta"), so only attach optional fields when they're
+    // actually present rather than writing `undefined`.
+    const entry: ConversationEntry = {
       id: input.id ?? makeId(),
       at: input.at ?? Date.now(),
       role: input.role,
@@ -53,9 +56,10 @@ export function appendConversationEntry(
       channel: input.channel,
       text,
       visibility: input.visibility,
-      appId: input.appId,
-      meta: input.meta,
-    });
+    };
+    if (input.appId !== undefined) entry.appId = input.appId;
+    if (input.meta !== undefined) entry.meta = input.meta;
+    doc.entries.push(entry);
     if (doc.entries.length > MAX_ENTRIES) {
       doc.entries.splice(0, doc.entries.length - MAX_ENTRIES);
     }

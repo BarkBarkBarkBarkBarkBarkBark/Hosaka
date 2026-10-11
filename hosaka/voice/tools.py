@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from hosaka.identity import build_voice_system_prompt
+from hosaka.games import play_argv as _play_argv, run_play as _run_play
 
 log = logging.getLogger("hosaka.voice.tools")
 
@@ -691,72 +692,11 @@ def _tool_open_reader(args: dict[str, Any]) -> str:
     return "opening Foliate with the book library"
 
 
-def _play_argv(*args: str) -> list[str]:
-    """Same `play` PATH command a terminal uses — never `python ~/bin/play`."""
-    override = os.getenv("HOSAKA_PLAY", "").strip()
-    if override:
-        return [override, "--json", *args]
-    found = shutil.which("play")
-    if found:
-        return [found, "--json", *args]
-    return [str(Path.home() / "bin" / "play"), "--json", *args]
-
-
-def _play_env() -> dict[str, str]:
-    env = os.environ.copy()
-    env["PLAY_FOREGROUND"] = "0"
-    home_bin = str(Path.home() / "bin")
-    path = env.get("PATH") or os.defpath
-    parts = path.split(os.pathsep)
-    if home_bin not in parts:
-        env["PATH"] = os.pathsep.join([home_bin, path])
-    return env
-
-
-def _run_play(*args: str, wait_s: float = 15.0, kill: bool = False) -> dict[str, Any]:
-    argv = _play_argv(*args)
-    exe = Path(argv[0])
-    if not exe.is_file() and shutil.which(argv[0]) is None:
-        return {"ok": False, "error": f"play not found ({argv[0]})"}
-    try:
-        proc = subprocess.Popen(
-            argv,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=True,
-            env=_play_env(),
-        )
-    except OSError as exc:
-        return {"ok": False, "error": f"play failed ({exc})"}
-    try:
-        stdout, stderr = proc.communicate(timeout=wait_s)
-    except subprocess.TimeoutExpired:
-        if kill:
-            proc.kill()
-            proc.communicate()
-            return {"ok": False, "error": f"play timed out after {int(wait_s)}s"}
-        title = " ".join(a for a in args if a not in {"list", "stop"})
-        return {"ok": True, "action": "launch", "title": title or "game"}
-    raw = (stdout or "").strip()
-    if not raw:
-        err = (stderr or "").strip() or f"exit {proc.returncode}"
-        return {"ok": False, "error": err}
-    try:
-        payload = json.loads(raw.splitlines()[-1])
-    except json.JSONDecodeError:
-        return {"ok": False, "error": raw[:400]}
-    if isinstance(payload, dict):
-        return payload
-    return {"ok": False, "error": raw[:400]}
-
-
 def _tool_list_games(args: dict[str, Any]) -> str:
     system = str(args.get("system") or "psx").strip().lower() or "psx"
     if system not in {"psx", "all"}:
         system = "psx"
-    payload = _run_play("list", system, wait_s=45.0, kill=True)
+    payload = _run_play("list", system, wait_s=45.0)
     if not payload.get("ok"):
         return payload.get("error") or "list_games failed"
     games = payload.get("games") or []
@@ -776,13 +716,13 @@ def _tool_play_game(args: dict[str, Any]) -> str:
         return "play_game: need a game name"
     hook = _game_puck_hook
     if name.lower() in {"stop", "quit", "exit"}:
-        payload = _run_play("stop", wait_s=8.0, kill=True)
+        payload = _run_play("stop", wait_s=8.0)
         if hook is not None:
             hook("resume")
         return payload.get("message") or payload.get("error") or "stopped"
     if hook is not None:
         hook("pause")
-    payload = _run_play(name, wait_s=20.0, kill=False)
+    payload = _run_play(name, wait_s=20.0)
     if payload.get("action") == "launch" and payload.get("ok"):
         return f"launching {payload.get('title')}"
     if hook is not None:

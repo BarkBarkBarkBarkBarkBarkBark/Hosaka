@@ -259,7 +259,9 @@ def _model() -> str:
         return model
     if _is_openai_compatible_base():
         return os.getenv("HOSAKA_OLLAMA_MODEL", OLLAMA_DEFAULT_MODEL)
-    return "gpt-4o-mini"
+    from hosaka.llm.llm_config import OPENAI_DEFAULT_MODEL
+
+    return OPENAI_DEFAULT_MODEL
 
 
 def is_available() -> bool:
@@ -274,6 +276,26 @@ def _headers(key: str) -> dict[str, str]:
     }
 
 
+def _assert_chat_backend() -> None:
+    from hosaka.llm import llm_config
+
+    cfg = _stored_llm_config()
+    base = _api_base_url()
+    configured_base = str(cfg.get("base_url") or "").rstrip("/")
+    if configured_base and not configured_base.endswith("/v1"):
+        configured_base += "/v1"
+    selected_ollama = (
+        bool(cfg.get("ollama_discovery"))
+        or cfg.get("provider") == "ollama"
+        or cfg.get("api_key") == OLLAMA_DEFAULT_API_KEY
+    )
+    if _is_openai_compatible_base() and (
+        _api_key() == OLLAMA_DEFAULT_API_KEY
+        or (selected_ollama and configured_base == base)
+    ):
+        llm_config.require_ollama(base, _model())
+
+
 def _complete(
     messages: list[dict[str, Any]],
     *,
@@ -283,6 +305,7 @@ def _complete(
     key = _api_key()
     if not key:
         raise RuntimeError("OPENAI_API_KEY is not set.")
+    _assert_chat_backend()
     payload: dict[str, Any] = {
         "model": _model(),
         "messages": messages,
@@ -344,8 +367,10 @@ def chat_stream(
                         "content": dispatch(name, args),
                     }
                 )
+        yield "(chat stopped: tool-call limit reached; please try a more specific request)"
         return
 
+    _assert_chat_backend()
     payload = {
         "model": _model(),
         "messages": messages,
@@ -375,6 +400,7 @@ def chat_sync(messages: list[dict[str, str]], timeout: float | None = None) -> s
     key = _api_key()
     if not key:
         return "OPENAI_API_KEY is not set."
+    _assert_chat_backend()
     payload = {
         "model": _model(),
         "messages": messages,

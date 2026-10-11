@@ -474,12 +474,15 @@ def install_terminal_guard() -> None:
 
 
 def tui_escape_allowed() -> bool:
-    raw = os.getenv("HOSAKA_ALLOW_SHELL", "0").strip().lower()
+    default = "1" if sys.platform == "darwin" else "0"
+    raw = os.getenv("HOSAKA_ALLOW_SHELL", default).strip().lower()
     return raw not in {"0", "false", "no", "off", ""}
 
 
 def pin_to_tui() -> None:
     """Disable job-control so Ctrl-Z cannot drop the operator into bash."""
+    if tui_escape_allowed():
+        return
     import signal
 
     for sig in (signal.SIGTSTP, signal.SIGTTIN, signal.SIGTTOU, signal.SIGQUIT):

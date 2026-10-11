@@ -57,34 +57,10 @@ export default defineConfig({
   define: {
     __HOSAKA_BUILD__: JSON.stringify(__HOSAKA_BUILD__),
   },
-  resolve: {
-    alias: [
-      // @automerge/automerge's "browser" export imports its WASM via ESM-
-      // import syntax (needs vite-plugin-wasm). Route directly to the
-      // `fullfat_base64.js` build which inlines the WASM as base64 — works
-      // out of the box, costs ~1.2 MB of inlined wasm once per page load.
-      // Using a literal file path (not the package specifier) sidesteps
-      // the `exports` map's "browser" condition entirely.
-      {
-        find: /^@automerge\/automerge$/,
-        replacement: path.resolve(
-          __dirname,
-          "node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js",
-        ),
-      },
-    ],
-  },
-  optimizeDeps: {
-    // Same reason — dev mode pre-bundling would otherwise follow the
-    // bundler entry and hit the same WASM-import error as `vite build`.
-    exclude: ["@automerge/automerge"],
-  },
   server: {
     host: "0.0.0.0",
     port: 5173,
     fs: {
-      // The frontend imports hosaka-apps/*.yaml via ?raw/import.meta.glob.
-      // Those files live outside frontend/, so Vite dev needs explicit access.
       allow: [__dirname, path.resolve(__dirname, "..")],
     },
     proxy: {
@@ -112,18 +88,13 @@ export default defineConfig({
     rollupOptions: {
       output: {
         // Keep the entry chunk small. React + ReactDOM go in their own
-        // long-cacheable vendor chunk; xterm and Automerge get their own
-        // buckets so panel-source edits don't invalidate them on every
-        // hosaka update (huge cold-start win on the Pi where re-parse of
-        // the Automerge fullfat_base64 chunk is multi-second). Everything
-        // else lands in lazy chunks via dynamic imports in App.tsx.
+        // long-cacheable vendor chunk; xterm gets its own chunk so menu
+        // edits do not invalidate the terminal engine on every update.
         manualChunks: (id) => {
           if (id.includes("node_modules/react-dom/")) return "react-vendor";
           if (id.includes("node_modules/react/")) return "react-vendor";
           if (id.includes("node_modules/scheduler/")) return "react-vendor";
           if (id.includes("node_modules/@xterm/")) return "xterm-vendor";
-          if (id.includes("node_modules/@automerge/")) return "automerge-vendor";
-          if (id.includes("node_modules/idb-keyval")) return "idb-vendor";
           return undefined;
         },
       },

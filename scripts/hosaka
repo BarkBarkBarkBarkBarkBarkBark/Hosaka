@@ -57,7 +57,11 @@ SCRIPT_DIR="$(cd "$(dirname "$SOURCE_PATH")" && pwd)"
 if [[ -f "$SCRIPT_DIR/../frontend/package.json" && -f "$SCRIPT_DIR/../README.md" ]]; then
   DEFAULT_REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 else
-  DEFAULT_REPO_ROOT="/home/operator/Hosaka"
+  if [[ -f /etc/hosaka/repo_root ]]; then
+    DEFAULT_REPO_ROOT="$(cat /etc/hosaka/repo_root)"
+  else
+    DEFAULT_REPO_ROOT="/home/operator/Hosaka"
+  fi
 fi
 
 REPO_ROOT="${HOSAKA_REPO:-$DEFAULT_REPO_ROOT}"
@@ -101,6 +105,9 @@ DEV_CONFLICT_RESULT="continue"
 # stops both. Override with HOSAKA_BACKEND_PORT if you really need to.
 BACKEND_PORT_DEFAULT="${HOSAKA_BACKEND_PORT:-8421}"
 DEV_LOG_DIR_DEFAULT="${HOSAKA_DEV_LOGDIR:-$REPO_ROOT/logs/dev}"
+HOSAKA_OPERATOR="${HOSAKA_OPERATOR:-${SUDO_USER:-$(id -un)}}"
+if [[ "$HOSAKA_OPERATOR" == "root" && -d /home/operator ]]; then HOSAKA_OPERATOR=operator; fi
+export HOSAKA_OPERATOR
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -139,6 +146,10 @@ port_is_busy() {
   [[ -n "$pids" ]]
 }
 
+http_is_ready() {
+  curl --noproxy '*' -fsS --max-time 3 "$1" >/dev/null 2>&1
+}
+
 open_url() {
   local url="$1"
   if have_cmd open; then
@@ -155,9 +166,9 @@ launch_dev_electron_against() {
     note "kiosk deps missing — running $(c_cyan 'npm install')"
     ( cd "$REPO_ROOT/kiosk" && npm install )
   fi
-  note "opening or focusing the existing hosaka electron window on $(c_cyan "http://localhost:$port")"
+  note "opening the terminal-first GUI on $(c_cyan "http://localhost:$port/?gui=1")"
   ( cd "$REPO_ROOT/kiosk" \
-    && HOSAKA_KIOSK_URL="http://localhost:$port" \
+    && HOSAKA_KIOSK_URL="http://localhost:$port/?gui=1" \
        HOSAKA_KIOSK_FULLSCREEN=0 \
        HOSAKA_KIOSK_DEVTOOLS="${HOSAKA_KIOSK_DEVTOOLS:-1}" \
        npx electron . )
@@ -249,11 +260,15 @@ launch_dev_backend() {
     echo $! > "$pidfile"
     disown || true
   )
-  if wait_for_port "$port" 80; then
-    ok "backend listening on $(c_cyan "127.0.0.1:$port")"
-    return 0
-  fi
-  warn "backend did not bind :$port within 8s — tail $(c_dim "$logfile")"
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8; do
+    if http_is_ready "http://127.0.0.1:$port/api/health"; then
+      ok "backend responding on $(c_cyan "127.0.0.1:$port")"
+      return 0
+    fi
+    sleep 1
+  done
+  warn "backend did not answer its health check — tail $(c_dim "$logfile")"
   return 1
 }
 
@@ -381,7 +396,15 @@ resolve_dev_port_conflict() {
 }
 
 git_repo_clean() {
-  git -C "$REPO_ROOT" diff --quiet --ignore-submodules HEAD --
+  [[ -z "$(as_operator git -C "$REPO_ROOT" status --porcelain --untracked-files=normal)" ]]
+}
+
+as_operator() {
+  if [[ "$(id -u)" == "0" && -n "${HOSAKA_OPERATOR:-}" && "$HOSAKA_OPERATOR" != "root" ]]; then
+    runuser -u "$HOSAKA_OPERATOR" -- "$@"
+  else
+    "$@"
+  fi
 }
 
 ensure_state_dir() {
@@ -494,7 +517,7 @@ ensure_frontend_deps() {
 
   if [[ ! -d "$frontend/node_modules" ]]; then
     note "frontend deps missing — running $(c_cyan 'npm install')"
-    ( cd "$frontend" && npm install )
+    ( cd "$frontend" && as_operator npm install --no-fund --no-audit )
     return 0
   fi
 
@@ -504,18 +527,18 @@ ensure_frontend_deps() {
   if [[ -f "$frontend/package-lock.json" && -f "$frontend/node_modules/.package-lock.json" ]]; then
     if [[ "$frontend/package-lock.json" -nt "$frontend/node_modules/.package-lock.json" ]]; then
       note "frontend lockfile changed — refreshing dependencies"
-      ( cd "$frontend" && npm install )
+      ( cd "$frontend" && as_operator npm install --no-fund --no-audit )
       return 0
     fi
   elif [[ -f "$frontend/package-lock.json" ]]; then
     note "frontend lockfile present but install stamp missing — refreshing dependencies"
-    ( cd "$frontend" && npm install )
+    ( cd "$frontend" && as_operator npm install --no-fund --no-audit )
     return 0
   fi
 
-  if ! ( cd "$frontend" && npm ls --depth=0 idb-keyval @automerge/automerge >/dev/null 2>&1 ); then
+  if ! ( cd "$frontend" && as_operator npm ls --depth=0 >/dev/null 2>&1 ); then
     note "frontend dependency check failed — refreshing dependencies"
-    ( cd "$frontend" && npm install )
+    ( cd "$frontend" && as_operator npm install --no-fund --no-audit )
     return 0
   fi
 }
@@ -769,7 +792,7 @@ cmd_build() {
   if [[ "$(read_runtime_mode)" != "device" ]]; then
     warn "not in device mode — run $(c_cyan 'hosaka mode device') first if this OOMs"
   fi
-  ( cd "$REPO_ROOT/frontend" && npm run "$target" )
+  ( cd "$REPO_ROOT/frontend" && as_operator npm run "$target" )
   ok "build done — output at $REPO_ROOT/hosaka/web/ui"
 }
 
@@ -850,6 +873,12 @@ cmd_dev() {
       fe_busy=0; be_busy=0
       ;;
     reuse)
+      if (( be_busy )) && ! http_is_ready "http://127.0.0.1:$backend_port/api/health"; then
+        die "backend port :$backend_port is occupied but HTTP is unresponsive (possibly suspended). Use hosaka dev -fresh."
+      fi
+      if (( fe_busy )) && ! http_is_ready "http://127.0.0.1:$port/"; then
+        die "frontend port :$port is occupied but HTTP is unresponsive (possibly suspended). Use hosaka dev -fresh."
+      fi
       if (( fe_busy && be_busy )); then
         note "frontend (:$port) and backend (:$backend_port) already up — reusing both"
         note "rerun with $(c_cyan 'hosaka dev -fresh') to restart the pair"
@@ -875,7 +904,7 @@ cmd_dev() {
 
   # bring up backend first so the vite proxy has something to talk to
   if (( ! be_busy )); then
-    launch_dev_backend "$backend_port" || warn "continuing without backend (frontend will see 502 on /api)"
+    launch_dev_backend "$backend_port" || die "backend startup failed; not opening an unusable GUI"
   fi
 
   # if frontend is already up under reuse, just attach electron/browser
@@ -924,6 +953,7 @@ cmd_dev() {
 }
 
 cmd_deploy() {
+  [[ -d "$DEPLOY_ROOT" ]] || die "deploy root $DEPLOY_ROOT missing — install Hosaka on this Pi first"
   cmd_build "$@"
   if [[ -d "$DEPLOY_ROOT" ]]; then
     note "syncing python sources into $(c_cyan "$DEPLOY_ROOT/hosaka/")"
@@ -943,20 +973,37 @@ cmd_deploy() {
         "$REPO_ROOT/scripts/" "$DEPLOY_ROOT/scripts/"
     fi
     if [[ -d "$REPO_ROOT/kiosk" ]]; then
+      local kiosk_deps_changed=0
+      if ! cmp -s "$REPO_ROOT/kiosk/package.json" "$DEPLOY_ROOT/kiosk/package.json" \
+         || ! cmp -s "$REPO_ROOT/kiosk/package-lock.json" "$DEPLOY_ROOT/kiosk/package-lock.json"; then
+        kiosk_deps_changed=1
+      fi
       sudo rsync -a --delete \
         --exclude='node_modules/' \
         "$REPO_ROOT/kiosk/" "$DEPLOY_ROOT/kiosk/"
-      if [[ -f "$DEPLOY_ROOT/kiosk/package.json" ]]; then
+      if [[ "$kiosk_deps_changed" == "1" || ! -x "$DEPLOY_ROOT/kiosk/node_modules/electron/dist/electron" ]]; then
         note "refreshing kiosk npm deps in $(c_cyan "$DEPLOY_ROOT/kiosk")"
-        ( cd "$DEPLOY_ROOT/kiosk" && npm install --no-fund --no-audit )
+        sudo chown -R "${HOSAKA_OPERATOR:-$(id -un)}" "$DEPLOY_ROOT/kiosk"
+        ( cd "$DEPLOY_ROOT/kiosk" && as_operator npm install --no-fund --no-audit )
       fi
     fi
     if [[ -f "$REPO_ROOT/README.md" ]]; then
       sudo cp "$REPO_ROOT/README.md" "$DEPLOY_ROOT/README.md"
     fi
     ok "python sync done"
-  else
-    warn "deploy root $DEPLOY_ROOT missing — skipped rsync"
+  fi
+  if [[ ! -x "$DEPLOY_ROOT/.venv/bin/python" ]]; then
+    die "Python runtime missing at $DEPLOY_ROOT/.venv — run scripts/install_hosaka.sh first"
+  fi
+  if ! cmp -s "$REPO_ROOT/requirements-hosaka.txt" "$DEPLOY_ROOT/requirements-hosaka.txt"; then
+    note "Python requirements changed — refreshing the deployed runtime"
+    sudo "$DEPLOY_ROOT/.venv/bin/python" -m pip install -r "$REPO_ROOT/requirements-hosaka.txt"
+    sudo cp "$REPO_ROOT/requirements-hosaka.txt" "$DEPLOY_ROOT/requirements-hosaka.txt"
+  fi
+  refresh_appliance_launchers
+  if [[ "${HOSAKA_UPDATE_WORKER:-0}" == "1" ]]; then
+    ok "deployment staged; update worker will restore services and the screen"
+    return 0
   fi
   if systemctl is-enabled --quiet "$WEB_UNIT" 2>/dev/null; then
     sudo systemctl restart "$WEB_UNIT"
@@ -965,13 +1012,14 @@ cmd_deploy() {
   # The webserver serves the new hashed SPA assets, but Electron keeps the
   # already-loaded page alive until the kiosk process reloads. Restart it so
   # deploys actually reach the touchscreen without a manual reboot.
-  if pgrep -u "$(id -un)" -x openbox >/dev/null 2>&1; then
-    pkill -u "$(id -un)" -f "$DEPLOY_ROOT/kiosk/node_modules/.bin/electron" 2>/dev/null || true
-    pkill -u "$(id -un)" -f "$DEPLOY_ROOT/kiosk/node_modules/electron/dist/electron" 2>/dev/null || true
-    ok "restarted visible kiosk electron (openbox supervisor will relaunch)"
-  elif systemctl is-enabled --quiet "$KIOSK_UNIT" 2>/dev/null; then
+  if systemctl is-active --quiet "$KIOSK_UNIT" 2>/dev/null; then
     sudo systemctl restart "$KIOSK_UNIT"
     ok "restarted $KIOSK_UNIT"
+  else
+    local pid
+    while read -r pid; do
+      [[ -n "$pid" ]] && kill "$pid"
+    done < <(pgrep -u "${HOSAKA_OPERATOR:-$(id -un)}" -f 'kiosk/node_modules/electron/dist/electron' || true)
   fi
   # Voice daemon picks up new voice_api.py / tools.py / realtime_client.py
   # too. Restart it when it's enabled so the daemon side stays in sync.
@@ -979,6 +1027,54 @@ cmd_deploy() {
     sudo systemctl restart hosaka-voice.service
     ok "restarted hosaka-voice.service"
   fi
+}
+
+refresh_appliance_launchers() {
+  local user="${HOSAKA_OPERATOR:-$(id -un)}"
+  local home
+  home="$(getent passwd "$user" | cut -d: -f6)"
+  [[ -n "$home" ]] || die "cannot find home directory for $user"
+  local config="${XDG_CONFIG_HOME:-$home/.config}"
+  note "refreshing installed CLI, kiosk launchers, and graphical autostart"
+  sudo install -m 0755 "$REPO_ROOT/scripts/hosaka" /usr/local/bin/hosaka
+  sudo install -m 0755 "$REPO_ROOT/scripts/kiosk-electron.sh" /usr/local/bin/hosaka-kiosk-electron
+  sudo install -m 0755 "$REPO_ROOT/scripts/hosaka-lxqt-kiosk.sh" /usr/local/bin/hosaka-lxqt-kiosk
+  sudo systemctl enable hosaka-webserver.service
+  sudo install -D -m 0755 -o "$user" "$REPO_ROOT/scripts/hosaka-tui-term" "$home/bin/hosaka-tui-term"
+  sudo install -D -m 0755 -o "$user" "$REPO_ROOT/dotfiles/openbox/autostart" "$config/openbox/autostart"
+  for entry in hosaka-kiosk.desktop hosaka-tui.desktop; do
+    sudo install -D -m 0644 -o "$user" "$REPO_ROOT/dotfiles/autostart/$entry" "$config/autostart/$entry"
+  done
+  sudo install -d -m 0755 -o "$user" "$config/hosaka"
+  if [[ ! -f "$config/hosaka/terminal-gui-default-v1" ]]; then
+    printf '%s\n' gui | sudo tee "$config/hosaka/display-mode" >/dev/null
+    sudo touch "$config/hosaka/terminal-gui-default-v1"
+    sudo chown "$user" "$config/hosaka/display-mode" "$config/hosaka/terminal-gui-default-v1"
+    ok "migrated graphical boot to the terminal + menu GUI"
+  fi
+}
+
+start_update_job() {
+  [[ -d /run/systemd/system ]] || die "systemd is required for disconnect-safe updates; use --foreground only from a stable local shell"
+  local user="${HOSAKA_OPERATOR:-${SUDO_USER:-$(id -un)}}"
+  if [[ "$user" == "root" && -d /home/operator ]]; then user=operator; fi
+  local home
+  home="$(getent passwd "$user" | cut -d: -f6)"
+  [[ -n "$home" ]] || die "cannot find operator account $user"
+  if systemctl is-active --quiet hosaka-update.service; then
+    die "an update is already running; use hosaka update logs"
+  fi
+  sudo systemctl reset-failed hosaka-update.service 2>/dev/null || true
+  sudo systemd-run --unit=hosaka-update --description="Hosaka pull, build, and deploy" \
+    --property=Type=oneshot --property=MemoryMax=650M --property=MemorySwapMax=512M \
+    --property=OOMScoreAdjust=700 --property=CPUQuota=200% \
+    --setenv="HOSAKA_OPERATOR=$user" --setenv="HOME=$home" \
+    --setenv="HOSAKA_REPO=$REPO_ROOT" --setenv="HOSAKA_DEPLOY=$DEPLOY_ROOT" \
+    --setenv="HOSAKA_STATE_DIR=$STATE_DIR" \
+    /bin/bash "$REPO_ROOT/scripts/hosaka-update-worker.sh" "$@"
+  ok "update job started independently of this terminal/SSH session"
+  note "follow progress: hosaka update logs"
+  note "check result:   hosaka update status"
 }
 
 cmd_update() {
@@ -990,9 +1086,22 @@ cmd_update() {
   local source_mode="source"
   local target_branch=""
   local deploy_arg=""
+  local foreground=0
+  local original_args=("$@")
 
   while (( $# )); do
     case "$1" in
+      --foreground)
+        foreground=1
+        shift
+        ;;
+      logs)
+        exec sudo journalctl -u hosaka-update.service -f --no-pager
+        ;;
+      status)
+        sudo journalctl -u hosaka-update.service -n 40 --no-pager
+        return
+        ;;
       local|here|working|wt|workingtree)
         source_mode="local"
         shift
@@ -1016,12 +1125,14 @@ cmd_update() {
         ;;
       -h|--help|help)
         cat <<'USAGE'
-hosaka update [source|local] [--check] [--branch BRANCH]
+hosaka update [source|local] [--check] [--branch BRANCH] [--foreground]
 
   source   (default) git fetch + checkout + ff-only pull, then build + rsync + restart
   local    skip git entirely; build the working tree as-is, then rsync + restart
   --check  run tsc gate before building
   --branch BRANCH    only meaningful with `source`; chooses which ref to ff-pull
+  --foreground      run in this shell instead of the Pi's independent systemd job
+  logs / status     follow progress / show the latest job result
 
 Examples:
   hosaka update                         # pull current branch from origin, then deploy
@@ -1037,9 +1148,14 @@ USAGE
     esac
   done
 
+  if [[ "$(uname -s)" == "Linux" && "$foreground" == "0" ]]; then
+    start_update_job "${original_args[@]}"
+    return
+  fi
+
   if [[ "$source_mode" == "local" ]]; then
     note "source: $(c_cyan "local working tree") (git untouched)"
-    if [[ -d "$REPO_ROOT/.git" ]] && have_cmd git && ! git_repo_clean; then
+    if [[ -e "$REPO_ROOT/.git" ]] && have_cmd git && ! git_repo_clean; then
       warn "working tree has uncommitted changes — they will be deployed as-is"
     fi
     if [[ -n "$target_branch" ]]; then
@@ -1053,7 +1169,7 @@ USAGE
     return $?
   fi
 
-  [[ -d "$REPO_ROOT/.git" ]] || die "no git checkout at $REPO_ROOT"
+  [[ -e "$REPO_ROOT/.git" ]] || die "no git checkout at $REPO_ROOT"
   have_cmd git || die "git not available"
 
   if ! git_repo_clean; then
@@ -1061,23 +1177,25 @@ USAGE
   fi
 
   if [[ -z "$target_branch" ]]; then
-    target_branch="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)"
+    target_branch="$(as_operator git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)"
   fi
+  [[ -n "$target_branch" && "$target_branch" != "HEAD" && "$target_branch" != -* ]] || die "choose a named branch with --branch"
 
   note "source: $(c_cyan "origin/$target_branch")"
   note "fetching latest git refs in $REPO_ROOT"
-  git -C "$REPO_ROOT" fetch --all --prune
+  as_operator git -C "$REPO_ROOT" fetch origin --prune
 
   note "checking out $(c_cyan "$target_branch")"
-  git -C "$REPO_ROOT" checkout "$target_branch"
+  as_operator git -C "$REPO_ROOT" checkout "$target_branch"
 
   note "pulling latest changes"
-  git -C "$REPO_ROOT" pull --ff-only origin "$target_branch"
+  as_operator git -C "$REPO_ROOT" pull --ff-only origin "$target_branch"
 
+  # Execute the newly pulled deployment code, not this shell's stale functions.
   if [[ -n "$deploy_arg" ]]; then
-    cmd_deploy "$deploy_arg"
+    exec bash "$REPO_ROOT/scripts/hosaka" deploy "$deploy_arg"
   else
-    cmd_deploy
+    exec bash "$REPO_ROOT/scripts/hosaka" deploy
   fi
 }
 
@@ -1265,6 +1383,33 @@ cmd_message() {
     die "usage: hosaka message [-s session] <text...>  (try: hosaka chat for REPL)"
   fi
   exec "$PICOCLAW_BIN" agent -s "$session" -m "${REST[*]}"
+}
+
+cmd_display() {
+  local mode="${1:-show}"
+  local preference="${XDG_CONFIG_HOME:-$HOME/.config}/hosaka/display-mode"
+  case "$mode" in
+    show)
+      if [[ -f "$preference" ]]; then cat "$preference"; else echo gui; fi
+      ;;
+    tui|gui)
+      mkdir -p "$(dirname "$preference")"
+      printf '%s\n' "$mode" >"$preference"
+      ok "boot display set to $mode (takes effect at next graphical login)"
+      ;;
+    *) die "usage: hosaka display tui|gui|show" ;;
+  esac
+}
+
+cmd_gui() {
+  export HOSAKA_DISPLAY_MODE=gui
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    cmd_dev "$@"
+  elif [[ -n "${DISPLAY:-}" ]]; then
+    exec bash "$REPO_ROOT/scripts/hosaka-lxqt-kiosk.sh"
+  else
+    die "GUI requires a graphical session. Run hosaka display gui, then log in on the deck."
+  fi
 }
 
 cmd_tui() {
@@ -1580,7 +1725,7 @@ usage() {
   cat <<USAGE
 hosaka — field terminal
 
-Boot is the TUI (a terminal). Electron GUI is still installed, just not autostart.
+Boot is the TUI. The optional GUI hosts that same TUI plus a small device menu.
 
 Keys / TUI
   Ctrl+D          show the LXQt desktop
@@ -1595,6 +1740,8 @@ Daily
   hosaka tui          terminal UI (boot default)
   hosaka voice        voice daemon
   hosaka gui          Electron app
+  hosaka display tui  boot into the TUI (default; no Chromium)
+  hosaka display gui  boot into the terminal + Wi-Fi / Bluetooth / Games menu
   hosaka mode desktop desktop (Ctrl+D)
   hosaka status       RAM / services
   play spyro          launch a game by name
@@ -1631,7 +1778,7 @@ Modes
   hosaka mode desktop               LXQt desktop (hides Electron if running)
   hosaka mode lxqt [--now]          pin x-session to LXQt (already the default)
 
-  Aliases: \`hosaka mode kiosk\` → console, \`hosaka mode build\` → device, \`hosaka gui\` → console
+  Aliases: \`hosaka mode kiosk\` → console, \`hosaka mode build\` → device
 
   hosaka status                     what's running + memory snapshot
   hosaka launch [app]               launch a Flatpak-backed Hosaka app; no app lists targets
@@ -1676,9 +1823,9 @@ Modes
   hosaka issue done N "CLOSING"     close issue with a final comment
 
 Typical SSH-then-deploy flow:
-  hosaka mode device                 # frees RAM
-  cd ~/Hosaka && hosaka update
-  hosaka mode console                # touchscreen back
+  hosaka update                      # independent job; pauses/restores services
+  hosaka update logs                 # follow progress, safe to disconnect
+  hosaka update status               # last completion/failure result
 
 Typical local dev flow:
   hosaka dev                         # backend (:8421) + vite + electron, all together
@@ -1690,10 +1837,18 @@ USAGE
 }
 
 main() {
-  local cmd="${1:-help}"
+  local cmd="${1:-}"
+  if [[ -z "$cmd" ]]; then
+    if [[ "$(uname -s)" != "Linux" || -n "${DISPLAY:-}" ]]; then
+      cmd=gui
+    else
+      cmd=tui
+    fi
+  fi
   shift || true
   case "$cmd" in
-    gui)       mode_console "$@" ;;
+    gui)       cmd_gui "$@" ;;
+    display)   cmd_display "$@" ;;
     mode)
       local sub="${1:-show}"
       shift || true
@@ -1740,4 +1895,6 @@ main() {
   esac
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

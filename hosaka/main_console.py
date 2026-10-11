@@ -41,15 +41,18 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("/chat <text>",    "One-shot question — ask and get an answer",     "Chat & AI"),
     ("/ask <text>",     "Alias for /chat <text>",                        "Chat & AI"),
     ("/llm",            "Plain text talks to the AI",                    "Chat & AI"),
+    ("/select llm",     "List numbered provider/model choices",          "Chat & AI"),
+    ("/select llm <n>", "Select and save a provider/model",              "Chat & AI"),
     ("/voice",          "Talk to Hosaka (wake-word + TUI orb)",           "Chat & AI"),
-    ("/desktop",        "Show the LXQt desktop (also Ctrl+D)",           "System"),
+    ("/desktop",        "Show LXQt desktop (Ctrl+D in locked mode)",     "System"),
+    ("/flash [text]",   "2 Hz blue/red GUI flash (default: BUSTED)",    "System"),
     # ── System ──
     ("/status",         "System overview — uptime, IP, model, services", "System"),
     ("/doctor",         "Diagnose picoclaw config and connectivity",     "System"),
     ("/restart terminal", "Restart the Hosaka terminal service",         "System"),
     ("/restart gateway",  "Restart the picoclaw gateway service",        "System"),
     ("/restart all",    "Restart both terminal and gateway",             "System"),
-    ("/update",         "Pull latest code, reinstall, restart services", "System"),
+    ("/update",         "Start disconnect-safe pull/build/deploy job",    "System"),
     ("/uptime",         "Show system uptime",                            "System"),
     ("/logs",           "Show recent Hosaka log lines",                  "System"),
     # ── Files & Navigation ──
@@ -94,7 +97,7 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("/manifest",       "Open the No Wrong Way operator manual",        "Reference"),
     ("/about",          "About this system",                             "Reference"),
     ("/lore",           "...  (see also: /library)",                    "Reference"),
-    ("/exit",           "There is no outside — stay in the console",     "Reference"),
+    ("/exit",           "Exit on macOS or with HOSAKA_ALLOW_SHELL=1",     "Reference"),
     # ── Shell passthrough ──
     ("!<command>",      "Run any shell command (e.g. !sudo apt update)", "Shell"),
 ]
@@ -136,11 +139,15 @@ def _show_help() -> None:
     print()
     print(f"  Just type anything → follows the prompt mode: {VIOLET}llm{R} or {GREEN}code{R}.")
     print(f"  Use {CYAN}/llm{R} or {CYAN}/code{R} to toggle. Prefix {CYAN}!{R} for one shell command.")
+    print("  Ctrl-C cancels an active chat.")
+    if _allow_shell_escape():
+        print(f"  Use {CYAN}/exit{R}, Ctrl-C at the prompt, or Ctrl-D to leave.")
     print()
     print(f"  {AMBER}Main controls:{R}")
     starters = [
         ("/code",  "plain text runs as shell/code"),
         ("/llm",   "plain text talks to Hosaka"),
+        ("/select llm", "list providers/models; /select llm <n> chooses"),
         ("/voice", "talk (wake-word + TUI orb)"),
         ("/help",  "return to this map"),
     ]
@@ -365,7 +372,7 @@ def _run_update_flow() -> None:
     ok, output = run_update()
     print(output)
     if ok:
-        print("Update complete.")
+        print("Update request accepted. On the Pi, follow progress with hosaka update logs.")
     else:
         print("Update encountered an issue.")
 
@@ -1115,8 +1122,10 @@ def _drop_to_desktop() -> None:
 
 
 def run_main_console() -> None:
+    from hosaka.llm.llm_config import apply_to_env, load
     from hosaka.tui.style import install_terminal_guard
 
+    apply_to_env(load())
     install_terminal_guard()
     _print_banner()
     _check_api_key()
@@ -1130,8 +1139,8 @@ def run_main_console() -> None:
         except EOFError:
             print()
             # Dead stdin (pane switch / /dev/null) would otherwise reprint
-            # the banner forever. A live Ctrl-D still drops to the desktop.
-            if not sys.stdin.isatty():
+            # the banner forever. In locked mode, live Ctrl-D shows the desktop.
+            if _allow_shell_escape() or not sys.stdin.isatty():
                 break
             _drop_to_desktop()
             continue
@@ -1165,8 +1174,20 @@ def _dispatch_command(raw: str, current_dir: Path, input_mode: str) -> tuple[Pat
         # ── Reference ──
         if raw == "/help":
             _show_help()
+        elif raw == "/select llm" or raw.startswith("/select llm "):
+            from hosaka.llm_cli import select_llm
+
+            select_llm(raw[len("/select llm"):].strip())
         elif raw == "/commands":
             _show_commands()
+        elif raw == "/flash" or raw.startswith("/flash "):
+            text = raw[len("/flash"):].strip().upper() or "BUSTED"
+            if len(text) > 80 or any(ord(char) < 32 or ord(char) == 127 for char in text):
+                print("Usage: /flash [text] (default: BUSTED; 1-80 characters, no control characters).")
+            elif os.getenv("HOSAKA_TERMINAL_GUI") != "1":
+                print("/flash requires the terminal-first GUI. Open it with hosaka gui.")
+            else:
+                print(f"\033]777;hosaka-flash;{json.dumps(text, ensure_ascii=True)}\007", end="", flush=True)
         elif raw == "/manifest":
             _read_file("manifest", current_dir=current_dir)
         elif raw == "/about":

@@ -162,7 +162,7 @@ Install Picoclaw or set OPENAI_API_KEY for full chat.
 | `PICOCLAW_MODEL` | *(picoclaw default)* | Override the model used by Picoclaw |
 | `OPENAI_API_KEY` | *(unset)* | OpenAI API key for fallback |
 | `OPENAI_MODEL` | `gpt-4o-mini` | Model to use with OpenAI fallback |
-| `HOSAKA_CHAT_TIMEOUT` | `120` | Max seconds to wait for LLM response |
+| `HOSAKA_CHAT_TIMEOUT` | `120` | HTTP operation timeout; also the whole-request deadline for console chat (including tool rounds and streaming) on macOS/Linux |
 
 ---
 

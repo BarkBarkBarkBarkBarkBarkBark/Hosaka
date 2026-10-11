@@ -4,6 +4,41 @@ Hosaka uses NetworkManager (`nmcli`) on the Pi. There are four equivalent
 ways to add or change a network — all of them are thin wrappers over the
 same `nmcli device wifi connect` command.
 
+## macOS terminal
+
+The Pi instructions below do not apply to native macOS. Hosaka's Wi-Fi API
+requires Linux NetworkManager; it does not manage or lock the Mac's Wi-Fi.
+macOS uses `networksetup` and System Settings instead.
+
+At a Hosaka `[llm]` prompt, plain text is sent to the AI, not executed.
+Use `/shell` for a real shell session, `/code` for shell-command mode, or
+prefix a single command with `!`. For example, these read-only checks run
+directly without waiting for an AI response:
+
+```text
+!/usr/sbin/networksetup -listallhardwareports
+!/usr/sbin/networksetup -getairportpower en0
+```
+
+Use the Wi-Fi device from the first command rather than assuming `en0`.
+To change networks, use macOS System Settings > Wi-Fi or run native
+`networksetup` commands from `/shell` or another Terminal window.
+
+To activate a virtual environment, enter `/shell` first and run `source`
+there. A single `!source ...` command cannot change Hosaka's Python
+interpreter or persist activation into later commands.
+
+On macOS, `/exit`, Ctrl-C at the main prompt, and Ctrl-D exit by default;
+Ctrl-C during a chat cancels that request instead. Ctrl-Z is not blocked.
+Linux retains the appliance's locked-console default. Set
+`HOSAKA_ALLOW_SHELL=1` to allow escape on either platform, or explicitly set
+it to `0` to retain locked-console behavior on macOS.
+
+Console chat has a whole-request deadline of 120 seconds, including tool
+rounds and streaming. Set `HOSAKA_CHAT_TIMEOUT` before launching Hosaka to
+change it; it must be a finite positive number. On timeout the animation
+stops and control returns to the prompt.
+
 ## 1. Phone or laptop browser → `/device`
 
 Best for a stranger's wifi when you only have a phone in your pocket and the

@@ -20,6 +20,7 @@ OLLAMA_DEFAULT_BASE_URL = "http://100.78.174.79:11434/v1"
 OLLAMA_DEFAULT_API_KEY = "ollama"
 OLLAMA_DEFAULT_MODEL = "qwen2.5:0.5b"
 OLLAMA_DISCOVERY_URLS = "http://127.0.0.1:11434,http://100.78.174.79:11434"
+OPENAI_DEFAULT_MODEL = "gpt-4.1"
 
 
 def openai_compatible_defaults() -> dict[str, str]:
@@ -54,6 +55,8 @@ def discover_ollama(
                 payload = json.loads(response.read().decode("utf-8"))
         except (OSError, URLError, ValueError, json.JSONDecodeError):
             continue
+        if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
+            continue
         models = [
             str(item.get("name") or item.get("model") or "").strip()
             for item in payload.get("models", [])
@@ -63,6 +66,22 @@ def discover_ollama(
         if models:
             return {"base_url": base_url, "models": models}
     return None
+
+
+def require_ollama(base_url: str, model: str) -> dict:
+    """Check the selected host/model before sending a completion request."""
+    result = discover_ollama([base_url], timeout=1.0)
+    if not result:
+        raise RuntimeError(
+            f"Ollama is unavailable at {base_url}. No chat request was sent. "
+            "Start Ollama or use /select llm to choose another provider."
+        )
+    if model not in result["models"]:
+        raise RuntimeError(
+            f"Ollama model {model!r} is not installed at {base_url}. "
+            "Use /select llm to choose an installed model."
+        )
+    return result
 
 
 def discovered_ollama_config(current: dict | None = None) -> dict | None:
@@ -118,9 +137,13 @@ def load() -> dict:
     try:
         return json.loads(_config_file().read_text(encoding="utf-8"))
     except Exception:
-        if os.getenv("HOSAKA_LOCAL_FIRST", "1").strip().lower() in ("1", "true", "yes", "on"):
+        if os.getenv("HOSAKA_LOCAL_FIRST", "0").strip().lower() in ("1", "true", "yes", "on"):
             return openai_compatible_defaults()
-        return {}
+        return {
+            "provider": "openai",
+            "model": OPENAI_DEFAULT_MODEL,
+            "base_url": "https://api.openai.com",
+        }
 
 
 def save(cfg: dict) -> None:
@@ -131,6 +154,7 @@ def save(cfg: dict) -> None:
     except OSError as exc:
         import logging
         logging.getLogger("hosaka.llm.llm_config").warning("could not save llm config: %s", exc)
+        raise
 
 
 def apply_to_env(cfg: dict) -> None:

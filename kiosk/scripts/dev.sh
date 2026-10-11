@@ -101,7 +101,7 @@ TAIL_PID=$!
 
 echo "[kiosk dev] launching electron → $VITE_URL"
 cd "$KIOSK_DIR"
-HOSAKA_KIOSK_URL="$VITE_URL" \
+HOSAKA_KIOSK_URL="$VITE_URL/?gui=1" \
 HOSAKA_KIOSK_FULLSCREEN=0 \
 HOSAKA_KIOSK_DEVTOOLS="${HOSAKA_KIOSK_DEVTOOLS:-1}" \
     npx electron .

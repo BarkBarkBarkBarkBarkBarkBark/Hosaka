@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+import math
+import signal
 import sys
-from typing import TYPE_CHECKING
+from contextlib import closing, contextmanager
+from typing import TYPE_CHECKING, Generator
 
 from hosaka.identity import build_chat_system_prompt
 from hosaka.llm import openai_adapter, picoclaw_adapter
@@ -35,6 +39,30 @@ def _build_system_message(hostname: str, cwd: str) -> dict[str, str]:
 
 # ── streaming printer ───────────────────────────────────────────────────
 
+class _ChatDeadlineExceeded(BaseException):
+    """Cancellation must bypass backend/tool handlers that catch Exception."""
+
+
+@contextmanager
+def _chat_deadline(seconds: float) -> Generator[None, None, None]:
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("HOSAKA_CHAT_TIMEOUT must be a finite positive number.")
+    if signal.getitimer(signal.ITIMER_REAL) != (0.0, 0.0):
+        raise RuntimeError("Cannot start chat while another alarm timer is active.")
+    previous_handler = signal.getsignal(signal.SIGALRM)
+
+    def expire(_signum: int, _frame: object) -> None:
+        raise _ChatDeadlineExceeded()
+
+    signal.signal(signal.SIGALRM, expire)
+    try:
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+
 def _print_stream(
     messages: list[dict[str, str]],
     backend: str | None = None,
@@ -49,23 +77,40 @@ def _print_stream(
     spark = thinking_sparkles()
     spark.__enter__()
     try:
-        for token in stream_chat(
-            messages,
-            backend=backend,
-            session=session,
-            tools=chat_tool_schemas(),
-            dispatch=dispatch,
-        ):
-            if first:
-                spark.stop()
-                first = False
-            sys.stdout.write(token)
-            sys.stdout.flush()
-            collected.append(token)
+        with _chat_deadline(openai_adapter.REQUEST_TIMEOUT):
+            with closing(stream_chat(
+                messages,
+                backend=backend,
+                session=session,
+                tools=chat_tool_schemas(),
+                dispatch=dispatch,
+            )) as tokens:
+                for token in tokens:
+                    if not token:
+                        continue
+                    if first:
+                        spark.stop()
+                        first = False
+                    sys.stdout.write(token)
+                    sys.stdout.flush()
+                    collected.append(token)
+    except _ChatDeadlineExceeded:
+        spark.stop()
+        logging.getLogger("hosaka.chat").warning("Console chat deadline exceeded")
+        print(
+            f"\nChat timed out after {openai_adapter.REQUEST_TIMEOUT:g}s. "
+            "Check your LLM connection with /doctor or /scan llm. Try again when ready."
+        )
+        return ""
     except KeyboardInterrupt:
-        pass  # picoclaw subprocess will finish or be abandoned
+        spark.stop()
+        print("\nChat cancelled. Back at the prompt.")
+        return ""
     finally:
         spark.stop()
+    if not collected:
+        print("Chat returned no response. Check /doctor before retrying.")
+        return ""
     print()  # newline after streamed response
     return "".join(collected)
 

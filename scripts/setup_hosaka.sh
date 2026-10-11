@@ -15,6 +15,7 @@
 #   INSTALL_TAILSCALE 1 to install Tailscale     (default: 1)
 #   INSTALL_CADDY     1 to install Caddy         (default: 0)
 #   HOSAKA_BOOT_MODE  kiosk | headless | console  (default: kiosk)
+#   HOSAKA_DISPLAY_MODE tui | gui (default: gui; graphical appliance mode)
 #   OPENAI_API_KEY    OpenAI key (written to .env if set)
 #   SKIP_SMOKE_TEST   1 to skip post-install tests (default: 0)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -99,9 +100,10 @@ done
 
 case "$BOOT_MODE" in
   kiosk)
-    sudo systemctl enable hosaka-webserver.service hosaka-kiosk.service
+    sudo systemctl enable hosaka-webserver.service
+    sudo systemctl disable hosaka-kiosk.service
     sudo systemctl disable hosaka-console.service 2>/dev/null || true
-    ok "Kiosk mode: Chromium on :8421 will auto-start at boot."
+    ok "Appliance mode: graphical login starts the selected TUI or GUI."
     ;;
   headless)
     sudo systemctl enable hosaka-webserver.service
@@ -109,13 +111,13 @@ case "$BOOT_MODE" in
     ok "Headless mode: web UI at :8421, no Chromium."
     ;;
   console)
-    sudo systemctl enable hosaka-console.service
+    sudo systemctl enable hosaka-field-terminal.service
     sudo systemctl disable hosaka-webserver.service hosaka-kiosk.service 2>/dev/null || true
     ok "Console mode: Python TUI on tty1."
     ;;
   *)
-    warn "Unknown boot mode '${BOOT_MODE}'. Defaulting to kiosk."
-    sudo systemctl enable hosaka-webserver.service hosaka-kiosk.service
+    echo "Unknown boot mode '${BOOT_MODE}'" >&2
+    exit 1
     ;;
 esac
 
@@ -141,13 +143,12 @@ case "$BOOT_MODE" in
   kiosk)
     sudo systemctl restart hosaka-webserver.service
     sleep 2
-    sudo systemctl restart hosaka-kiosk.service
     ;;
   headless)
     sudo systemctl restart hosaka-webserver.service
     ;;
   console)
-    sudo systemctl restart hosaka-console.service
+    sudo systemctl restart hosaka-field-terminal.service
     ;;
 esac
 

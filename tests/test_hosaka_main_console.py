@@ -5,6 +5,87 @@ from hosaka import main_console
 from hosaka.tui import style as tui_style
 
 
+@pytest.mark.parametrize("text", ["busted", "hands up", "\U0001f600" * 80])
+def test_flash_emits_gui_event_without_dispatching_chat(monkeypatch, capsys, tmp_path, text) -> None:
+    import json
+
+    monkeypatch.setenv("HOSAKA_TERMINAL_GUI", "1")
+    result = main_console._dispatch_command(f"/flash {text}", tmp_path, "llm")
+    assert result == (tmp_path, "llm")
+    output = capsys.readouterr().out
+    assert output == f"\033]777;hosaka-flash;{json.dumps(text.upper())}\007"
+
+
+@pytest.mark.parametrize("command", ["/flash", "/flash ", "/flash    "])
+def test_flash_defaults_to_busted(monkeypatch, capsys, tmp_path, command) -> None:
+    monkeypatch.setenv("HOSAKA_TERMINAL_GUI", "1")
+    result = main_console._dispatch_command(command, tmp_path, "llm")
+    assert result == (tmp_path, "llm")
+    assert capsys.readouterr().out == '\033]777;hosaka-flash;"BUSTED"\007'
+
+
+def test_flash_custom_text_overrides_default(monkeypatch, capsys, tmp_path) -> None:
+    monkeypatch.setenv("HOSAKA_TERMINAL_GUI", "1")
+    main_console._dispatch_command("/flash", tmp_path, "llm")
+    assert capsys.readouterr().out == '\033]777;hosaka-flash;"BUSTED"\007'
+    main_console._dispatch_command("/flash hands up", tmp_path, "llm")
+    assert capsys.readouterr().out == '\033]777;hosaka-flash;"HANDS UP"\007'
+
+
+@pytest.mark.parametrize("text", ["x" * 81, "word\007word"])
+def test_flash_rejects_invalid_text(monkeypatch, capsys, tmp_path, text) -> None:
+    monkeypatch.setenv("HOSAKA_TERMINAL_GUI", "1")
+    main_console._dispatch_command(f"/flash {text}", tmp_path, "llm")
+    output = capsys.readouterr().out
+    assert "Usage: /flash" in output
+    assert "\033]777" not in output
+
+
+@pytest.mark.parametrize("command", ["/flash", "/flash busted"])
+def test_flash_requires_gui(monkeypatch, capsys, tmp_path, command) -> None:
+    monkeypatch.delenv("HOSAKA_TERMINAL_GUI", raising=False)
+    main_console._dispatch_command(command, tmp_path, "llm")
+    assert "requires the terminal-first GUI" in capsys.readouterr().out
+
+
+def test_tui_start_restores_saved_llm_over_inherited_environment(monkeypatch, tmp_path) -> None:
+    from hosaka.llm import llm_config, openai_adapter
+
+    monkeypatch.setenv("HOSAKA_STATE_PATH", str(tmp_path / "state.json"))
+    llm_config.save({
+        "provider": "openai", "model": "gpt-4.1",
+        "base_url": "https://api.openai.com", "api_key": "saved-test-key",
+    })
+    monkeypatch.setenv("HOSAKA_ALLOW_SHELL", "1")
+    monkeypatch.setattr(main_console, "_print_banner", lambda: None)
+    monkeypatch.setattr(main_console, "_check_api_key", lambda: None)
+    monkeypatch.setattr(tui_style, "install_terminal_guard", lambda: None)
+
+    for _ in range(2):
+        monkeypatch.setenv("OPENAI_MODEL", "qwen2.5:0.5b")
+        monkeypatch.setenv("OPENAI_BASE_URL", "http://localhost:11434/v1")
+        monkeypatch.setenv("OPENAI_API_KEY", "ollama")
+
+        def input_(_prompt):
+            assert openai_adapter._model() == "gpt-4.1"
+            assert openai_adapter._chat_url() == "https://api.openai.com/v1/chat/completions"
+            assert openai_adapter.resolve_api_key()[0] == "saved-test-key"
+            return "/exit"
+
+        monkeypatch.setattr("builtins.input", input_)
+        main_console.run_main_console()
+
+
+def test_unconfigured_llm_defaults_to_gpt41(monkeypatch, tmp_path) -> None:
+    from hosaka.llm import llm_config
+
+    monkeypatch.setenv("HOSAKA_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.delenv("HOSAKA_LOCAL_FIRST", raising=False)
+    assert llm_config.load() == {
+        "provider": "openai", "model": "gpt-4.1", "base_url": "https://api.openai.com",
+    }
+
+
 def test_resolve_manifest_alias() -> None:
     target = main_console._resolve_read_target("manifest", current_dir=main_console.APP_ROOT)
     assert target == main_console.MANIFEST_DOC
@@ -50,10 +131,11 @@ def test_update_flow_prints_output(monkeypatch, capsys) -> None:
     main_console._run_update_flow()
     out = capsys.readouterr().out
     assert "updated" in out
-    assert "Update complete." in out
+    assert "Update request accepted." in out
 
 
 def test_tui_escape_hatch(monkeypatch) -> None:
+    monkeypatch.setattr(tui_style.sys, "platform", "linux")
     monkeypatch.delenv("HOSAKA_ALLOW_SHELL", raising=False)
     assert tui_style.tui_escape_allowed() is False
     monkeypatch.setenv("HOSAKA_ALLOW_SHELL", "1")
@@ -61,6 +143,7 @@ def test_tui_escape_hatch(monkeypatch) -> None:
 
 
 def test_exit_stays_in_console(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(tui_style.sys, "platform", "linux")
     monkeypatch.delenv("HOSAKA_ALLOW_SHELL", raising=False)
     calls = {"n": 0}
 
@@ -88,15 +171,65 @@ def test_exit_leaves_when_hatch_open(monkeypatch) -> None:
     main_console.run_main_console()
 
 
-def test_pin_to_tui_ignores_sigtstp() -> None:
+def test_pin_to_tui_ignores_sigtstp(monkeypatch) -> None:
     import signal
 
+    monkeypatch.setenv("HOSAKA_ALLOW_SHELL", "0")
     previous = signal.getsignal(signal.SIGTSTP)
     try:
         tui_style.pin_to_tui()
         assert signal.getsignal(signal.SIGTSTP) == signal.SIG_IGN
     finally:
         signal.signal(signal.SIGTSTP, previous)
+
+
+def test_macos_escape_default_can_be_overridden(monkeypatch) -> None:
+    monkeypatch.setattr(tui_style.sys, "platform", "darwin")
+    monkeypatch.delenv("HOSAKA_ALLOW_SHELL", raising=False)
+    assert tui_style.tui_escape_allowed() is True
+    monkeypatch.setenv("HOSAKA_ALLOW_SHELL", "0")
+    assert tui_style.tui_escape_allowed() is False
+
+
+def test_pin_to_tui_preserves_job_control_with_escape_enabled(monkeypatch) -> None:
+    import signal
+
+    monkeypatch.setenv("HOSAKA_ALLOW_SHELL", "1")
+    with pytest.MonkeyPatch.context() as signals:
+        calls = []
+        signals.setattr(signal, "signal", lambda *args: calls.append(args))
+        tui_style.pin_to_tui()
+    assert calls == []
+
+
+@pytest.mark.parametrize("control", [EOFError, KeyboardInterrupt, "/exit"])
+def test_macos_prompt_can_exit(monkeypatch, control) -> None:
+    monkeypatch.setattr(tui_style.sys, "platform", "darwin")
+    monkeypatch.delenv("HOSAKA_ALLOW_SHELL", raising=False)
+
+    def fake_input(_prompt=""):
+        if isinstance(control, str):
+            return control
+        raise control()
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    monkeypatch.setattr(main_console, "_print_banner", lambda: None)
+    monkeypatch.setattr(main_console, "_check_api_key", lambda: None)
+    monkeypatch.setattr(tui_style, "install_terminal_guard", lambda: None)
+    monkeypatch.setattr(main_console, "_drop_to_desktop", lambda: pytest.fail("desktop"))
+    main_console.run_main_console()
+
+
+def test_shell_command_prefix_bypasses_llm(monkeypatch, tmp_path) -> None:
+    commands = []
+    monkeypatch.setattr(
+        main_console, "_run_shell_command", lambda command, cwd: commands.append((command, cwd))
+    )
+    monkeypatch.setattr(main_console, "one_shot", lambda *a, **k: pytest.fail("called AI"))
+    assert main_console._dispatch_command(
+        "!networksetup -getairportpower en0", tmp_path, "llm"
+    ) == (tmp_path, "llm")
+    assert commands == [("networksetup -getairportpower en0", tmp_path)]
 
 
 def test_thinking_sparkles_stop_is_safe() -> None:
@@ -194,9 +327,21 @@ def test_help_is_discovery_map_without_gui(capsys) -> None:
 
     assert "/read the-field-terminal" in out
     assert "/plant  /orb" in out
+    assert "/select llm" in out
     assert "play a game" in out
     assert "/gui" not in out
     assert all(command != "/gui" for command, _desc, _cat in main_console.COMMANDS)
+
+
+def test_select_llm_dispatch_bypasses_chat(monkeypatch, tmp_path) -> None:
+    from hosaka import llm_cli
+
+    calls = []
+    monkeypatch.setattr(llm_cli, "select_llm", lambda argument: calls.append(argument))
+    monkeypatch.setattr(main_console, "one_shot", lambda *a, **k: pytest.fail("called AI"))
+    for command in ("/select llm", "/select llm 0"):
+        assert main_console._dispatch_command(command, tmp_path, "llm") == (tmp_path, "llm")
+    assert calls == ["", "0"]
 
 
 def test_foliate_manifest_opens_shelf_without_books_directory() -> None:

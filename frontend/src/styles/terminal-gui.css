@@ -1,0 +1,119 @@
+.terminal-gui, .terminal-gui * { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; background: #0b0d10; color-scheme: dark; }
+.terminal-gui {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #0b0d10;
+  color: #d8dee4;
+  font: 14px "JetBrains Mono", Menlo, Consolas, monospace;
+}
+.terminal-gui button, .terminal-gui input {
+  font: inherit;
+}
+.terminal-gui button {
+  min-height: 44px;
+  padding: 8px 14px;
+  color: inherit;
+  background: #151a20;
+  border: 1px solid #343c46;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.terminal-gui button:disabled { opacity: .55; cursor: wait; }
+.terminal-gui button:focus-visible, .terminal-gui input:focus-visible {
+  outline: 2px solid #ffbf46;
+  outline-offset: 2px;
+}
+.deck-bar {
+  height: 52px;
+  flex-shrink: 0;
+  padding: 4px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #252c34;
+}
+.deck-bar small { color: #88939e; }
+.native-tui { flex: 1; min-height: 0; position: relative; padding: 8px; }
+.native-tui-host { width: 100%; height: 100%; }
+.native-tui-status {
+  position: absolute;
+  inset: auto 12px 12px;
+  padding: 12px;
+  background: #151a20;
+  border: 1px solid #343c46;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.deck-scrim {
+  position: absolute;
+  inset: 52px 0 0;
+  background: #0008 !important;
+  border: none !important;
+}
+.deck-menu {
+  position: absolute;
+  inset: 52px 0 0 auto;
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: #10151b;
+  border-left: 1px solid #343c46;
+}
+.deck-menu-games { width: min(800px, 100%); }
+.deck-menu > header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; gap: 8px; }
+.deck-menu > nav { display: flex; gap: 6px; padding: 0 12px 8px; }
+.deck-menu > nav button { flex: 1; padding: 8px 4px; }
+.deck-menu > nav button[aria-pressed="true"] { border-color: #ffbf46; color: #ffbf46; }
+.deck-menu-content { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
+.deck-settings form, .deck-settings label { display: flex; flex-direction: column; gap: 8px; }
+.deck-settings form { gap: 16px; }
+.deck-flash-form { display: flex; flex-direction: column; gap: 16px; }
+.deck-actions { display: flex; gap: 8px; }
+.deck-settings input:not([type="checkbox"]) { width: 100%; box-sizing: border-box; min-height: 44px; background: #0b0d10; border: 1px solid #343c46; border-radius: 6px; color: inherit; padding: 8px; }
+.deck-settings .deck-checkbox { flex-direction: row; align-items: center; }
+.deck-device-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.deck-device-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.deck-device-list li > button:first-child { width: 100%; text-align: left; }
+.deck-device-list small { display: block; color: #9ba6b0; font-size: 12px; }
+.deck-error { color: #ff8787; }
+.deck-hint { color: #9ba6b0; font-size: 12px; line-height: 1.6; }
+@media (max-width: 500px) {
+  .native-tui-status { flex-direction: column; align-items: flex-start; }
+}
+.terminal-gui .deck-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  border: 0;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 24px;
+  background: #285bd6;
+  animation: deck-flash-alternate 500ms steps(1, end) infinite;
+}
+.deck-flash-word {
+  color: #000;
+  font: 900 clamp(44px, 12vw, 180px)/1.1 Arial, sans-serif;
+  -webkit-text-stroke: 2px #fff;
+  paint-order: stroke fill;
+  text-align: center;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  max-height: 75vh;
+  overflow: auto;
+}
+@keyframes deck-flash-alternate {
+  0%, 100% { background-color: #285bd6; }
+  50% { background-color: #d52236; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .terminal-gui .deck-flash { animation: none; }
+}
