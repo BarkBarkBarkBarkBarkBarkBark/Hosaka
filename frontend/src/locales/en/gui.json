@@ -1,5 +1,17 @@
 {
   "terminal": "terminal",
+  "demo": {
+    "title": "browser-only demo",
+    "welcome": "Signal steady. This is a browser-only Hosaka demo. Type /help to explore.",
+    "notice": "Browser-only demo: no AI, native shell, or device access. Commands stay in this page.",
+    "install": "Install the full Hosaka app",
+    "command": "Demo command",
+    "run": "Run",
+    "help": "/help or /commands — list demo commands\n/lore — open the bundled lore archive\n/orb — show the Hosaka orb\n/signal — a decorative signal message, not a network check\n/about — explain this demo\n/clear — clear the demo output",
+    "lore": "Opening the bundled lore archive. Back to terminal returns here.",
+    "signal": "Signal steady. No wrong way. (Demo message, not a network check.)",
+    "unsupported": "This demo only supports the commands listed in /help. AI chat, shell commands, and device controls require a local Hosaka installation."
+  },
   "flashDismiss": "Tap or press Escape to return to terminal",
   "menu": "Menu",
   "orb": "Hosaka orb",

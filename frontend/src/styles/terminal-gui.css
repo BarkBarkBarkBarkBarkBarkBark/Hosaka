@@ -38,6 +38,11 @@ html, body, #root { height: 100%; margin: 0; background: #0b0d10; color-scheme: 
 .deck-bar small { color: #88939e; }
 .native-tui { flex: 1; min-height: 0; position: relative; padding: 8px; }
 .native-tui-host { width: 100%; height: 100%; }
+.browser-demo { flex: 1; min-height: 0; padding: 12px; display: flex; flex-direction: column; }
+.browser-demo a { color: #00d7d7; }
+.browser-demo-output { flex: 1; min-height: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; }
+.browser-demo form { display: flex; align-items: center; gap: 8px; }
+.browser-demo input { flex: 1; min-width: 0; min-height: 44px; padding: 8px; background: #0b0d10; color: inherit; border: 1px solid #343c46; }
 .native-tui-status {
   position: absolute;
   inset: auto 12px 12px;

@@ -57,7 +57,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Picoclaw is a lightweight agentic framework. The gateway runs as a background
 # process alongside Hosaka, giving the console a full agent runtime.
 # Auto-detect arch: amd64 or arm64.
-ARG PICOCLAW_VERSION=0.2.4
+ARG PICOCLAW_VERSION=0.3.1
 RUN ARCH=$(dpkg --print-architecture) \
     && case "$ARCH" in \
          amd64) PICOCLAW_ARCH="x86_64" ;; \

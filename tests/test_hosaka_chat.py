@@ -220,6 +220,36 @@ def test_picoclaw_nonzero_exit_is_not_success(monkeypatch) -> None:
         picoclaw_adapter.chat_sync("hello")
 
 
+def test_console_workspace_override(tmp_path, monkeypatch) -> None:
+    from hosaka.llm import picoclaw_adapter
+
+    project = tmp_path / "project"
+    project.mkdir()
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({
+        "agents": {"defaults": {"workspace": "/original", "restrict_to_workspace": True}},
+        "model_list": [{"model_name": "profile", "model": "anthropic/example"}],
+    }))
+    monkeypatch.setenv("PICOCLAW_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("PICOCLAW_MODEL", "profile")
+    monkeypatch.setenv("HOSAKA_WORKSPACE", str(project))
+    monkeypatch.setattr(picoclaw_adapter, "is_available", lambda: True)
+
+    def inspect_overlay(*args, **kwargs):
+        from pathlib import Path
+        overlay = json.loads((Path(kwargs["env"]["PICOCLAW_HOME"]) / "config.json").read_text())
+        assert overlay["agents"]["defaults"]["workspace"] == str(project)
+        assert overlay["agents"]["defaults"]["restrict_to_workspace"] is True
+        return "ok"
+
+    monkeypatch.setattr(picoclaw_adapter, "chat_sync", inspect_overlay)
+    assert "".join(picoclaw_adapter.console_chat_stream([{"role": "user", "content": "hello"}])) == "ok"
+    assert json.loads(config_path.read_text())["agents"]["defaults"]["workspace"] == "/original"
+    monkeypatch.setenv("HOSAKA_WORKSPACE", str(tmp_path / "missing"))
+    with pytest.raises(RuntimeError, match="workspace does not exist"):
+        list(picoclaw_adapter.console_chat_stream([{"role": "user", "content": "hello"}]))
+
+
 def test_picoclaw_empty_response_is_not_banner_success(monkeypatch) -> None:
     import subprocess
     from hosaka.llm import picoclaw_adapter

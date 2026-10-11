@@ -29,11 +29,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test Unix installer
         if: runner.os == 'Linux'
-        run: bash tests/test_install.sh
+        run: |
+          bash tests/test_install.sh
+          bash tests/test_source_install.sh
+          bash tests/test_docker_client.sh
       - name: Test Windows installer
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./tests/test_install.ps1
+        run: |
+          ./tests/test_install.ps1
+          ./tests/test_docker_client.ps1
 
   build:
     needs: installers
@@ -115,6 +120,11 @@ jobs:
           curl -fsS http://127.0.0.1:18421/build-stamp.json \
             | jq -e --arg sha "$EXPECTED_COMMIT" '.sha == $sha'
           echo "Published image and frontend match this commit — smoke test passed"
+
+      - name: Test container credentials and workspace permissions
+        env:
+          HOSAKA_IMAGE: ghcr.io/${{ steps.owner.outputs.name }}/hosaka@${{ steps.build.outputs.digest }}
+        run: bash tests/test_container_runtime.sh
 
       - name: Promote verified image
         env:

@@ -15,15 +15,26 @@ $Container = $env:HOSAKA_CONTAINER; if (-not $Container) { $Container = "hosaka"
 $StateDir  = Join-Path $Home_ "state"
 $LinkFile  = Join-Path $Home_ "link"
 $EnvFile   = Join-Path $Home_ "env"
+$WorkspaceFile = Join-Path $Home_ "workspace.conf"
+$PythonBin = "/opt/hosaka-field-terminal/.venv/bin/python"
 
-New-Item -ItemType Directory -Force -Path $Home_, $StateDir | Out-Null
+New-Item -ItemType Directory -Force -Path $Home_, $StateDir, (Join-Path $Home_ "runtime"), (Join-Path $Home_ "picoclaw"), (Join-Path $Home_ "workspace") | Out-Null
 
 function Note($m) { Write-Host "  > $m" -ForegroundColor Cyan }
 function OK($m)   { Write-Host "  + $m" -ForegroundColor Green }
 function Warn($m) { Write-Host "  ! $m" -ForegroundColor Yellow }
 function Die($m)  { Write-Host "  x $m" -ForegroundColor Red; exit 1 }
 
-function Have-Docker { try { & docker info *> $null; return $true } catch { return $false } }
+function Have-Docker {
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $false }
+    & docker info *> $null
+    return $LASTEXITCODE -eq 0
+}
+
+function Invoke-Docker {
+    & docker @args
+    if ($LASTEXITCODE -ne 0) { Die "Docker command failed (exit $LASTEXITCODE)" }
+}
 
 function Current-Link {
     if (Test-Path $LinkFile) { return (Get-Content $LinkFile -Raw).Trim() }
@@ -49,6 +60,72 @@ function Env-File-Args {
     return @()
 }
 
+function Runtime-Args {
+    $workspace = Join-Path $Home_ "workspace"
+    $mode = "rw"
+    if (Test-Path $WorkspaceFile) {
+        $saved = @(Get-Content $WorkspaceFile)
+        if ($saved.Count -ne 2 -or $saved[1] -notin @("ro", "rw")) { Die "invalid workspace configuration; run hosaka workspace clear" }
+        $workspace = $saved[0]
+        $mode = $saved[1]
+        if (-not (Test-Path $workspace -PathType Container)) { Die "shared workspace is missing: $workspace" }
+    }
+    if ($workspace.Contains(',') -or $Home_.Contains(',')) { Die "Docker mount paths cannot contain commas" }
+    $mount = "type=bind,src=$workspace,dst=/workspace"
+    if ($mode -eq "ro") { $mount += ",readonly" }
+    return @(
+        "--mount", "type=bind,src=$StateDir,dst=/var/lib/hosaka",
+        "--mount", "type=bind,src=$(Join-Path $Home_ 'runtime'),dst=/root/.hosaka",
+        "--mount", "type=bind,src=$(Join-Path $Home_ 'picoclaw'),dst=/root/.picoclaw",
+        "--mount", $mount, "--workdir", "/workspace",
+        "-e", "PYTHONPATH=/opt/hosaka-field-terminal", "-e", "HOSAKA_PROJECT_DIR=/workspace"
+    ) + (Env-File-Args)
+}
+
+function Initialize-Runtime($RuntimeArgs) {
+    Invoke-Docker run --rm @RuntimeArgs --entrypoint $PythonBin $Image `
+        /opt/hosaka-field-terminal/scripts/bootstrap_picoclaw_runtime.py --home /root --seed-config | Out-Null
+}
+
+function Run-Local {
+    if (-not (Have-Docker)) { Die "docker not running" }
+    $command = @($args)
+    $tty = @("-i")
+    if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) { $tty += "-t" }
+    if (Container-Running) {
+        Invoke-Docker exec @tty --workdir /workspace -e PYTHONPATH=/opt/hosaka-field-terminal -e HOSAKA_PROJECT_DIR=/workspace $Container @command
+    } else {
+        $runtime = Runtime-Args
+        Initialize-Runtime $runtime
+        $rest = @()
+        if ($command.Count -gt 1) { $rest = $command[1..($command.Count - 1)] }
+        Invoke-Docker run --rm @tty @runtime --entrypoint $command[0] $Image @rest
+    }
+}
+
+function Cmd-Workspace {
+    if ($args.Count -eq 0) {
+        if (Test-Path $WorkspaceFile) { Get-Content $WorkspaceFile }
+        else { Write-Host "$(Join-Path $Home_ 'workspace') (private, read-write)" }
+        return
+    }
+    if (Container-Running) { Die "stop the node with hosaka down before changing workspace mounts" }
+    if ($args[0] -eq "clear") {
+        if ($args.Count -ne 1) { Die "usage: hosaka workspace clear" }
+        if (Test-Path $WorkspaceFile) { Remove-Item $WorkspaceFile }
+        OK "using the private workspace"
+        return
+    }
+    if ($args.Count -gt 2 -or ($args.Count -eq 2 -and $args[1] -ne "--read-write")) { Die "usage: hosaka workspace PATH [--read-write]" }
+    if (-not (Test-Path $args[0] -PathType Container)) { Die "workspace must be an existing directory" }
+    $path = (Resolve-Path $args[0]).Path
+    if ($path.Contains(',') -or $path.Contains("`n") -or $path.Contains("`r")) { Die "workspace paths cannot contain commas or newlines" }
+    $mode = if ($args.Count -eq 2) { "rw" } else { "ro" }
+    [IO.File]::WriteAllText($WorkspaceFile, "$path`n$mode`n", [Text.UTF8Encoding]::new($false))
+    OK "sharing $path at /workspace ($mode)"
+    Note "Only this folder is shared; symlink targets outside it are not exposed."
+}
+
 function Cmd-Up {
     if (-not (Have-Docker)) { Die "docker not running - start Docker Desktop" }
     if (Container-Running) {
@@ -59,13 +136,14 @@ function Cmd-Up {
     }
     try { & docker rm -f $Container *> $null } catch {}
     Note "starting local node -> http://127.0.0.1:$Port"
+    $runtime = Runtime-Args
+    Initialize-Runtime $runtime
     $args = @("run", "-d", "--rm",
               "--name", $Container,
               "-p", "127.0.0.1:${Port}:8421",
-              "-v", "${StateDir}:/var/lib/hosaka",
               "-e", "HOSAKA_BOOT_MODE=headless",
-              "-e", "HOSAKA_DESKTOP_MODE=1") + (Env-File-Args) + @($Image)
-    & docker @args *> $null
+              "-e", "HOSAKA_DESKTOP_MODE=1") + $runtime + @($Image)
+    Invoke-Docker @args | Out-Null
     OK "up -> http://127.0.0.1:$Port"
     Write-Host "    launcher : $PSCommandPath" -ForegroundColor DarkGray
     Write-Host "    state    : $StateDir" -ForegroundColor DarkGray
@@ -75,32 +153,13 @@ function Cmd-Up {
 
 function Cmd-Down {
     if (-not (Have-Docker)) { Die "docker not available" }
-    if (Container-Running) { & docker stop $Container *> $null; OK "stopped" }
+    if (Container-Running) { Invoke-Docker stop $Container | Out-Null; OK "stopped" }
     else { Note "already down" }
 }
 
 function Cmd-Tui {
-    $link = Current-Link
-    if ($link) {
-        $target = Link-Url $link
-        Note "attaching to remote tui at $target (linked)"
-        & docker run --rm -it `
-            -e "HOSAKA_REMOTE=$target" `
-            -e "HOSAKA_BOOT_MODE=client" `
-            -v "${StateDir}:/var/lib/hosaka" `
-            $Image
-        return
-    }
-    if (Container-Running) {
-        & docker exec -it $Container /opt/hosaka-field-terminal/.venv/bin/python -m hosaka --boot console
-        return
-    }
-    Note "no local node running - starting a one-shot console"
-    & docker run --rm -it `
-        -v "${StateDir}:/var/lib/hosaka" `
-        -e "HOSAKA_BOOT_MODE=console" `
-        -e "HOSAKA_DESKTOP_MODE=1" `
-        $Image
+    if (Current-Link) { Die "remote native TUI requires SSH; run hosaka unlink to use the local container" }
+    Run-Local $PythonBin -m hosaka tui @args
 }
 
 function Cmd-Open {
@@ -115,7 +174,7 @@ function Cmd-Open {
 }
 
 function Cmd-Logs { if (Container-Running) { & docker logs -f $Container } else { Die "local node not running" } }
-function Cmd-Shell { if (Container-Running) { & docker exec -it $Container bash } else { Die "local node not running - try: hosaka up" } }
+function Cmd-Shell { Run-Local bash }
 
 function Cmd-Status {
     Write-Host ""
@@ -141,7 +200,7 @@ function Cmd-Status {
 function Cmd-Update {
     if (-not (Have-Docker)) { Die "docker not available" }
     Note "pulling $Image"
-    & docker pull $Image
+    Invoke-Docker pull $Image
     if (Container-Running) { Note "restarting local node with fresh image"; Cmd-Down; Cmd-Up }
     OK "updated"
 }
@@ -188,13 +247,18 @@ hosaka - client for the Hosaka Field Terminal.
   hosaka up                  start the local node (web UI on http://127.0.0.1:$Port)
   hosaka down                stop the local node
   hosaka tui                 drop into the console TUI
-                             (against the linked remote if `hosaka link` was run)
+                             inside the local container, not the host shell
+  hosaka configure llm ...   hidden API-key and provider setup
+  hosaka secrets <verb>      manage container credentials
+  hosaka picoclaw <args>     configure the container's PicoClaw runtime
+  hosaka workspace PATH [--read-write] share a folder at /workspace (default read-only)
+  hosaka workspace clear     return to the private container workspace
   hosaka open                open the web UI in your browser
   hosaka logs                follow logs from the local node
   hosaka shell               bash shell inside the local container
   hosaka status              what's running + where it points
   hosaka update              pull the latest image
-  hosaka link <host[:port]>  route tui/open/status at a remote hosaka
+  hosaka link <host[:port]>  route open/status at a remote hosaka (native TUI needs SSH)
   hosaka unlink              go back to using the local node
   hosaka uninstall           remove launcher + local container (keeps state)
   hosaka version             print versions
@@ -211,7 +275,20 @@ if ($args.Count -gt 1) { $rest = $args[1..($args.Count-1)] }
 switch ($cmd) {
     "up"                           { Cmd-Up }
     {"down","stop"              -contains $_} { Cmd-Down }
-    {"tui","console"            -contains $_} { Cmd-Tui }
+    {"tui","console"            -contains $_} { Cmd-Tui @rest }
+    "workspace"                    { Cmd-Workspace @rest }
+    "configure" {
+        if ($rest.Count -lt 1 -or $rest[0] -ne "llm") { Die "usage: hosaka configure llm --provider PROVIDER --model MODEL" }
+        $options = @()
+        if ($rest.Count -gt 1) { $options = $rest[1..($rest.Count-1)] }
+        Run-Local $PythonBin -m hosaka.llm_setup @options
+    }
+    "secrets" {
+        if ($rest.Count -eq 0) { $rest = @("list") }
+        if ($rest[0] -in @("set", "unset", "import-picoclaw")) { $rest += "--no-mirror" }
+        Run-Local $PythonBin -m hosaka.secrets @rest
+    }
+    "picoclaw"                     { Run-Local /usr/local/bin/picoclaw @rest }
     "open"                         { Cmd-Open }
     "logs"                         { Cmd-Logs }
     {"shell","sh"               -contains $_} { Cmd-Shell }

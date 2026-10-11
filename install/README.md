@@ -31,9 +31,15 @@ current PowerShell session.
 | Command                       | Effect                                                         |
 | ----------------------------- | -------------------------------------------------------------- |
 | `hosaka up`                   | Start the local node (web UI on `http://127.0.0.1:8421`)       |
-| `hosaka tui`                  | Drop into the console TUI                                      |
+| `hosaka tui`                  | Run the native TUI inside the local container                 |
 | `hosaka open`                 | Open the web UI in the browser                                 |
-| `hosaka link <host[:port]>`   | Route `tui` / `open` at a remote Hosaka on the tailnet         |
+| `hosaka link <host[:port]>`   | Route browser/status at a remote Hosaka; native TUI needs SSH |
+| `hosaka configure llm ...`   | Select a provider/model and privately prompt for its key       |
+| `hosaka workspace PATH`      | Share a host folder read-only at `/workspace`                  |
+| `hosaka workspace PATH --read-write` | Explicitly allow edits to the shared host folder     |
+| `hosaka workspace clear`     | Use the private persistent writable workspace                 |
+| `hosaka secrets <verb>`      | Manage persistent container credentials                       |
+| `hosaka picoclaw <args>`     | Run PicoClaw inside the container                              |
 | `hosaka unlink`               | Go back to the local node                                      |
 | `hosaka update`               | Pull the latest image and recreate a running node when changed |
 | `hosaka status`               | What's running + where it points                               |
@@ -56,6 +62,12 @@ Both installers fetch the launcher file(s) from
 `https://install.hosaka.xyz/bin/<name>` at install time. Re-run the
 installer to refresh the launcher itself; `hosaka update` refreshes the
 container image, not the installed CLI.
+
+Stop a running node with `hosaka down` before changing workspace mounts.
+Source installation is separate: use the repository-root
+[`install.sh`](../install.sh), not this Docker installer. Provider setup,
+workspace permission examples, and the isolation limits are documented in
+the [main README](../README.md#set-up-a-model-and-api-key).
 
 Downloads are staged and checked before installation. Image download
 failures produce a nonzero exit instead of a misleading success message.

@@ -82,6 +82,7 @@ try {
     Run-Scenario native $false
     Run-Scenario preserve $false
     Write-Host "Windows installer regression tests passed"
+    $global:LASTEXITCODE = 0
 } finally {
     [Environment]::SetEnvironmentVariable("PATH", $OriginalUserPath, "User")
     $env:PATH = $OriginalPath

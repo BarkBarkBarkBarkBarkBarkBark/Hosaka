@@ -1089,6 +1089,14 @@ start_update_job() {
 }
 
 cmd_update() {
+  if [[ "${HOSAKA_SOURCE_INSTALL:-0}" == "1" ]]; then
+    (( $# == 0 )) || die "source updates take no options; use git for branch selection"
+    [[ -z "$(git -C "$REPO_ROOT" status --porcelain)" ]] || die "source checkout has local changes; commit or stash them before updating"
+    git -C "$REPO_ROOT" pull --ff-only
+    local source_args=()
+    [[ "${HOSAKA_SOURCE_GUI:-0}" != "1" ]] || source_args=(--gui)
+    exec bash "$REPO_ROOT/install.sh" "${source_args[@]}"
+  fi
   # Default source = "source" (git pull + deploy). `hosaka update local`
   # builds + deploys from the working tree without touching git, so dev
   # branch experiments don't surprise the production checkout. Order is
@@ -1414,7 +1422,7 @@ cmd_display() {
 
 cmd_gui() {
   export HOSAKA_DISPLAY_MODE=gui
-  if [[ "$(uname -s)" != "Linux" ]]; then
+  if [[ "${HOSAKA_SOURCE_INSTALL:-0}" == "1" || "$(uname -s)" != "Linux" ]]; then
     cmd_dev "$@"
   elif [[ -n "${DISPLAY:-}" ]]; then
     exec bash "$REPO_ROOT/scripts/hosaka-lxqt-kiosk.sh"
@@ -1432,6 +1440,11 @@ cmd_tui() {
   export COLORTERM="${COLORTERM:-truecolor}"
   local py
   py="$(_hosaka_python)"
+  if [[ "${HOSAKA_SOURCE_INSTALL:-0}" == "1" ]]; then
+    export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+    export HOSAKA_WORKSPACE="${HOSAKA_WORKSPACE:-$PWD}"
+    exec "$py" -m hosaka tui "$@"
+  fi
   cd "$REPO_ROOT" && exec "$py" -m hosaka tui "$@"
 }
 
@@ -1579,6 +1592,9 @@ cmd_configure() {
   fi
   shift || true
   case "$target" in
+    llm)
+      (cd "$REPO_ROOT" && exec "$(_hosaka_python)" -m hosaka.llm_setup "$@")
+      ;;
     picoclaw|pico)
       ( cd "$REPO_ROOT" && exec bash scripts/configure-picoclaw.sh "$@" )
       ;;
@@ -1677,6 +1693,11 @@ run_secrets_module_root() {
 cmd_secrets() {
   local verb="${1:-list}"
   shift || true
+  if [[ "${HOSAKA_SOURCE_INSTALL:-0}" == "1" ]]; then
+    case "$verb" in
+      set|unset|import-picoclaw) run_secrets_module "$verb" "$@" --no-mirror; return ;;
+    esac
+  fi
   case "$verb" in
     list|ls)
       run_secrets_module list "$@"
@@ -1818,6 +1839,8 @@ Modes
                                     install Picoclaw into ~/.local/bin and bootstrap Hosaka runtime
   hosaka configure picoclaw [--onboard|--no-onboard]
                                     install/check Picoclaw and import OPENAI_API_KEY if available
+  hosaka configure llm --provider openai|anthropic|openai-compatible --model ID [--api-base URL]
+                                    save a provider profile with a hidden API-key prompt
   hosaka secrets <verb>             manage env secrets (list|check|set|unset|mirror|import-picoclaw|edit)
 
   hosaka chat [-s session]          open interactive agent REPL

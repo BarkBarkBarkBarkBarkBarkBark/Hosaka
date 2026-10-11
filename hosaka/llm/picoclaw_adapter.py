@@ -190,6 +190,11 @@ def console_chat_stream(
     workspace = Path(str(defaults.get("workspace") or config_path.parent / "workspace")).expanduser()
     if not workspace.is_absolute():
         workspace = config_path.parent / workspace
+    override = os.getenv("HOSAKA_WORKSPACE")
+    if override:
+        workspace = Path(override).expanduser().resolve()
+        if not workspace.is_dir():
+            raise RuntimeError(f"Hosaka workspace does not exist: {workspace}")
     defaults["workspace"] = str(workspace)
     user_message = next(
         (msg.get("content", "") for msg in reversed(messages) if msg.get("role") == "user"),
@@ -200,6 +205,17 @@ def console_chat_stream(
     context = "\n\n".join(
         msg.get("content", "") for msg in messages if msg.get("role") == "system"
     )
+    project = os.getenv("HOSAKA_PROJECT_DIR")
+    if project:
+        project_path = Path(project).expanduser().resolve()
+        if not project_path.is_dir():
+            raise RuntimeError(f"Hosaka project directory does not exist: {project_path}")
+        context += (
+            f"\n\nOperator project directory: {project_path}. Use this absolute path for project "
+            "files and set command working directories there. Your configured agent workspace "
+            "is private runtime storage for identity, memory, and sessions, not the operator project. "
+            "The project mount may be read-only; report permission errors rather than bypassing them."
+        )
     message = f"{context}\n\nOperator request:\n{user_message}" if context else user_message
 
     model = os.getenv("PICOCLAW_MODEL", "").strip()

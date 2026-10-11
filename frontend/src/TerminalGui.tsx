@@ -4,10 +4,12 @@ import { useTranslation } from "./i18n";
 import { menuOrbs, nextWelcomeIndex } from "./orb";
 import { LoreMenu } from "./components/LoreMenu";
 import { ApiHelp } from "./components/ApiHelp";
+import { BrowserDemoTerminal } from "./components/BrowserDemoTerminal";
 import "./styles/terminal-gui.css";
 
 type Page = "wifi" | "bluetooth" | "games" | "flash" | "lore" | "api";
 const loreKeys = ["menuLore", "menuLoreStars", "menuLoreHum", "menuLoreMargins", "menuLoreWaiting"] as const;
+const browserDemo = import.meta.env.VITE_HOSAKA_DEMO === "1";
 type WifiNetwork = { ssid: string; active: boolean; saved: boolean; signal: number | null };
 type BluetoothDevice = { address: string; name: string };
 
@@ -266,7 +268,7 @@ export function TerminalGui() {
   return (
     <main className="terminal-gui">
       <header className="deck-bar">
-        <span>HOSAKA <small>{t("terminal")}</small></span>
+        <span>HOSAKA <small>{t(browserDemo ? "demo.title" : "terminal")}</small></span>
         <button ref={button} aria-expanded={menu} aria-controls="deck-menu" onClick={() => {
           if (menu) close();
           else {
@@ -279,17 +281,19 @@ export function TerminalGui() {
           }
         }}>{t("menu")}</button>
       </header>
-      <TuiTerminal active={!menu} flash={flash} onFlash={setFlash} />
+      {browserDemo ? (
+        <BrowserDemoTerminal active={!menu} onLore={() => { setLoreSlug(null); setPage("lore"); setMenu(true); }} />
+      ) : <TuiTerminal active={!menu} flash={flash} onFlash={setFlash} />}
       {menu && (
         <>
           <button className="deck-scrim" aria-label={t("close")} onClick={close} tabIndex={-1} />
           <aside className={`deck-menu${page === "games" ? " deck-menu-games" : ""}`} id="deck-menu" role="dialog" aria-modal="true" aria-label={t("menu")} ref={drawer}>
             <header><strong>{t("menu")}</strong><button onClick={close}>{t("close")}</button></header>
-            <nav aria-label={t("menu")}>
+            {!browserDemo && <nav aria-label={t("menu")}>
               {(["wifi", "bluetooth", "games", "flash"] as const).map((item) => (
                 <button key={item} aria-pressed={page === item} onClick={() => setPage(page === item ? null : item)}>{t(item)}</button>
               ))}
-            </nav>
+            </nav>}
             {page === null ? (
               <div className="deck-menu-welcome" onPointerMove={(event) => {
                 if (event.pointerType !== "mouse" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -322,7 +326,7 @@ export function TerminalGui() {
                     <button onClick={() => { setLoreSlug("field-notes-on-the-orb"); setPage("lore"); }}>{t("orbNotes")}</button>
                     <button onClick={() => { setLoreSlug(null); setPage("lore"); }}>{t("loreArchive")}</button>
                   </div>
-                  <button className="deck-api-button" onClick={() => setPage("api")}>{t("apiHelp")}</button>
+                  {!browserDemo && <button className="deck-api-button" onClick={() => setPage("api")}>{t("apiHelp")}</button>}
                 </div>
               </div>
             ) : <div className="deck-menu-content">

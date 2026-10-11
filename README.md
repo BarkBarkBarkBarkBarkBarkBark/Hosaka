@@ -61,13 +61,103 @@ Successful container builds from `main` are smoke-tested before becoming
 `:latest`. Local edits reach Docker users only after they are committed,
 pushed, and the [image workflow](./.github/workflows/image.yml) succeeds.
 
+## Install from source (macOS / Linux)
+
+Requires Python 3.10+, Git, and internet access. Use your normal account, not
+`sudo`; this does not change boot services or install a desktop session.
+
+```bash
+git clone https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka.git
+cd Hosaka
+bash install.sh
+# Open a new terminal, or source the shell startup file printed by the installer.
+hosaka configure llm --provider openai --model gpt-4.1
+cd ~/your-project
+hosaka tui
+```
+
+[`install.sh`](./install.sh) installs Python dependencies in a repo-local
+virtualenv, installs PicoClaw if missing, seeds Hosaka's agent runtime, and
+adds a launcher to `~/.local/bin` and your Bash/Zsh PATH. Keep the checkout:
+the launcher uses it directly. `HOSAKA_PREFIX` overrides the installation
+prefix. `bash install.sh --gui` additionally installs/builds the frontend and
+Electron dependencies (Node.js/npm required); `hosaka gui` uses the local
+development GUI. `hosaka update` fast-forwards a clean checkout and refreshes
+dependencies; commit or stash your edits first.
+An older PicoClaw is upgraded to a config-v3-compatible release (0.3.1+).
+
+**Source installs run with your host user's permissions.** The caller's
+current directory becomes the TUI agent workspace. Use Docker instead if you
+want tools and shell commands separated from the host.
+
+## Set up a model and API key
+
+The same commands work for source and Docker-client installs:
+
+```bash
+hosaka configure llm --provider openai --model gpt-4.1
+hosaka configure llm --provider anthropic --model claude-sonnet-4-5
+hosaka configure llm --provider openai-compatible --model YOUR_MODEL \
+  --api-base https://your-provider.example/v1
+```
+
+Choose a model ID available to your provider account. Setup prompts for the
+key without echoing it; do not put keys in shell arguments or commit them.
+It creates a private PicoClaw profile and selects it for subsequent TUI
+sessions. Restart `hosaka tui`, then use `/llm` to test a request. Setup itself
+does not contact the provider or prove that a key/model is valid. Requests
+sent afterwards go to the selected provider and can incur charges.
+
+For a local OpenAI-compatible server, add `--no-key`. Inside Docker,
+`localhost` is the container, not the host: Docker Desktop commonly exposes
+host services at `http://host.docker.internal:11434/v1`.
+`hosaka picoclaw onboard` exposes PicoClaw's fuller provider setup on the
+Docker client; source users can run `picoclaw onboard` directly.
+`hosaka secrets set NAME` manages additional credentials. Source profiles
+live under `~/.hosaka`; Docker profiles live in its persistent runtime
+mount. These files are not encrypted; protect your user account and backups.
+The older `hosaka secrets check` checks the appliance's required-key list,
+not whether this newly selected provider is usable.
+
+## Container workspaces
+
+On Docker installs, `hosaka tui` runs directly inside a container. It attaches
+to the local node if running, otherwise starts a disposable container with
+the same persistent state, provider configuration, and workspace mounts.
+
+```bash
+hosaka down                       # required before changing mounts
+hosaka workspace ~/your-project   # shared at /workspace, read-only
+hosaka tui
+hosaka workspace ~/your-project --read-write  # explicitly allow edits
+hosaka workspace clear            # return to private writable workspace
+```
+
+The default private workspace persists at `~/.hosaka/workspace`. Only the
+chosen folder is bind-mounted; symlinks to host paths outside that folder do
+not grant access. Place needed files inside the folder or choose their
+common parent intentionally. Read-only sharing prevents edits to shared
+files, not network activity or writes to the container's private state.
+Docker isolation is not a complete security sandbox; never share your
+entire home or Docker socket with an untrusted agent.
+
+PicoClaw keeps identity, memory, and session files in its separate writable
+private runtime workspace. The agent is told to use `/workspace` for your
+project files; this separation lets conversation storage work even when the
+shared project is read-only.
+
+`hosaka link HOST` links browser/status commands, not a native terminal.
+For a remote native TUI use SSH and run `hosaka tui` on that machine.
+After updating an older Docker installation, re-run the one-line installer
+to refresh the launcher as well as the image, then `hosaka down` / `hosaka up`
+so new mounts apply. Existing state is kept.
+
 ---
 
 ## Boot Dev Container
 
 ```bash
-cd /Users/marco/Cursor_Folder/Cursor_Codespace/hosaka_console/Hosaka
-hosaka down
+cd Hosaka
 ./docker/dev.sh up
 ```
 
@@ -79,8 +169,8 @@ hosaka down
 
 ## Terminal-first GUI and boot choice
 
-For the recent terminal/menu, games, flash, and PicoClaw console changes, see
-the [agent handoff context](context/2026-10-terminal-and-picoclaw-handoff.md).
+For console-agent integration details, see the
+[PicoClaw backend notes](docs/picoclaw_cli_backend.md).
 
 The Python TUI is the canonical console. The default graphical Hosaka now
 hosts that exact `python -m hosaka tui` process in a resizable terminal, with
@@ -127,6 +217,21 @@ origins, and is disabled in public mode (`HOSAKA_PUBLIC_MODE=1`) or with
 `HOSAKA_TUI_ENABLED=0`. The old web desktop is retired, including `/?desktop=1`;
 remote/public hosts cannot expose the native terminal. Use the local screen or
 `hosaka tui` over SSH.
+
+### Public browser demo
+
+The public `terminal.hosaka.xyz` deployment builds this frontend with
+`VITE_HOSAKA_DEMO=1`. It is explicitly labelled **browser-only demo** and
+supports `/help`, `/commands`, `/lore`, `/orb`, `/signal`, `/about`, and `/clear`.
+Lore opens the bundled archive. The signal message is decorative, not a
+network check. There is no AI, shell execution, native PTY, or device access.
+The public menu only exposes the bundled lore; it does not offer host settings
+or a live API viewer.
+
+The `hosaka-field-terminal` repository owns that hosted build, copying this
+repo's frontend at build time. The `cyber_deck` marketing site embeds it.
+Native GUI builds leave the demo flag unset and continue using `/ws/tui`.
+Do not loosen the local-only PTY policy to make a public demo work.
 
 Wi-Fi uses the existing NetworkManager API on Linux. Bluetooth uses BlueZ to
 scan, pair, trust, and connect devices without a PIN; PIN/passkey pairing and
@@ -351,8 +456,9 @@ After `install_hosaka_lean.sh` runs on the Pi it generates
 single-file client on your laptop:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<you>/Hosaka/main/scripts/hosakactl \
-  -o /usr/local/bin/hosakactl && chmod +x /usr/local/bin/hosakactl
+curl -fsSL https://raw.githubusercontent.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/main/scripts/hosakactl \
+  -o hosakactl
+sudo install -m 0755 hosakactl /usr/local/bin/hosakactl
 
 hosakactl link http://hosaka.local:8421       # prompts for token
 hosakactl status                              # full snapshot
@@ -385,32 +491,23 @@ python scripts/bootstrap_picoclaw_runtime.py --home "$HOME"
 
 ### 2. Configure your LLM backend
 
-Hosted Docker users (the common case) can skip manual config — Hosaka
-prompts you automatically:
+The console uses PicoClaw's agent harness. In the TUI, run `/select llm` to
+list available provider/model choices, then `/select llm <number>`.
+For an OpenAI key, use `hosaka secrets set OPENAI_API_KEY` in a real shell,
+or configure PicoClaw's credentials. The current GUI has no gear/settings
+drawer for LLM setup.
 
-- **Inline shell prompt**: type anything in the terminal on first launch
-  and the shell asks:
-  ```
-    no llm backend configured.
-    configure one now? [Y/n]
-  ```
-  Walks you through provider, model, base URL (for local/Ollama), and
-  API key (input is masked — never logged or sent as chat context).
-
-- **Settings drawer**: click the ⚙ gear icon anytime → **LLM Backend**
-  section. Supports OpenAI and any OpenAI-compatible endpoint (Ollama,
-  LM Studio, etc.). Your API key is stored on the server in
-  `/var/lib/hosaka/llm.json` and applied to the running process
-  immediately — no restart required.
-
-- **Environment variables** (appliance / advanced):
+- **Environment variables** (native appliance / advanced):
   ```bash
   export OPENAI_API_KEY=ollama
   export OPENAI_MODEL=qwen2.5:0.5b
   export OPENAI_BASE_URL=http://100.78.174.79:11434/v1
   ```
 
-Any of these approaches works — mix and match.
+Docker-client users can place environment settings in `~/.hosaka/env` before
+running `hosaka up`; the launcher passes this file to the container. Native
+source users can export them in their shell. A configured model and working
+PicoClaw binary are required; console errors do not fall back to a fake reply.
 
 For the Jetson-hosted Ollama path, smoke test the OpenAI-compatible API with:
 
@@ -442,7 +539,7 @@ python -m hosaka
 ./scripts/setup_hosaka.sh
 ```
 
-One command. Installs everything, runs `picoclaw onboard` if needed,
+Requires PicoClaw to be installed first (see step 1). Runs `picoclaw onboard` if needed,
 regenerates Hosaka's PicoClaw runtime files from repo-owned canon, enables
 systemd services, and starts onboarding.
 
@@ -526,8 +623,9 @@ disconnect protection or the worker's automatic pause/restore sequence.
 
 ### Why is the build so much lighter now?
 
-The terminal-only build transforms **44 modules instead of 237** and ships
-roughly **463 KB** of JS/CSS before compression. The 3.7 MB Automerge bundle,
+The recent terminal-only build transforms about **50 modules instead of 237**
+and ships roughly **half a megabyte** of JS/CSS before compression; exact
+counts change with features. The 3.7 MB Automerge bundle,
 arcade, old panels, webview/app-store bridges, and browser audio dependencies
 are no longer part of the build. This is an asset-size measurement, not a
 claim about peak build RAM on every Pi.
@@ -611,12 +709,13 @@ Hours of inactivity drain it. Reach colony state and it records a birth.
 
 ---
 
-## Voice mode
+## Legacy browser voice architecture (archived UI)
 
-Hosaka is now voice-first. The `◎ voice` tab opens a full-screen orb
-that acts as the primary control surface. On 5-inch and similar small
-screens the orb fills the display; tap **▲ transcript** to slide up a
-drawer with the conversation history, mode selector, and camera controls.
+The following browser voice notes describe the archived desktop, not the
+current terminal-first GUI or public browser demo. That UI had a voice tab,
+orb, transcript drawer, and camera controls. Voice backends and the optional
+native daemon are separate from the console's PicoClaw chat path; their
+presence does not mean those browser controls are still available.
 
 ### Two-lane architecture
 
@@ -695,7 +794,7 @@ mode selector, and camera controls live in a slide-up drawer triggered
 by the **▲ transcript** button at the bottom of the orb stage. This is
 the intended layout for a 5-inch HDMI display running the Electron kiosk.
 
-### Headless daemon
+## Optional native voice daemon
 
 ```bash
 hosaka voice                      # foreground mic/speaker daemon
@@ -729,8 +828,9 @@ for full status, known gaps, and roadmap.
 
 ### LLM backend
 
-Set via the **⚙ Settings drawer → LLM Backend** in the web UI, or via
-the **inline terminal prompt** on first keystroke, or via env vars:
+Use the TUI's `/select llm` menu, native CLI configuration, or environment
+variables. The retired settings drawer and first-keystroke setup prompt are
+not part of the current terminal/menu interface.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -843,8 +943,10 @@ save the first working server.
 
 ### System settings
 
-All of the following are editable at runtime in the **⚙ Settings
-drawer → System** section, or via PATCH `/api/config`:
+Configure these through the host/container environment. The existing
+authenticated configuration API is a separate surface; there is no System
+settings drawer in the current GUI, and not every environment variable is
+editable through PATCH `/api/config`.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -854,7 +956,7 @@ drawer → System** section, or via PATCH `/api/config`:
 | `HOSAKA_WEB_PORT` | `8421` | LAN setup web server port |
 | `PICOCLAW_SESSION` | `hosaka:main` | Agent session key |
 | `PICOCLAW_MODEL` | *(default)* | Override model |
-| `HOSAKA_PUBLIC_MODE` | unset | Set to `1` / `true` / `yes` to hide the ⚙ settings drawer from all users. Intended for the **public web deployment** of this repo where strangers should not be able to reconfigure the LLM backend or system settings. When set, `/api/health` returns `settings_enabled: false`; the frontend reads this on mount and never renders the gear button or `SettingsDrawer`. The check is **server-side** — it cannot be bypassed from the browser. Local Docker installs should leave this unset (settings enabled by default). **Do not remove this flag** — it is the deliberate access control boundary between the operator-owned appliance and the public-facing hosted instance. |
+| `HOSAKA_PUBLIC_MODE` | unset | Server-side public-mode access boundary. Disables the native PTY and restricts operator configuration/device APIs; `/api/health` reports `settings_enabled: false`. Local Docker installs normally leave it unset. This is distinct from the static frontend's `VITE_HOSAKA_DEMO=1` build flag. Do not remove or bypass it to expose a terminal publicly. |
 
 ---
 
@@ -863,4 +965,4 @@ drawer → System** section, or via PATCH `/api/config`:
 - Python 3.10+
 - Picoclaw v0.2+
 - systemd (for appliance boot)
-- No desktop environment needed
+- No desktop environment needed for the plain TUI/headless server; the GUI needs a graphical session
