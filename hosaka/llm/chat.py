@@ -6,6 +6,7 @@ import logging
 import math
 import signal
 import sys
+import uuid
 from contextlib import closing, contextmanager
 from typing import TYPE_CHECKING, Generator
 
@@ -14,7 +15,6 @@ from hosaka.llm import openai_adapter, picoclaw_adapter
 from hosaka.llm.router import (
     LLMBackend,
     stream_chat,
-    sync_chat,
 )
 
 if TYPE_CHECKING:
@@ -22,18 +22,14 @@ if TYPE_CHECKING:
 
 
 def _conversational_backend() -> str:
-    """Plain chat uses OpenAI completions, not the Picoclaw agent/social session."""
-    if openai_adapter.is_available():
-        return LLMBackend.OPENAI
-    if picoclaw_adapter.is_available():
-        return LLMBackend.PICOCLAW
-    return LLMBackend.OFFLINE
+    """Console chat must stay inside the PicoClaw agent harness."""
+    return LLMBackend.PICOCLAW
 
 
 def _build_system_message(hostname: str, cwd: str) -> dict[str, str]:
     return {
         "role": "system",
-        "content": build_chat_system_prompt(hostname=hostname, cwd=cwd),
+        "content": build_chat_system_prompt(hostname=hostname, cwd=cwd, native_tools=True),
     }
 
 
@@ -67,24 +63,29 @@ def _print_stream(
     messages: list[dict[str, str]],
     backend: str | None = None,
     session: str | None = None,
+    cwd: str | None = None,
 ) -> str:
     """Stream tokens to stdout and return the full assistant response."""
     from hosaka.tui.style import thinking_sparkles
-    from hosaka.voice.tools import chat_tool_schemas, dispatch
-
     collected: list[str] = []
     first = True
     spark = thinking_sparkles()
     spark.__enter__()
     try:
         with _chat_deadline(openai_adapter.REQUEST_TIMEOUT):
-            with closing(stream_chat(
-                messages,
-                backend=backend,
-                session=session,
-                tools=chat_tool_schemas(),
-                dispatch=dispatch,
-            )) as tokens:
+            if backend == LLMBackend.PICOCLAW:
+                response = picoclaw_adapter.console_chat_stream(
+                    messages, session=session, cwd=cwd,
+                    timeout=openai_adapter.REQUEST_TIMEOUT,
+                )
+            else:
+                from hosaka.voice.tools import chat_tool_schemas, dispatch
+
+                response = stream_chat(
+                    messages, backend=backend, session=session,
+                    tools=chat_tool_schemas(), dispatch=dispatch,
+                )
+            with closing(response) as tokens:
                 for token in tokens:
                     if not token:
                         continue
@@ -106,6 +107,14 @@ def _print_stream(
         spark.stop()
         print("\nChat cancelled. Back at the prompt.")
         return ""
+    except (RuntimeError, OSError, ValueError) as exc:
+        spark.stop()
+        logging.getLogger("hosaka.chat").warning("Console agent failed: %s", exc)
+        print(
+            f"\nPicoClaw chat failed: {exc}\n"
+            "No direct LLM fallback was used. Check /doctor or /select llm."
+        )
+        return ""
     finally:
         spark.stop()
     if not collected:
@@ -120,16 +129,12 @@ def _print_stream(
 def one_shot(prompt: str, hostname: str, cwd: str) -> None:
     """Send a single prompt, print the response, return."""
     backend = _conversational_backend()
-    if backend == LLMBackend.OFFLINE:
-        print(sync_chat([{"role": "user", "content": prompt}], backend=backend))
-        return
-
     messages = [
         _build_system_message(hostname, cwd),
         {"role": "user", "content": prompt},
     ]
-    session = "hosaka:tui" if backend == LLMBackend.PICOCLAW else None
-    _print_stream(messages, backend=backend, session=session)
+    session = "hosaka:tui"
+    _print_stream(messages, backend=backend, session=session, cwd=cwd)
 
 
 # ── REPL ─────────────────────────────────────────────────────────────────
@@ -140,10 +145,7 @@ def enter_chat_mode(hostname: str, cwd: str) -> None:
 
     print("Type your message. /back or Ctrl-C to return to console.")
 
-    if backend == LLMBackend.OFFLINE:
-        print("No LLM backend available. Install Picoclaw or set OPENAI_API_KEY.")
-        print("Falling back to offline keyword assist.\n")
-
+    session = "hosaka:tui"
     history: list[dict[str, str]] = [_build_system_message(hostname, cwd)]
 
     while True:
@@ -160,11 +162,11 @@ def enter_chat_mode(hostname: str, cwd: str) -> None:
             return
         if user_input == "/clear":
             history = [_build_system_message(hostname, cwd)]
+            session = f"hosaka:tui:{uuid.uuid4().hex}"
             print("Conversation cleared.")
             continue
         if user_input == "/session":
-            from hosaka.llm import picoclaw_adapter
-            print(f"Session: {picoclaw_adapter.DEFAULT_SESSION}")
+            print(f"Session: {session}")
             continue
         if user_input == "/voice":
             try:
@@ -195,7 +197,8 @@ def enter_chat_mode(hostname: str, cwd: str) -> None:
         assistant_text = _print_stream(
             history,
             backend=backend,
-            session="hosaka:tui" if backend == LLMBackend.PICOCLAW else None,
+            session=session,
+            cwd=cwd,
         )
         if assistant_text:
             history.append({"role": "assistant", "content": assistant_text})

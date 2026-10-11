@@ -7,6 +7,9 @@ them via symlinks, and Hosaka's Python chat/voice paths read the same source.
 from __future__ import annotations
 
 import os
+import platform
+import shlex
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -45,7 +48,7 @@ def load_user_text() -> str:
     return _read_text(USER_PATH)
 
 
-def build_chat_system_prompt(hostname: str, cwd: str) -> str:
+def build_chat_system_prompt(hostname: str, cwd: str, *, native_tools: bool = False) -> str:
     sections: list[str] = []
     agent = load_agent_text()
     soul = load_soul_text()
@@ -65,6 +68,33 @@ def build_chat_system_prompt(hostname: str, cwd: str) -> str:
         "Runtime context:\n"
         f"- Device hostname: {hostname or 'hosaka'}\n"
         f"- Working directory: {cwd}\n"
+        f"- Operating system: {platform.system()} {platform.release()} ({platform.machine()})\n"
+        f"- Python executable: {sys.executable}\n"
+    )
+    if native_tools:
+        sections.append(
+            "You are running inside the PicoClaw agent harness on this host. "
+            "Use its native file, shell/exec, and other registered tools to inspect "
+            "the real machine and perform requested work. Do not guess OS behavior "
+            "or claim a tool action succeeded without checking its result. "
+            "The console working directory above is the operator's current directory; "
+            "explicitly cd there before shell commands unless the operator requests "
+            "another directory. Native file tools may default to PicoClaw's workspace, "
+            "so use absolute paths for files outside it. "
+            "Keep PicoClaw's configured tool permissions and safety checks.\n"
+            "For games, use the hosaka-games skill and `hosaka play --json list psx` "
+            "or `hosaka play --json <name>`; never guess the catalog.\n"
+            "For reading, call Hosaka's existing helpers via the native exec tool. "
+            f"From {shlex.quote(str(REPO_ROOT))}, run "
+            f"{shlex.quote(sys.executable)} -c "
+            "'from hosaka.voice.tools import dispatch; "
+            'print(dispatch("list_books", {}))'
+            "' to list books. For launching Foliate use the same dispatch helper "
+            "with open_reader and an optional name argument. These are Python "
+            "helpers, not additional PicoClaw tool names."
+        )
+    else:
+        sections.append(
         "- If someone asks what games are here or to play/launch a game, "
         "use list_games / play_game. Do not suggest bash, ROM folders, or "
         "emulator flags. Launch is a tool call, same as voice.\n"
@@ -72,7 +102,7 @@ def build_chat_system_prompt(hostname: str, cwd: str) -> str:
         "the real library or open_reader to launch Foliate. Pass a title to "
         "open_reader when they name a book. Do not guess titles "
         "or suggest shell commands."
-    )
+        )
     return "\n\n".join(section for section in sections if section).strip()
 
 

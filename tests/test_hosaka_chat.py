@@ -80,14 +80,171 @@ def test_stream_failure_is_reported_before_offline_fallback() -> None:
     assert "[offline]" in result
 
 
-def test_conversational_backend_prefers_openai() -> None:
+def test_conversational_backend_requires_picoclaw() -> None:
     from hosaka.llm import chat as chat_mod
 
     with (
         patch.object(chat_mod.openai_adapter, "is_available", return_value=True),
         patch.object(chat_mod.picoclaw_adapter, "is_available", return_value=True),
     ):
-        assert chat_mod._conversational_backend() == LLMBackend.OPENAI
+        assert chat_mod._conversational_backend() == LLMBackend.PICOCLAW
+
+
+def test_console_chat_uses_native_harness_not_direct_tools(monkeypatch, capsys) -> None:
+    from hosaka.llm import chat
+
+    with (
+        patch.object(chat.picoclaw_adapter, "console_chat_stream", return_value=(t for t in ["native reply"])) as agent,
+        patch.object(chat, "stream_chat") as direct,
+    ):
+        chat.one_shot("inspect this machine", hostname="test-host", cwd="/tmp")
+    direct.assert_not_called()
+    assert agent.call_args.kwargs["cwd"] == "/tmp"
+    assert agent.call_args.kwargs["session"] == "hosaka:tui"
+    context = agent.call_args.args[0][0]["content"]
+    assert "Operating system:" in context
+    assert "test-host" in context
+    assert "native file, shell/exec" in context
+    assert "native reply" in capsys.readouterr().out
+
+
+def test_console_agent_failure_never_falls_back(capsys) -> None:
+    from hosaka.llm import chat
+
+    with (
+        patch.object(chat.picoclaw_adapter, "console_chat_stream", side_effect=RuntimeError("agent unavailable")),
+        patch.object(chat, "stream_chat") as direct,
+    ):
+        chat.one_shot("hello", hostname="test", cwd="/tmp")
+    direct.assert_not_called()
+    output = capsys.readouterr().out
+    assert "agent unavailable" in output
+    assert "No direct LLM fallback" in output
+
+
+@pytest.mark.parametrize("explicit_model", [None, "my-local-model"])
+def test_console_picoclaw_overlay_preserves_tools_sessions_and_config(
+    tmp_path, monkeypatch, explicit_model,
+) -> None:
+    from hosaka.llm import openai_adapter, picoclaw_adapter
+
+    workspace = tmp_path / "workspace"
+    config_path = tmp_path / "config.json"
+    config = {
+        "version": 3,
+        "agents": {"defaults": {"workspace": str(workspace), "restrict_to_workspace": True}},
+        "model_list": [{"model_name": "original", "model": "ollama/test"}],
+        "tools": {"exec": {"enabled": True}},
+    }
+    config_path.write_text(json.dumps(config))
+    original = config_path.read_bytes()
+    monkeypatch.setenv("PICOCLAW_CONFIG_PATH", str(config_path))
+    monkeypatch.setattr(picoclaw_adapter, "is_available", lambda: True)
+    monkeypatch.setattr(openai_adapter, "_api_key", lambda: "test-secret")
+    monkeypatch.setattr(openai_adapter, "_model", lambda: "gpt-4.1")
+    monkeypatch.setattr(openai_adapter, "_api_base_url", lambda: "https://api.openai.com/v1")
+    monkeypatch.delenv("PICOCLAW_MODEL", raising=False)
+    if explicit_model:
+        monkeypatch.setenv("PICOCLAW_MODEL", explicit_model)
+    runtime_paths = []
+
+    def fake_chat(message, session, timeout, *, cwd, env, model):
+        from pathlib import Path
+        runtime = Path(env["PICOCLAW_HOME"])
+        runtime_paths.append(runtime)
+        overlay = json.loads((runtime / "config.json").read_text())
+        assert overlay["tools"] == config["tools"]
+        assert overlay["agents"] == config["agents"]
+        assert (runtime / "config.json").stat().st_mode & 0o777 == 0o600
+        assert model == (explicit_model or "hosaka-console")
+        if not explicit_model:
+            assert overlay["model_list"][-1] == {
+                "model_name": "hosaka-console", "model": "openai/gpt-4.1",
+                "api_base": "https://api.openai.com/v1",
+            }
+            assert "hosaka-console:0:" in (runtime / ".security.yml").read_text()
+            assert '"test-secret"' in (runtime / ".security.yml").read_text()
+        assert session == picoclaw_adapter._console_session_key("hosaka:tui")
+        assert cwd == "/tmp"
+        assert "Darwin" in message
+        assert "Operator request:\nhello" in message
+        return "agent reply"
+
+    monkeypatch.setattr(picoclaw_adapter, "chat_sync", fake_chat)
+    assert "".join(picoclaw_adapter.console_chat_stream(
+        [{"role": "system", "content": "OS: Darwin"}, {"role": "user", "content": "hello"}],
+        cwd="/tmp",
+    )) == "agent reply"
+    assert config_path.read_bytes() == original
+    assert runtime_paths and not runtime_paths[0].exists()
+
+
+def test_picoclaw_nonzero_exit_is_not_success(monkeypatch) -> None:
+    import subprocess
+    from hosaka.llm import picoclaw_adapter
+
+    monkeypatch.setattr(picoclaw_adapter.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
+        a[0], 1, stdout="banner", stderr="provider unavailable",
+    ))
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        picoclaw_adapter.chat_sync("hello")
+
+
+def test_picoclaw_empty_response_is_not_banner_success(monkeypatch) -> None:
+    import subprocess
+    from hosaka.llm import picoclaw_adapter
+
+    monkeypatch.setattr(picoclaw_adapter.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
+        a[0], 0, stdout="🦞 picoclaw 0.2.8\n╚══════╝", stderr="",
+    ))
+    with pytest.raises(RuntimeError, match="empty response"):
+        picoclaw_adapter.chat_sync("hello")
+
+
+def test_picoclaw_response_preserves_workspace_paths_and_mentions() -> None:
+    from hosaka.llm import picoclaw_adapter
+
+    raw = (
+        "🦞 picoclaw 0.2.8\n"
+        "18:00:33 WRN agent > diagnostic\n"
+        "🦞 PicoClaw can use exec.\n"
+        "pwd: /Users/test/.picoclaw/workspace\n"
+    )
+    assert picoclaw_adapter._extract_response(raw) == (
+        "PicoClaw can use exec.\npwd: /Users/test/.picoclaw/workspace"
+    )
+
+
+def test_console_harness_requires_installed_binary(monkeypatch) -> None:
+    from hosaka.llm import picoclaw_adapter
+
+    monkeypatch.setattr(picoclaw_adapter, "is_available", lambda: False)
+    with pytest.raises(RuntimeError, match="not installed"):
+        list(picoclaw_adapter.console_chat_stream([{"role": "user", "content": "hello"}]))
+
+
+def test_console_session_keys_are_stable_and_isolated() -> None:
+    from hosaka.llm.picoclaw_adapter import _console_session_key
+
+    key = _console_session_key("hosaka:tui")
+    assert key.startswith("sk_v1_")
+    assert key == _console_session_key("HOSAKA:TUI")
+    assert key != _console_session_key("hosaka:voice")
+    assert _console_session_key(key) == key
+
+
+def test_chat_clear_starts_a_fresh_native_session(monkeypatch, capsys) -> None:
+    from hosaka.llm import chat
+
+    inputs = iter(["first", "/clear", "/session", "second", "/back"])
+    monkeypatch.setattr("builtins.input", lambda *a: next(inputs))
+    with patch.object(chat, "_print_stream", return_value="reply") as stream:
+        chat.enter_chat_mode(hostname="host", cwd="/tmp")
+    assert stream.call_args_list[0].kwargs["session"] == "hosaka:tui"
+    new_session = stream.call_args_list[1].kwargs["session"]
+    assert new_session.startswith("hosaka:tui:")
+    assert f"Session: {new_session}" in capsys.readouterr().out
+    assert [msg["content"] for msg in stream.call_args_list[1].args[0] if msg["role"] == "user"] == ["second"]
 
 
 def test_console_chat_has_total_deadline(monkeypatch, capsys) -> None:
@@ -815,6 +972,49 @@ def test_select_openai_resolves_secret_despite_ollama_placeholder(monkeypatch, k
         save.assert_not_called()
         apply.assert_not_called()
         assert "No OpenAI key" in out
+
+
+def test_kiosk_can_restore_openai_from_operator_picoclaw_home(tmp_path, monkeypatch, capsys) -> None:
+    from hosaka import llm_cli
+    from hosaka.llm import openai_adapter
+    from hosaka.secrets import store
+
+    pico_home = tmp_path / "operator/.picoclaw"
+    pico_home.mkdir(parents=True)
+    (pico_home / "config.json").write_text(json.dumps({
+        "agents": {"defaults": {"model_name": "gpt-4o-mini"}},
+        "model_list": [{"model_name": "gpt-4o-mini", "model": "openai/gpt-4o-mini"}],
+    }))
+    (pico_home / ".security.yml").write_text(
+        "model_list:\n  gpt-4o-mini:0:\n    api_keys:\n      - test-cloud-key\n"
+    )
+    monkeypatch.setenv("HOME", str(tmp_path / "root"))
+    monkeypatch.setenv("PICOCLAW_HOME", str(pico_home))
+    monkeypatch.delenv("PICOCLAW_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("PICOCLAW_SECURITY_PATH", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "ollama")
+    monkeypatch.setattr(store, "get", lambda name: None)
+    monkeypatch.setattr(llm_cli.llm_config, "load", lambda: {
+        "provider": "openai-compatible", "api_key": "ollama",
+    })
+    with (
+        patch.object(llm_cli.llm_config, "save") as save,
+        patch.object(llm_cli.llm_config, "apply_to_env") as apply,
+    ):
+        assert llm_cli.use_openai("gpt-4.1") == 0
+    assert save.call_args.args[0]["api_key"] == "test-cloud-key"
+    apply.assert_called_once()
+    assert "test-cloud-key" not in capsys.readouterr().out
+    assert openai_adapter._picoclaw_config_path() == pico_home / "config.json"
+
+
+def test_explicit_picoclaw_config_path_overrides_picoclaw_home(tmp_path, monkeypatch) -> None:
+    from hosaka.llm import openai_adapter
+
+    monkeypatch.setenv("PICOCLAW_HOME", str(tmp_path / "operator/.picoclaw"))
+    monkeypatch.setenv("PICOCLAW_CONFIG_PATH", str(tmp_path / "custom/config.json"))
+    assert openai_adapter._picoclaw_config_path() == tmp_path / "custom/config.json"
+    assert openai_adapter._picoclaw_security_path() == tmp_path / "custom/.security.yml"
 
 
 def test_non_ollama_compatible_profile_is_not_mislabeled_or_probed(monkeypatch, capsys) -> None:

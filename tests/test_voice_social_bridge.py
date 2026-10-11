@@ -503,7 +503,7 @@ def test_picoclaw_chat_sync_honors_timeout(monkeypatch) -> None:
 
     def fake_run(*_args, **kwargs):
         captured.update(kwargs)
-        return SimpleNamespace(stdout="🦞 hi", stderr="")
+        return SimpleNamespace(stdout="🦞 hi", stderr="", returncode=0)
 
     monkeypatch.setattr(picoclaw_adapter.subprocess, "run", fake_run)
     assert picoclaw_adapter.chat_sync("hello", timeout=6) == "hi"

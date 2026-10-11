@@ -70,6 +70,9 @@ hosaka down
 
 ## Terminal-first GUI and boot choice
 
+For the recent terminal/menu, games, flash, and PicoClaw console changes, see
+the [agent handoff context](context/2026-10-terminal-and-picoclaw-handoff.md).
+
 The Python TUI is the canonical console. The default graphical Hosaka now
 hosts that exact `python -m hosaka tui` process in a resizable terminal, with
 one **Menu** button for **Wi-Fi**, **Bluetooth**, **Games**, and **Flash**. Opening or

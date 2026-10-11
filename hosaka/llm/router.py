@@ -18,8 +18,7 @@ log = logging.getLogger("hosaka.router")
 
 def _picoclaw_default_model() -> str:
     """Read the active Picoclaw default model (e.g. 'ollama/qwen2.5:0.5b')."""
-    config_path = os.getenv("PICOCLAW_CONFIG_PATH", "").strip()
-    path = Path(config_path).expanduser() if config_path else Path.home() / ".picoclaw" / "config.json"
+    path = openai_adapter._picoclaw_config_path()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:

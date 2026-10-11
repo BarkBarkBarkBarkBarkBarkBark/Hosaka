@@ -16,6 +16,23 @@ picoclaw skills install	Install a skill
 picoclaw migrate	Migrate data from older versions
 picoclaw auth login	Authenticate with providers
 
+Hosaka console `/llm`
+- `/llm`, `/llm <message>`, `/ask`, and `/chat` use `picoclaw agent`, not direct completions.
+- PicoClaw owns native tools, workspace instructions, and the persistent `hosaka:tui` session.
+  Hosaka maps the session alias to an explicit opaque PicoClaw key so it does
+  not share the agent's default/social session. `/clear` inside `/chat` starts
+  a fresh native session without deleting existing history.
+- Each request includes Hosaka identity, actual host OS, hostname, and operator working directory.
+- `/select llm` selects the model/provider used *inside* PicoClaw. An explicit
+  `PICOCLAW_MODEL` instead selects an existing PicoClaw model alias.
+- Hosaka creates a private temporary config overlay for the selected model,
+  retaining PicoClaw's workspace and tool permissions. The original config is
+  unchanged; temporary credentials are removed when the request finishes.
+- PicoClaw must be installed and onboarded. Agent/config/provider failures are
+  reported at the console; there is no direct OpenAI or offline fallback.
+- The gateway is not required for console chat. Streaming is word-by-word
+  presentation after the CLI response, not live model-token streaming.
+
 Hosaka gateway websocket wiring (Picoclaw)
 - export PICOCLAW_GATEWAY_URL=ws://127.0.0.1:18790
 - optional auth: export PICOCLAW_GATEWAY_TOKEN=... (or PICOCLAW_GATEWAY_PASSWORD=...)

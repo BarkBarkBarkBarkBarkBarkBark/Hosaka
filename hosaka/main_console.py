@@ -1040,14 +1040,14 @@ def _check_api_key() -> None:
     import json
 
     try:
-        from hosaka.llm.openai_adapter import resolve_api_key
+        from hosaka.llm.openai_adapter import _picoclaw_config_path, resolve_api_key
         key, _src = resolve_api_key()
         if key:
             return
     except Exception:
         pass
 
-    cfg_path = Path.home() / ".picoclaw" / "config.json"
+    cfg_path = _picoclaw_config_path()
     if not cfg_path.exists():
         return  # picoclaw not set up yet — onboard handles this
 
@@ -1066,7 +1066,7 @@ def _check_api_key() -> None:
     defaults = cfg.get("agents", {}).get("defaults", {})
     model_name = defaults.get("model_name", "")
 
-    print(f"  {AMBER}No API key found in ~/.picoclaw/config.json{R}")
+    print(f"  {AMBER}No API key found in {cfg_path}{R}")
     print(f"  {GRAY}Hosaka needs an OpenAI API key to talk to the AI.{R}")
     print()
     try:
@@ -1076,7 +1076,7 @@ def _check_api_key() -> None:
         return
 
     if not key:
-        print(f"  {GRAY}Skipped. You can add it later to ~/.picoclaw/config.json{R}")
+        print(f"  {GRAY}Skipped. You can add it later to {cfg_path}{R}")
         return
 
     # Find the active model entry or create one

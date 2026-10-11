@@ -55,6 +55,9 @@ def _picoclaw_config_path() -> Path:
     raw = os.getenv("PICOCLAW_CONFIG_PATH", "").strip()
     if raw:
         return Path(raw).expanduser()
+    home = os.getenv("PICOCLAW_HOME", "").strip()
+    if home:
+        return Path(home).expanduser() / "config.json"
     return Path.home() / ".picoclaw" / "config.json"
 
 
