@@ -228,15 +228,13 @@ def console_chat_stream(
         if not key and openai_adapter._base_url() == "https://api.openai.com":
             raise RuntimeError("No model credential configured. Use /select llm or configure an API key.")
         model = "hosaka-console"
-        config["model_list"] = [
-            entry for entry in config["model_list"]
-            if not isinstance(entry, dict) or entry.get("model_name") != model
-        ]
-        config["model_list"].append({
+        # PicoClaw can resolve credentials from a different alias for the same
+        # provider/model. Keep only the selected model in this private overlay.
+        config["model_list"] = [{
             "model_name": model,
             "model": f"openai/{openai_adapter._model()}",
             "api_base": openai_adapter._api_base_url(),
-        })
+        }]
         if config.get("version", 0) >= 3:
             if re.search(r"^  hosaka-console:\d+:", security_text, re.MULTILINE):
                 raise RuntimeError("PicoClaw security config already uses the reserved hosaka-console alias.")

@@ -31,6 +31,10 @@ Hosaka console `/llm`
   is incompatible with the Chat Completions transport; normal web tools
   remain available. The original config is
   unchanged; temporary credentials are removed when the request finishes.
+- When Hosaka selects the provider, the private overlay contains only that
+  selected model. This prevents PicoClaw from resolving another alias for the
+  same provider/model without the selected credential. Explicit
+  `PICOCLAW_MODEL` aliases retain their original model list.
 - PicoClaw must be installed and onboarded. Agent/config/provider failures are
   reported at the console; there is no direct OpenAI or offline fallback.
 - The gateway is not required for console chat. Streaming is word-by-word

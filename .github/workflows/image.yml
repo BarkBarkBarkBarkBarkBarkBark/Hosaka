@@ -35,6 +35,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           python -m pip install -r requirements-hosaka.txt pytest
+          bash scripts/install-picoclaw.sh --prefix "$RUNNER_TEMP/hosaka-test-tools" --no-runtime
+          export PATH="$RUNNER_TEMP/hosaka-test-tools/bin:$PATH"
           python -m pytest -q \
             tests/test_appliance_install.py tests/test_picoclaw_runtime.py \
             tests/test_hosaka_chat.py tests/test_hosaka_main_console.py \

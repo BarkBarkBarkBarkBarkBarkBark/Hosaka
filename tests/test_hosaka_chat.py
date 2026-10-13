@@ -252,10 +252,10 @@ def test_console_picoclaw_overlay_preserves_tools_sessions_and_config(
         assert (runtime / "config.json").stat().st_mode & 0o777 == 0o600
         assert model == (explicit_model or "hosaka-console")
         if not explicit_model:
-            assert overlay["model_list"][-1] == {
+            assert overlay["model_list"] == [{
                 "model_name": "hosaka-console", "model": "openai/gpt-4.1",
                 "api_base": "https://api.openai.com/v1",
-            }
+            }]
             assert "hosaka-console:0:" in (runtime / ".security.yml").read_text()
             assert '"test-secret"' in (runtime / ".security.yml").read_text()
         assert session == picoclaw_adapter._console_session_key("hosaka:tui")
@@ -271,6 +271,73 @@ def test_console_picoclaw_overlay_preserves_tools_sessions_and_config(
     )) == "agent reply"
     assert config_path.read_bytes() == original
     assert runtime_paths and not runtime_paths[0].exists()
+
+
+def test_real_picoclaw_sends_selected_credentials_with_duplicate_model_alias(tmp_path, monkeypatch):
+    import shutil
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from hosaka.llm import openai_adapter, picoclaw_adapter
+
+    if not shutil.which(picoclaw_adapter.PICOCLAW_BIN):
+        pytest.skip("PicoClaw binary required; release CI installs it")
+    captured = []
+
+    class Provider(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def do_POST(self):
+            payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            authorized = self.headers.get("Authorization") == "Bearer test-runtime-key"
+            captured.append((authorized, payload))
+            response = {
+                "id": "local-test", "object": "chat.completion", "created": 0,
+                "model": "gpt-4.1",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "LOCAL_OK"},
+                             "finish_reason": "stop"}],
+            } if authorized else {"error": {"message": "Missing selected credential"}}
+            body = json.dumps(response).encode()
+            self.send_response(200 if authorized else 401)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Provider)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}/v1"
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({
+        "version": 3,
+        "agents": {"defaults": {"workspace": str(tmp_path / "workspace"), "model_name": "gpt-4.1"}},
+        "model_list": [{"model_name": "gpt-4.1", "model": "openai/gpt-4.1", "api_base": base}],
+        "tools": {"web": {"prefer_native": True}},
+    }))
+    original = config_path.read_bytes()
+    monkeypatch.setenv("PICOCLAW_CONFIG_PATH", str(config_path))
+    monkeypatch.delenv("PICOCLAW_SECURITY_PATH", raising=False)
+    monkeypatch.delenv("PICOCLAW_MODEL", raising=False)
+    monkeypatch.setattr(openai_adapter, "_api_key", lambda: "test-runtime-key")
+    monkeypatch.setattr(openai_adapter, "_model", lambda: "gpt-4.1")
+    monkeypatch.setattr(openai_adapter, "_api_base_url", lambda: base)
+    try:
+        response = "".join(picoclaw_adapter.console_chat_stream(
+            [{"role": "user", "content": "Reply LOCAL_OK. Do not use tools."}], timeout=20,
+        ))
+        assert response == "LOCAL_OK"
+        assert captured and all(authorized for authorized, _ in captured)
+        assert all(payload["model"] == "gpt-4.1" for _, payload in captured)
+        assert all(
+            tool["type"] in {"function", "custom"}
+            for _, payload in captured for tool in payload.get("tools", [])
+        )
+        assert config_path.read_bytes() == original
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 def test_picoclaw_nonzero_exit_is_not_success(monkeypatch) -> None:
