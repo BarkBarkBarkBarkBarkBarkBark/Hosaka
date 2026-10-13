@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import math
+import os
+import platform
 import signal
 import sys
 import uuid
@@ -139,13 +141,12 @@ def one_shot(prompt: str, hostname: str, cwd: str) -> None:
 
 # ── REPL ─────────────────────────────────────────────────────────────────
 
-def enter_chat_mode(hostname: str, cwd: str) -> None:
+def enter_chat_mode(hostname: str, cwd: str, session: str = "hosaka:tui") -> None:
     """Interactive chat loop. /back or Ctrl-C to exit."""
     backend = _conversational_backend()
 
     print("Type your message. /back or Ctrl-C to return to console.")
 
-    session = "hosaka:tui"
     history: list[dict[str, str]] = [_build_system_message(hostname, cwd)]
 
     while True:
@@ -202,3 +203,32 @@ def enter_chat_mode(hostname: str, cwd: str) -> None:
         )
         if assistant_text:
             history.append({"role": "assistant", "content": assistant_text})
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+    from hosaka.llm.llm_config import apply_to_env, load
+    from hosaka.main_console import _check_api_key
+
+    parser = argparse.ArgumentParser(prog="hosaka")
+    parser.add_argument("command", choices=["chat", "message"])
+    parser.add_argument("-s", "--session", default="hosaka:main")
+    parser.add_argument("-m", "--message", help="send one message instead of opening interactive chat")
+    parser.add_argument("--model", help="explicit PicoClaw model alias")
+    parser.add_argument("prompt", nargs="*")
+    args = parser.parse_args(argv)
+    if args.message is not None and args.prompt:
+        parser.error("use either --message or a positional prompt")
+    prompt = args.message if args.message is not None else " ".join(args.prompt)
+    if args.command == "message" and not prompt.strip():
+        parser.error("message requires a prompt")
+    apply_to_env(load())
+    if args.model:
+        os.environ["PICOCLAW_MODEL"] = args.model
+    _check_api_key()
+    hostname, cwd = platform.node(), os.getcwd()
+    if args.command == "chat" and args.message is None and not args.prompt:
+        enter_chat_mode(hostname, cwd, session=args.session)
+        return 0
+    messages = [_build_system_message(hostname, cwd), {"role": "user", "content": prompt}]
+    return 0 if _print_stream(messages, backend=_conversational_backend(), session=args.session, cwd=cwd) else 1

@@ -269,7 +269,6 @@ export function TerminalGui() {
   return (
     <main className="terminal-gui">
       <header className="deck-bar">
-        <span>HOSAKA <small>{t(browserDemo ? "demo.title" : hostedTerminal ? "hosted.title" : "terminal")}</small></span>
         <button ref={button} aria-expanded={menu} aria-controls="deck-menu" onClick={() => {
           if (menu) close();
           else {
@@ -281,6 +280,7 @@ export function TerminalGui() {
             setMenu(true);
           }
         }}>{t("menu")}</button>
+        <span>HOSAKA <small>{t(browserDemo ? "demo.title" : hostedTerminal ? "hosted.title" : "terminal")}</small></span>
       </header>
       {browserDemo ? (
         <BrowserDemoTerminal active={!menu} onLore={() => { setLoreSlug(null); setPage("lore"); setMenu(true); }} />
@@ -291,7 +291,7 @@ export function TerminalGui() {
           <aside className={`deck-menu${page === "games" ? " deck-menu-games" : ""}`} id="deck-menu" role="dialog" aria-modal="true" aria-label={t("menu")} ref={drawer}>
             <header><strong>{t("menu")}</strong><button onClick={close}>{t("close")}</button></header>
             {!browserDemo && !hostedTerminal && <nav aria-label={t("menu")}>
-              {(["wifi", "bluetooth", "games", "flash"] as const).map((item) => (
+              {(["games", "wifi", "bluetooth", "flash"] as const).map((item) => (
                 <button key={item} aria-pressed={page === item} onClick={() => setPage(page === item ? null : item)}>{t(item)}</button>
               ))}
             </nav>}

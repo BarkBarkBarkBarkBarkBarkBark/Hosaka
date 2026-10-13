@@ -101,6 +101,9 @@ def _dispatch_argv() -> int | None:
     if len(sys.argv) < 2:
         return None
     cmd = sys.argv[1]
+    if cmd in {"chat", "message"}:
+        from hosaka.llm.chat import main as chat_main
+        return chat_main(sys.argv[1:])
     if cmd == "play":
         from hosaka.play import main as play_main
         return play_main(sys.argv[2:])

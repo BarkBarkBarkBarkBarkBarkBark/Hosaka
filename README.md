@@ -843,14 +843,30 @@ not part of the current terminal/menu interface.
 | `OPENAI_BASE_URL` | `https://api.openai.com` | OpenAI endpoint; can be changed for Ollama, LM Studio, etc. |
 
 Persisted config lives in `/var/lib/hosaka/llm.json` (or
-`~/.hosaka/llm.json` for non-root installs) and is applied on startup.
+`~/.hosaka/llm.json` when no system state directory exists) and is applied on startup.
 PATCH `/api/llm-key` applies it to the running process without restart.
+
+Fresh source and appliance installs default to **OpenAI GPT-4.1**. Supply
+`OPENAI_API_KEY` when running the appliance installer, or enter it once at
+the console's hidden first-run prompt. Credentials are stored privately,
+never in Git. A missing key does not prevent the appliance UI from starting.
+The appliance installer and `hosaka deploy` prepare root and operator agent
+workspaces and make the shared LLM settings operator-owned with mode `0600`.
+Console and SSH `hosaka chat` / `hosaka message` requests use those same saved
+provider settings through the PicoClaw console adapter. Explicit PicoClaw
+model aliases remain supported.
 
 `/select llm <number>` saves the provider/model for future sessions, including
 GUI refreshes. Every TUI startup reloads that choice over stale inherited
 backend settings. Choice `0` is OpenAI GPT-4.1. Existing saved choices are
 preserved; `HOSAKA_LOCAL_FIRST=1` explicitly opts into the Ollama defaults
 instead of GPT-4.1 when no configuration has been saved.
+
+Updates do not replace an existing model selection. Native web-search tools
+are disabled in Hosaka's temporary PicoClaw request configuration because
+`web_search_preview` is not accepted by Chat Completions. Normal agent web
+tools remain available; the request overlay does not modify the original
+PicoClaw configuration.
 
 Hosaka can persist a live local Ollama selection by probing the configured
 hosts' `/api/tags` endpoints:
@@ -864,6 +880,21 @@ model when available. Set `HOSAKA_OLLAMA_DISCOVERY_URLS` to a comma-separated
 list of known LAN/Tailscale Ollama URLs; Hosaka only probes those hosts and
 does not scan a network. The persisted discovery configuration is refreshed on
 each web-server start, so it can move to a reachable local server offline.
+
+### PlayStation runtime
+
+The appliance installer installs RetroArch, but does not bundle games, BIOS
+files, or emulator cores. Once a PS1 core is installed, the launcher discovers
+PCSX-ReARMed, SwanStation, or Beetle PSX in the operator's RetroArch core
+directory or standard system libretro directories. Existing RetroPie emulator
+configuration and explicit `HOSAKA_PSX_CORE` overrides take precedence.
+An invalid explicit core path is reported instead of silently replaced.
+`HOSAKA_PSX_ROMS` overrides ROM discovery; otherwise the launcher checks
+`~/RetroPie/roms/psx`, `~/Games/PlayStation`, and `~/Games/psx`.
+
+Updates archive obsolete launcher-state files only when the recorded process
+has exited. They never signal an unverified legacy process. Use `/play stop`
+to stop a game launched by the current launcher.
 
 ### Offline Ollama protocol
 

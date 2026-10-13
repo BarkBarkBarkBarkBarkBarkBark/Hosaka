@@ -1,0 +1,18 @@
+#!/bin/sh
+
+export DISPLAY="${DISPLAY:-:0}"
+XORG_AUTH="$(ps -eo args= 2>/dev/null | awk '$1 ~ /(^|\/)Xorg$/ { for (i = 2; i < NF; i++) if ($i == "-auth") { print $(i + 1); exit } }')"
+if [ -n "$XORG_AUTH" ] && [ -r "$XORG_AUTH" ]; then
+    export XAUTHORITY="$XORG_AUTH"
+else
+    export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+fi
+
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user import-environment DISPLAY XAUTHORITY XDG_RUNTIME_DIR 2>/dev/null || true
+fi
+if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+    dbus-update-activation-environment --systemd DISPLAY XAUTHORITY XDG_RUNTIME_DIR 2>/dev/null || true
+fi
+
+exec openbox-session

@@ -27,6 +27,19 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        if: runner.os == 'Linux'
+        with:
+          python-version: "3.12"
+      - name: Test appliance runtime defaults
+        if: runner.os == 'Linux'
+        run: |
+          python -m pip install -r requirements-hosaka.txt pytest
+          python -m pytest -q \
+            tests/test_appliance_install.py tests/test_picoclaw_runtime.py \
+            tests/test_hosaka_chat.py tests/test_hosaka_main_console.py \
+            tests/test_play.py tests/test_games.py tests/test_games_api.py \
+            tests/test_games_menu.py tests/test_update_deployment.py tests/test_llm_setup.py
       - name: Test Unix installer
         if: runner.os == 'Linux'
         run: |

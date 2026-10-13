@@ -158,6 +158,8 @@ $SUDO install -d -m 0755 -o "$TARGET_USER" -g "$TARGET_USER" /var/lib/hosaka
 if [[ -f /var/lib/hosaka/mode ]]; then
   $SUDO chown "$TARGET_USER:$TARGET_USER" /var/lib/hosaka/mode || true
 fi
+$SUDO /opt/hosaka-field-terminal/.venv/bin/python \
+  "$REPO_ROOT/scripts/bootstrap_picoclaw_runtime.py" --appliance-user "$TARGET_USER"
 
 # ── 7. operator-side config files ─────────────────────────────────────────────
 $SUDO install -d -m 0755 -o "$TARGET_USER" -g "$TARGET_USER" "$TARGET_HOME/.config/hosaka"

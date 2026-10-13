@@ -18,7 +18,15 @@ ROM_EXTENSIONS = (".m3u", ".cue", ".chd", ".pbp", ".iso")
 
 
 def rom_root() -> Path:
-    return Path(os.getenv("HOSAKA_PSX_ROMS", str(Path.home() / "RetroPie/roms/psx"))).expanduser()
+    configured = os.getenv("HOSAKA_PSX_ROMS", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    candidates = (
+        Path.home() / "RetroPie/roms/psx",
+        Path.home() / "Games/PlayStation",
+        Path.home() / "Games/psx",
+    )
+    return next((path for path in candidates if path.is_dir()), candidates[0])
 
 
 def catalog() -> list[Path]:
@@ -49,6 +57,11 @@ def score(query: str, path: Path) -> int:
 
 def launch_argv(rom: Path) -> list[str]:
     core = os.getenv("HOSAKA_PSX_CORE", "").strip()
+    config = Path("/opt/retropie/configs/psx/emulators.cfg")
+    if not core and not config.is_file():
+        discovered = installed_psx_core()
+        if discovered:
+            core = str(discovered)
     if core:
         if not Path(core).expanduser().is_file():
             raise FileNotFoundError(f"PlayStation libretro core not found: {core}")
@@ -62,9 +75,11 @@ def launch_argv(rom: Path) -> list[str]:
                 raise FileNotFoundError(f"RetroArch configuration not found: {config}")
             argv += ["--config", str(Path(config).expanduser())]
         return [*argv, str(rom)]
-    config = Path("/opt/retropie/configs/psx/emulators.cfg")
     if not config.is_file():
-        raise FileNotFoundError("Set HOSAKA_PSX_CORE to an installed PS1 libretro core (or install RetroPie).")
+        raise FileNotFoundError(
+            "No PS1 libretro core is installed. Install PCSX-ReARMed, "
+            "or set HOSAKA_PSX_CORE to an installed PS1 core (or install RetroPie)."
+        )
     entries: dict[str, str] = {}
     for line in config.read_text().splitlines():
         if "=" in line and not line.lstrip().startswith("#"):
@@ -82,6 +97,21 @@ def launch_argv(rom: Path) -> list[str]:
     if core_index >= len(argv) or not Path(argv[core_index]).is_file():
         raise FileNotFoundError("The RetroPie PS1 libretro core is missing.")
     return [str(rom) if arg == "%ROM%" else arg for arg in argv]
+
+
+def installed_psx_core() -> Path | None:
+    roots = [
+        Path.home() / ".config/retroarch/cores",
+        Path("/usr/lib/libretro"),
+        Path("/usr/local/lib/libretro"),
+        *sorted(Path("/usr/lib").glob("*/libretro")),
+    ]
+    for root in roots:
+        for name in ("pcsx_rearmed_libretro.so", "swanstation_libretro.so", "mednafen_psx_libretro.so"):
+            candidate = root / name
+            if candidate.is_file():
+                return candidate
+    return None
 
 
 def state_file() -> Path:
@@ -103,6 +133,15 @@ def stop() -> dict[str, Any]:
     if not isinstance(saved, dict):
         raise ValueError("Invalid Hosaka emulator state; refusing to signal an unknown process.")
     pid, identity = saved.get("pid"), saved.get("identity")
+    if (
+        isinstance(pid, int) and not isinstance(pid, bool) and pid > 1
+        and identity is None and isinstance(saved.get("id"), str)
+        and saved["id"] and not process_identity(pid)
+    ):
+        backup = state.with_name(f"{state.name}.legacy-{time.time_ns()}")
+        state.replace(backup)
+        log.warning("Archived legacy game state for exited PID %s at %s", pid, backup)
+        return {"ok": True, "action": "stop", "message": "Archived legacy state; the previous game has exited."}
     if not isinstance(pid, int) or pid <= 1 or not isinstance(identity, str) or not identity:
         raise ValueError("Invalid Hosaka emulator state; refusing to signal an unknown process.")
     if process_identity(pid) != identity:

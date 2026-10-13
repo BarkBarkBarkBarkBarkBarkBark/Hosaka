@@ -1040,6 +1040,8 @@ refresh_appliance_launchers() {
   local home
   home="$(getent passwd "$user" | cut -d: -f6)"
   [[ -n "$home" ]] || die "cannot find home directory for $user"
+  sudo "$DEPLOY_ROOT/.venv/bin/python" "$DEPLOY_ROOT/scripts/bootstrap_picoclaw_runtime.py" \
+    --appliance-user "$user"
   local config="${XDG_CONFIG_HOME:-$home/.config}"
   note "refreshing installed CLI, kiosk launchers, and graphical autostart"
   sudo install -m 0755 "$REPO_ROOT/scripts/hosaka" /usr/local/bin/hosaka
@@ -1391,7 +1393,10 @@ cmd_chat() {
   _split_session_args "$@"
   local session="${SESSION_OVERRIDE:-$AGENT_SESSION}"
   note "opening chat session $(c_cyan "$session") — ctrl-d to exit"
-  exec "$PICOCLAW_BIN" agent -s "$session" "${REST[@]}"
+  local py
+  py="$(_hosaka_python)" || die "Python runtime missing"
+  PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+    exec "$py" -m hosaka chat --session "$session" "${REST[@]}"
 }
 
 cmd_message() {
@@ -1401,7 +1406,10 @@ cmd_message() {
   if (( ${#REST[@]} == 0 )); then
     die "usage: hosaka message [-s session] <text...>  (try: hosaka chat for REPL)"
   fi
-  exec "$PICOCLAW_BIN" agent -s "$session" -m "${REST[*]}"
+  local py
+  py="$(_hosaka_python)" || die "Python runtime missing"
+  PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+    exec "$py" -m hosaka message --session "$session" -- "${REST[*]}"
 }
 
 cmd_display() {

@@ -31,8 +31,9 @@ html, body, #root { height: 100%; margin: 0; background: #0b0d10; color-scheme: 
   flex-shrink: 0;
   padding: 4px 12px;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
+  gap: 12px;
   border-bottom: 1px solid #252c34;
 }
 .deck-bar small { color: #88939e; }

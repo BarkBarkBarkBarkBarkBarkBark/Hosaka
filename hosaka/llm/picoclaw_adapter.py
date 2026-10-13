@@ -187,6 +187,8 @@ def console_chat_stream(
     defaults = agents.get("defaults") if isinstance(agents, dict) else None
     if not isinstance(defaults, dict):
         raise RuntimeError("PicoClaw config must contain agents.defaults.")
+    # Native web-search tools are not valid in Chat Completions requests.
+    config.setdefault("tools", {}).setdefault("web", {})["prefer_native"] = False
     workspace = Path(str(defaults.get("workspace") or config_path.parent / "workspace")).expanduser()
     if not workspace.is_absolute():
         workspace = config_path.parent / workspace

@@ -25,6 +25,14 @@ def test_catalog_is_psx_and_deduplicates_disc_tracks(library):
     assert [p.name for p in play.catalog()] == ["Crash Bandicoot.cue", "Crash Team Racing.chd", "Spyro the Dragon.cue"]
 
 
+def test_rom_root_detects_games_playstation_when_not_configured(tmp_path, monkeypatch):
+    root = tmp_path / "Games/PlayStation"
+    root.mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("HOSAKA_PSX_ROMS", raising=False)
+    assert play.rom_root() == root
+
+
 def test_exact_and_fuzzy_names(library, monkeypatch):
     monkeypatch.setattr(play, "launch", lambda rom: {"ok": True, "title": rom.stem, "action": "launch"})
     assert play.execute(["spyro"])["title"] == "Spyro the Dragon"
@@ -66,6 +74,32 @@ def test_configurable_core_and_rom_path_are_separate_arguments(library, tmp_path
     assert play.launch_argv(rom) == ["/usr/bin/retroarch", "-L", str(core), "--config", str(config), str(rom)]
 
 
+def test_installed_user_core_is_discovered_without_configuration(library, tmp_path, monkeypatch):
+    core = tmp_path / ".config/retroarch/cores/pcsx_rearmed_libretro.so"
+    core.parent.mkdir(parents=True)
+    core.touch()
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("HOSAKA_PSX_CORE", raising=False)
+    monkeypatch.delenv("HOSAKA_RETROARCH_CONFIG", raising=False)
+    monkeypatch.setenv("HOSAKA_RETROARCH", "/usr/bin/retroarch")
+    rom = library / "Crash Bandicoot.cue"
+    assert play.launch_argv(rom) == ["/usr/bin/retroarch", "-L", str(core), str(rom)]
+
+
+def test_explicit_missing_core_is_not_replaced_by_discovery(library, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOSAKA_PSX_CORE", str(tmp_path / "missing.so"))
+    monkeypatch.setattr(play, "installed_psx_core", lambda: pytest.fail("Explicit core must win"))
+    with pytest.raises(FileNotFoundError, match="core not found"):
+        play.launch_argv(library / "Crash Bandicoot.cue")
+
+
+def test_missing_core_is_reported(library, monkeypatch):
+    monkeypatch.delenv("HOSAKA_PSX_CORE", raising=False)
+    monkeypatch.setattr(play, "installed_psx_core", lambda: None)
+    with pytest.raises(FileNotFoundError, match="No PS1 libretro core"):
+        play.launch_argv(library / "Crash Bandicoot.cue")
+
+
 def test_retropie_config_is_parsed_without_a_shell(library, tmp_path, monkeypatch):
     config = tmp_path / "emulators.cfg"
     exe = tmp_path / "retroarch"
@@ -90,6 +124,24 @@ def test_stop_never_signals_a_reused_pid(library, monkeypatch):
     monkeypatch.setattr(play.os, "kill", lambda *a: pytest.fail("must not signal a reused PID"))
     assert play.stop()["ok"] is True
     assert not state.exists()
+
+
+@pytest.mark.parametrize("identity", ["", "live process"])
+def test_legacy_state_is_archived_only_after_recorded_pid_exits(library, monkeypatch, identity):
+    state = play.state_file()
+    state.parent.mkdir(parents=True)
+    original = json.dumps({"pid": 100, "id": "old-format", "title": "Old game"})
+    state.write_text(original)
+    monkeypatch.setattr(play, "process_identity", lambda pid: identity)
+    monkeypatch.setattr(play.os, "kill", lambda *a: pytest.fail("Never signal an unverified legacy PID"))
+    if identity:
+        with pytest.raises(ValueError, match="Invalid Hosaka emulator state"):
+            play.stop()
+        assert state.read_text() == original
+    else:
+        assert play.stop()["ok"] is True
+        assert not state.exists()
+        assert next(state.parent.glob("play.json.legacy-*")).read_text() == original
 
 @pytest.mark.parametrize("saved", [[], {"pid": -1, "identity": "x"}, {"pid": 100}])
 def test_invalid_state_is_reported_without_signaling(library, monkeypatch, capsys, saved):

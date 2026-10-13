@@ -61,6 +61,66 @@ def test_llm_config_failed_replace_keeps_old_settings(tmp_path, monkeypatch):
     assert list(tmp_path.iterdir()) == [path]
 
 
+def test_root_llm_save_keeps_shared_settings_operator_owned(tmp_path, monkeypatch):
+    from hosaka.llm import llm_config
+    import os
+
+    path = tmp_path / "llm.json"
+    monkeypatch.setattr(llm_config, "_config_file", lambda: path)
+    monkeypatch.setattr(llm_config.os, "geteuid", lambda: 0)
+    owners = []
+    monkeypatch.setattr(llm_config.os, "fchown", lambda fd, uid, gid: owners.append((uid, gid)))
+    llm_config.save({"model": "gpt-4.1"})
+    assert owners == [(os.stat(tmp_path).st_uid, os.stat(tmp_path).st_gid)]
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize("command,response,expected", [
+    ("message", "ok", 0), ("message", "", 1), ("chat", "ok", 0),
+])
+def test_cli_chat_uses_console_provider_and_session(monkeypatch, command, response, expected):
+    from hosaka.llm import chat, llm_config
+    from hosaka import main_console
+
+    applied = []
+    config = {"provider": "openai", "model": "gpt-4.1"}
+    monkeypatch.setattr(llm_config, "load", lambda: config)
+    monkeypatch.setattr(llm_config, "apply_to_env", applied.append)
+    monkeypatch.setattr(main_console, "_check_api_key", lambda: None)
+    calls = []
+    monkeypatch.setattr(chat, "_print_stream", lambda *a, **k: calls.append((a, k)) or response)
+    assert chat.main([command, "--session", "test-session", "hello"]) == expected
+    assert applied == [config]
+    assert calls[0][1]["backend"] == LLMBackend.PICOCLAW
+    assert calls[0][1]["session"] == "test-session"
+    assert calls[0][0][0][-1] == {"role": "user", "content": "hello"}
+
+
+def test_cli_interactive_chat_keeps_explicit_session(monkeypatch):
+    from hosaka.llm import chat, llm_config
+    from hosaka import main_console
+
+    monkeypatch.setattr(llm_config, "load", lambda: {})
+    monkeypatch.setattr(llm_config, "apply_to_env", lambda cfg: None)
+    monkeypatch.setattr(main_console, "_check_api_key", lambda: None)
+    calls = []
+    monkeypatch.setattr(chat, "enter_chat_mode", lambda *a, **k: calls.append((a, k)))
+    assert chat.main(["chat", "--session", "custom"]) == 0
+    assert calls[0][1]["session"] == "custom"
+
+
+def test_cli_chat_preserves_native_one_shot_option(monkeypatch):
+    from hosaka.llm import chat, llm_config
+    from hosaka import main_console
+
+    monkeypatch.setattr(llm_config, "load", lambda: {})
+    monkeypatch.setattr(llm_config, "apply_to_env", lambda cfg: None)
+    monkeypatch.setattr(main_console, "_check_api_key", lambda: None)
+    calls = []
+    monkeypatch.setattr(chat, "_print_stream", lambda *a, **k: calls.append((a, k)) or "ok")
+    assert chat.main(["chat", "-m", "hello"]) == 0
+    assert calls[0][0][0][-1]["content"] == "hello"
+
 class TestSyncChat:
     def test_picoclaw_used_when_available(self) -> None:
         messages = [{"role": "user", "content": "hello"}]
@@ -153,8 +213,9 @@ def test_console_agent_failure_never_falls_back(capsys) -> None:
 
 
 @pytest.mark.parametrize("explicit_model", [None, "my-local-model"])
+@pytest.mark.parametrize("native_search", [None, True, False])
 def test_console_picoclaw_overlay_preserves_tools_sessions_and_config(
-    tmp_path, monkeypatch, explicit_model,
+    tmp_path, monkeypatch, explicit_model, native_search,
 ) -> None:
     from hosaka.llm import openai_adapter, picoclaw_adapter
 
@@ -166,6 +227,8 @@ def test_console_picoclaw_overlay_preserves_tools_sessions_and_config(
         "model_list": [{"model_name": "original", "model": "ollama/test"}],
         "tools": {"exec": {"enabled": True}},
     }
+    if native_search is not None:
+        config["tools"]["web"] = {"prefer_native": native_search, "provider": "duckduckgo"}
     config_path.write_text(json.dumps(config))
     original = config_path.read_bytes()
     monkeypatch.setenv("PICOCLAW_CONFIG_PATH", str(config_path))
@@ -183,7 +246,8 @@ def test_console_picoclaw_overlay_preserves_tools_sessions_and_config(
         runtime = Path(env["PICOCLAW_HOME"])
         runtime_paths.append(runtime)
         overlay = json.loads((runtime / "config.json").read_text())
-        assert overlay["tools"] == config["tools"]
+        expected_tools = {**config["tools"], "web": {**config["tools"].get("web", {}), "prefer_native": False}}
+        assert overlay["tools"] == expected_tools
         assert overlay["agents"] == config["agents"]
         assert (runtime / "config.json").stat().st_mode & 0o777 == 0o600
         assert model == (explicit_model or "hosaka-console")

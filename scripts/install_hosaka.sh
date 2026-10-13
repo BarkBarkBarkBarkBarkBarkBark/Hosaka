@@ -39,7 +39,9 @@ sudo rsync -a --delete "$REPO_ROOT/hosaka"               "$APP_ROOT/"
 sudo rsync -a --delete "$REPO_ROOT/docs"                 "$APP_ROOT/"
 sudo rsync -a --delete "$REPO_ROOT/scripts"              "$APP_ROOT/"
 for runtime_dir in identity manager skills context; do
-  sudo rsync -a --delete "$REPO_ROOT/$runtime_dir/" "$APP_ROOT/$runtime_dir/"
+  if [[ -d "$REPO_ROOT/$runtime_dir" ]]; then
+    sudo rsync -a --delete "$REPO_ROOT/$runtime_dir/" "$APP_ROOT/$runtime_dir/"
+  fi
 done
 # Flatpak app manifests (consumed by hosaka.web.api_v1 _read_app_manifests).
 # Exclude macOS AppleDouble sidecars (._*) so the YAML loader stays clean.
@@ -105,9 +107,19 @@ else
   ok "Node.js $(node --version) already installed."
 fi
 
-# ── Chromium + kiosk utilities ────────────────────────────────────────────────
+# ── X session for tty1 kiosk boot ────────────────────────────────────────────
+if [[ "$HOSAKA_BOOT_MODE" == "kiosk" ]]; then
+  info "Installing Xorg and Openbox for the tty1 Hosaka session..."
+  sudo apt-get update -qq
+  sudo apt-get install -y \
+    xserver-xorg xserver-xorg-legacy xinit openbox dbus-x11 \
+    x11-xserver-utils unclutter xdotool wmctrl
+  ok "Xorg and Openbox are ready."
+fi
+
+# ── Chromium fallback for graphical kiosk ────────────────────────────────────
 if [[ "$HOSAKA_BOOT_MODE" == "kiosk" && "$HOSAKA_DISPLAY_MODE" == "gui" ]]; then
-  info "Installing Chromium and kiosk utilities..."
+  info "Installing Chromium kiosk fallback..."
   sudo apt-get update -qq
   chromium_ok=0
   for pkg in chromium chromium-browser; do
@@ -120,8 +132,6 @@ if [[ "$HOSAKA_BOOT_MODE" == "kiosk" && "$HOSAKA_DISPLAY_MODE" == "gui" ]]; then
   if [[ "$chromium_ok" -eq 0 ]]; then
     echo "[install] WARNING: neither chromium nor chromium-browser installed — try: sudo apt-cache search chromium" >&2
   fi
-  sudo apt-get install -y unclutter xdotool
-  ok "Kiosk utilities (unclutter, xdotool) installed."
 fi
 
 # ── Docker (optional smoke-test image) ───────────────────────────────────────
@@ -219,20 +229,75 @@ for unit in alsa-restore.service alsa-state.service; do
 done
 
 # Patch picoclaw service user to match whoever is running the install
-CURRENT_USER="$(id -un)"
+CURRENT_USER="${SUDO_USER:-$(id -un)}"
 CURRENT_HOME="$(getent passwd "$CURRENT_USER" | cut -d: -f6)"
-if [[ -n "$CURRENT_HOME" ]]; then
-  sudo install -d -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" "$CURRENT_HOME/.config/hosaka"
-  printf '%s\n' "$HOSAKA_DISPLAY_MODE" | sudo tee "$CURRENT_HOME/.config/hosaka/display-mode" >/dev/null
-  sudo chown "$CURRENT_USER:$CURRENT_USER" "$CURRENT_HOME/.config/hosaka/display-mode"
+CURRENT_GROUP="$(id -gn "$CURRENT_USER")"
+PICOCLAW_PATH="${PICOCLAW_BIN:-$(command -v picoclaw || true)}"
+if [[ -z "$PICOCLAW_PATH" && -x "$CURRENT_HOME/.local/bin/picoclaw" ]]; then
+  PICOCLAW_PATH="$CURRENT_HOME/.local/bin/picoclaw"
 fi
+if [[ -n "$PICOCLAW_PATH" ]]; then
+  if [[ -L /usr/local/bin/picoclaw ]]; then
+    sudo ln -sfn "$PICOCLAW_PATH" /usr/local/bin/picoclaw
+  elif [[ ! -e /usr/local/bin/picoclaw ]]; then
+    sudo ln -s "$PICOCLAW_PATH" /usr/local/bin/picoclaw
+  fi
+fi
+if [[ -f "$REPO_ROOT/.env" && ! -e /etc/hosaka/env ]]; then
+  sudo install -m 0640 -o root -g "$CURRENT_GROUP" "$REPO_ROOT/.env" /etc/hosaka/env
+  ok "copied repo environment into protected /etc/hosaka/env"
+fi
+if [[ -f "$REPO_ROOT/.env" && ! -e "$APP_ROOT/.env" ]]; then
+  sudo install -m 0640 -o root -g "$CURRENT_GROUP" "$REPO_ROOT/.env" "$APP_ROOT/.env"
+fi
+sudo --preserve-env=OPENAI_API_KEY,HOSAKA_LOCAL_FIRST \
+  "$APP_ROOT/.venv/bin/python" "$APP_ROOT/scripts/bootstrap_picoclaw_runtime.py" \
+  --appliance-user "$CURRENT_USER"
+ok "shared LLM settings and compatible PicoClaw runtimes are ready"
+if [[ -n "$CURRENT_HOME" ]]; then
+  sudo install -d -m 755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" "$CURRENT_HOME/.config/hosaka"
+  printf '%s\n' "$HOSAKA_DISPLAY_MODE" | sudo tee "$CURRENT_HOME/.config/hosaka/display-mode" >/dev/null
+  sudo chown "$CURRENT_USER:$CURRENT_GROUP" "$CURRENT_HOME/.config/hosaka/display-mode"
+fi
+
+if [[ "$HOSAKA_BOOT_MODE" == "kiosk" && -n "$CURRENT_HOME" ]]; then
+  PROFILE_FILE="$CURRENT_HOME/.profile"
+  PROFILE_SOURCE="$REPO_ROOT/dotfiles/profile"
+  if [[ -f "$PROFILE_SOURCE" ]] && ! grep -q 'tty1 boot dispatcher' "$PROFILE_FILE" 2>/dev/null; then
+    if [[ ! -f "$PROFILE_FILE" ]]; then
+      sudo install -D -m 0644 -o "$CURRENT_USER" -g "$CURRENT_GROUP" /dev/null "$PROFILE_FILE"
+    else
+      sudo cp -n "$PROFILE_FILE" "$PROFILE_FILE.pre-hosaka" || true
+    fi
+    sed -n '/^# tty1 boot dispatcher/,$p' "$PROFILE_SOURCE" \
+      | sudo tee -a "$PROFILE_FILE" >/dev/null
+    sudo chown "$CURRENT_USER:$CURRENT_GROUP" "$PROFILE_FILE"
+  fi
+  sudo install -D -m 0755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
+    "$REPO_ROOT/dotfiles/xinitrc" "$CURRENT_HOME/.xinitrc"
+  sudo install -d -m 0755 /etc/X11
+  printf '%s\n' 'allowed_users=console' 'needs_root_rights=yes' \
+    | sudo tee /etc/X11/Xwrapper.config >/dev/null
+  sudo install -d -m 0755 /etc/systemd/system/getty@tty1.service.d
+  AGETTY_PATH="$(command -v agetty || printf '%s' /sbin/agetty)"
+  if [[ ! -x "$AGETTY_PATH" ]]; then
+    echo "agetty is required for tty1 autologin; install util-linux." >&2
+    exit 1
+  fi
+  printf '%s\n' '[Service]' 'ExecStart=' \
+    "ExecStart=-${AGETTY_PATH} --autologin ${CURRENT_USER} --noclear %I \$TERM" \
+    | sudo tee /etc/systemd/system/getty@tty1.service.d/override.conf >/dev/null
+  sudo systemctl enable getty@tty1.service
+  ok "tty1 will autologin as $CURRENT_USER and start the configured Hosaka display."
+fi
+
 sudo sed -i "s/^User=operator/User=${CURRENT_USER}/" "/etc/systemd/system/$PICOCLAW_SERVICE_NAME" 2>/dev/null || true
 
 # Openbox owns the actual X11 kiosk session on the appliance. Keep the
 # checked-in autostart in sync so fixes to kiosk supervision / portal env
 # imports take effect after updates.
 if [[ -n "$CURRENT_HOME" && -f "$REPO_ROOT/dotfiles/openbox/autostart" ]]; then
-  sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+  sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
     "$REPO_ROOT/dotfiles/openbox/autostart" "$CURRENT_HOME/.config/openbox/autostart"
 fi
 
@@ -242,40 +307,40 @@ fi
 # the WM so that menu actually appears on the LXQt desktop.
 if [[ -n "$CURRENT_HOME" ]]; then
   if [[ -f "$REPO_ROOT/dotfiles/autostart/hosaka-kiosk.desktop" ]]; then
-    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/dotfiles/autostart/hosaka-kiosk.desktop" \
       "$CURRENT_HOME/.config/autostart/hosaka-kiosk.desktop"
   fi
-  sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+  sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
     "$REPO_ROOT/dotfiles/autostart/hosaka-tui.desktop" \
     "$CURRENT_HOME/.config/autostart/hosaka-tui.desktop"
   if [[ -f "$REPO_ROOT/dotfiles/wallpaper/hosaka-desktop.png" ]]; then
-    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/dotfiles/wallpaper/hosaka-desktop.png" \
       "$CURRENT_HOME/.local/share/hosaka/desktop-background.png"
   fi
   if [[ -f "$REPO_ROOT/scripts/hosaka-tui-term" ]]; then
-    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/scripts/hosaka-tui-term" "$CURRENT_HOME/bin/hosaka-tui-term"
   fi
   if [[ -f "$REPO_ROOT/scripts/hosaka-ui-switch" ]]; then
-    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/scripts/hosaka-ui-switch" "$CURRENT_HOME/bin/hosaka-ui-switch"
   fi
   if [[ -f "$REPO_ROOT/scripts/hosaka-ui-session" ]]; then
-    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/scripts/hosaka-ui-session" "$CURRENT_HOME/bin/hosaka-ui-session"
   fi
   if [[ -f "$REPO_ROOT/scripts/hosaka-tui-session" ]]; then
-    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/scripts/hosaka-tui-session" "$CURRENT_HOME/bin/hosaka-tui-session"
   fi
   if [[ -f "$REPO_ROOT/scripts/hosaka-voice-term" ]]; then
-    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/scripts/hosaka-voice-term" "$CURRENT_HOME/bin/hosaka-voice-term"
   fi
   # LXQt Custom Command runs `command` on a timer and `click` on press.
-  python - "$CURRENT_HOME/.config/lxqt/panel.conf" "$CURRENT_HOME/bin" <<'PY'
+  "$PYTHON_BIN" - "$CURRENT_HOME/.config/lxqt/panel.conf" "$CURRENT_HOME/bin" <<'PY'
 from pathlib import Path
 import sys
 path = Path(sys.argv[1])
@@ -320,45 +385,45 @@ text = upsert("voice", {
 path.write_text(text)
 PY
   if [[ -f "$REPO_ROOT/scripts/hosaka-voice-session" ]]; then
-    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/scripts/hosaka-voice-session" "$CURRENT_HOME/bin/hosaka-voice-session"
   fi
   if [[ -f "$REPO_ROOT/dotfiles/lxterminal/lxterminal.conf" ]]; then
-    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/dotfiles/lxterminal/lxterminal.conf" \
       "$CURRENT_HOME/.config/lxterminal/lxterminal.conf"
   fi
   if [[ -f "$REPO_ROOT/dotfiles/applications/hosaka-voice.desktop" ]]; then
-    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/dotfiles/applications/hosaka-voice.desktop" \
       "$CURRENT_HOME/.local/share/applications/hosaka-voice.desktop"
   fi
   if [[ -f "$REPO_ROOT/dotfiles/applications/lxterminal.desktop" ]]; then
-    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/dotfiles/applications/lxterminal.desktop" \
       "$CURRENT_HOME/.local/share/applications/lxterminal.desktop"
   fi
   if [[ -f "$REPO_ROOT/dotfiles/applications/hosaka.desktop" ]]; then
-    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/dotfiles/applications/hosaka.desktop" \
       "$CURRENT_HOME/.local/share/applications/hosaka.desktop"
-    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/dotfiles/applications/hosaka.desktop" \
       "$CURRENT_HOME/Desktop/hosaka.desktop"
   fi
   if [[ -f "$REPO_ROOT/dotfiles/icons/hosaka.png" ]]; then
-    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/dotfiles/icons/hosaka.png" \
       "$CURRENT_HOME/.local/share/icons/hicolor/256x256/apps/hosaka.png"
-    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/dotfiles/icons/hosaka.png" \
       "$CURRENT_HOME/.local/share/hosaka/hosaka-icon.png"
   fi
   if [[ -f "$REPO_ROOT/dotfiles/openbox/menu.xml" ]]; then
-    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/dotfiles/openbox/menu.xml" "$CURRENT_HOME/.config/openbox/menu.xml"
   fi
-  python - "$CURRENT_HOME/.config/openbox/rc.xml" <<'PY'
+  "$PYTHON_BIN" - "$CURRENT_HOME/.config/openbox/rc.xml" <<'PY'
 from pathlib import Path
 import sys
 path = Path(sys.argv[1])
@@ -384,12 +449,12 @@ elif "</applications>" in text:
     path.write_text(text.replace("</applications>", rule + "</applications>", 1))
 PY
   if [[ -f "$REPO_ROOT/scripts/hosaka-openbox-flatpak-menu" ]]; then
-    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/scripts/hosaka-openbox-flatpak-menu" \
       "$CURRENT_HOME/.local/bin/hosaka-openbox-flatpak-menu"
   fi
   if [[ -f "$REPO_ROOT/dotfiles/pcmanfm-qt/settings.conf" ]]; then
-    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_USER" \
+    sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/dotfiles/pcmanfm-qt/settings.conf" \
       "$CURRENT_HOME/.config/pcmanfm-qt/lxqt/settings.conf"
   fi

@@ -80,5 +80,6 @@ if [[ -n "$RC" ]]; then
 else
   printf 'Installed %s. Add to your shell PATH: %s\n' "$TARGET" "$PREFIX/bin"
 fi
-echo "Next: hosaka configure llm --provider openai --model gpt-4.1"
-echo "Then: hosaka tui   (starts in your current workspace)"
+echo "Next: hosaka tui   (starts in your current workspace)"
+echo "A fresh install uses OpenAI gpt-4.1 and asks for its API key once, with hidden input."
+echo "Existing provider choices are preserved. Use /select llm only to change providers."

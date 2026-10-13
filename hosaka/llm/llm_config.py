@@ -156,6 +156,9 @@ def save(cfg: dict) -> None:
         ) as temporary:
             path = Path(temporary.name)
             try:
+                if os.name == "posix" and os.geteuid() == 0:
+                    owner = f.parent.stat()
+                    os.fchown(temporary.fileno(), owner.st_uid, owner.st_gid)
                 temporary.write(json.dumps(cfg, indent=2))
                 temporary.flush()
                 os.fsync(temporary.fileno())

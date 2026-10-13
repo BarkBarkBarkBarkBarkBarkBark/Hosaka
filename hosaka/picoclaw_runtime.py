@@ -5,8 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
+
+from hosaka.llm.llm_config import OPENAI_DEFAULT_MODEL
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 IDENTITY_DIR = REPO_ROOT / "identity"
@@ -55,9 +59,12 @@ def _write_generated_file(path: Path, content: str) -> None:
 
 def _load_json(path: Path) -> dict[str, Any]:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
         return {}
+    if not isinstance(config, dict):
+        raise ValueError(f"PicoClaw configuration must be an object: {path}")
+    return config
 
 
 def _read_text(path: Path) -> str:
@@ -66,6 +73,8 @@ def _read_text(path: Path) -> str:
 
 def _seed_config(home: Path) -> dict[str, Any]:
     workspace = str(home / ".picoclaw" / "workspace")
+    local_first = os.getenv("HOSAKA_LOCAL_FIRST", "0").strip().lower() in ("1", "true", "yes", "on")
+    alias = OLLAMA_DEFAULT_ALIAS if local_first else OPENAI_DEFAULT_MODEL
     return {
         "session": {"dimensions": ["chat"]},
         "version": 3,
@@ -74,16 +83,16 @@ def _seed_config(home: Path) -> dict[str, Any]:
                 "workspace": workspace,
                 "restrict_to_workspace": False,
                 "allow_read_outside_workspace": True,
-                "model_name": OLLAMA_DEFAULT_ALIAS,
+                "model_name": alias,
                 "max_tokens": 16384,
                 "max_tool_iterations": 50,
             }
         },
         "model_list": [
             {
-                "model_name": OLLAMA_DEFAULT_ALIAS,
-                "model": f"ollama/{OLLAMA_DEFAULT_MODEL}",
-                "api_base": OLLAMA_DEFAULT_BASE_URL,
+                "model_name": alias,
+                "model": f"ollama/{OLLAMA_DEFAULT_MODEL}" if local_first else f"openai/{OPENAI_DEFAULT_MODEL}",
+                "api_base": OLLAMA_DEFAULT_BASE_URL if local_first else "https://api.openai.com/v1",
             }
         ],
         "gateway": {"host": "127.0.0.1", "port": 18790, "log_level": "warn"},
@@ -151,31 +160,24 @@ def ensure_picoclaw_runtime(home: str | Path | None = None, seed_config: bool = 
     defaults["workspace"] = str(workspace)
     defaults.setdefault("restrict_to_workspace", False)
     defaults.setdefault("allow_read_outside_workspace", True)
-    defaults.setdefault("model_name", OLLAMA_DEFAULT_ALIAS)
+    local_first = os.getenv("HOSAKA_LOCAL_FIRST", "0").strip().lower() in ("1", "true", "yes", "on")
+    alias = OLLAMA_DEFAULT_ALIAS if local_first else OPENAI_DEFAULT_MODEL
+    if not defaults.get("model_name"):
+        defaults["model_name"] = alias
     defaults["max_tokens"] = 4096
     defaults.setdefault("max_tool_iterations", 50)
 
-    local_first = os.getenv("HOSAKA_LOCAL_FIRST", "1").strip().lower() in ("1", "true", "yes", "on")
     model_list = config.setdefault("model_list", [])
     if isinstance(model_list, list):
         if not any(
-            isinstance(entry, dict) and entry.get("model_name") == OLLAMA_DEFAULT_ALIAS
+            isinstance(entry, dict) and entry.get("model_name") == alias
             for entry in model_list
         ):
             model_list.insert(0, {
-                "model_name": OLLAMA_DEFAULT_ALIAS,
-                "model": f"ollama/{OLLAMA_DEFAULT_MODEL}",
-                "api_base": OLLAMA_DEFAULT_BASE_URL,
+                "model_name": alias,
+                "model": f"ollama/{OLLAMA_DEFAULT_MODEL}" if local_first else f"openai/{OPENAI_DEFAULT_MODEL}",
+                "api_base": OLLAMA_DEFAULT_BASE_URL if local_first else "https://api.openai.com/v1",
             })
-        if local_first and defaults.get("model_name") != OLLAMA_DEFAULT_ALIAS:
-            current = str(defaults.get("model_name") or "")
-            target_entry = next(
-                (e for e in model_list if isinstance(e, dict) and e.get("model_name") == current),
-                None,
-            )
-            target_model = str((target_entry or {}).get("model") or "")
-            if not target_model.startswith("ollama/"):
-                defaults["model_name"] = OLLAMA_DEFAULT_ALIAS
 
     gateway = config.setdefault("gateway", {})
     gateway.setdefault("host", "127.0.0.1")
@@ -212,12 +214,50 @@ def ensure_picoclaw_runtime(home: str | Path | None = None, seed_config: bool = 
     config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 
 
+def configure_appliance_runtime(user: str) -> None:
+    import pwd
+
+    if os.geteuid() != 0:
+        raise PermissionError("Appliance runtime configuration requires root.")
+    account = pwd.getpwnam(user)
+    if account.pw_uid == 0:
+        raise ValueError("Choose a non-root appliance operator.")
+    state_dir = Path(os.getenv("HOSAKA_STATE_PATH", "/var/lib/hosaka/state.json")).parent
+    state_dir.mkdir(parents=True, exist_ok=True)
+    os.chown(state_dir, account.pw_uid, account.pw_gid)
+    config_path = state_dir / "llm.json"
+    if config_path.exists():
+        os.chown(config_path, account.pw_uid, account.pw_gid)
+        config_path.chmod(0o600)
+    from hosaka.llm import llm_config
+
+    config = llm_config.load()
+    key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not config_path.exists() or (
+        config.get("provider") == "openai" and not config.get("api_key") and key
+    ):
+        if config.get("provider") == "openai" and key:
+            config["api_key"] = key
+        llm_config.save(config)
+    subprocess.run(
+        ["runuser", "-u", user, "--", sys.executable,
+         str(REPO_ROOT / "scripts/bootstrap_picoclaw_runtime.py"),
+         "--home", account.pw_dir, "--seed-config"],
+        cwd=REPO_ROOT, check=True,
+    )
+    ensure_picoclaw_runtime(home=pwd.getpwuid(0).pw_dir, seed_config=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate PicoClaw runtime files from Hosaka source")
     parser.add_argument("--home", default=os.path.expanduser("~"))
     parser.add_argument("--seed-config", action="store_true")
+    parser.add_argument("--appliance-user", help="prepare shared settings and both appliance agent runtimes (root)")
     args = parser.parse_args()
-    ensure_picoclaw_runtime(home=args.home, seed_config=args.seed_config)
+    if args.appliance_user:
+        configure_appliance_runtime(args.appliance_user)
+    else:
+        ensure_picoclaw_runtime(home=args.home, seed_config=args.seed_config)
 
 
 if __name__ == "__main__":

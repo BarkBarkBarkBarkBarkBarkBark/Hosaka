@@ -18,6 +18,29 @@ def test_runtime_identity_and_docs_are_included_in_install_and_updates():
     assert '"$REPO_ROOT/$runtime_dir/" "$DEPLOY_ROOT/$runtime_dir/"' in deploy
 
 
+def test_appliance_install_and_deploy_prepare_shared_llm_settings():
+    for name in ("scripts/install_hosaka.sh", "scripts/install_hosaka_lean.sh", "scripts/hosaka"):
+        assert "--appliance-user" in (ROOT / name).read_text()
+    unit = (ROOT / "systemd/hosaka-webserver.service").read_text()
+    assert "ExecStartPre=-" in unit
+
+
+@pytest.mark.parametrize("command", ["cmd_chat", "cmd_message"])
+def test_ssh_chat_routes_through_hosaka_configuration(command, tmp_path):
+    python = tmp_path / "python"
+    python.write_text('#!/bin/sh\nprintf "ARG=%s\\n" "$@"\n')
+    python.chmod(0o755)
+    result = shell(
+        '_ensure_picoclaw() { :; }; _hosaka_python() { echo "$TEST_PYTHON"; }; '
+        f'{command} --session selected hello',
+        dict(os.environ, TEST_PYTHON=str(python)),
+    )
+    assert result.returncode == 0, result.stderr
+    args = [line.removeprefix("ARG=") for line in result.stdout.splitlines() if line.startswith("ARG=")]
+    assert args[:5] == ["-m", "hosaka", command.removeprefix("cmd_"), "--session", "selected"]
+    assert args[-1] == "hello"
+
+
 def shell(code, env=None):
     return subprocess.run(["bash", "-c", 'source "$1"; ' + code, "bash", str(CLI)],
                           env=env, text=True, capture_output=True, timeout=10)
