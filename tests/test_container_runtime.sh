@@ -22,6 +22,17 @@ export HOSAKA_CONTAINER="hosaka-test-$$"
 cli() { bash "$root/install/bin/hosaka" "$@"; }
 cli workspace "$temp/project"
 cli paths --json >"$temp/paths.json"
+cli extensions list --json >"$temp/extensions.json"
+python3 - "$temp/extensions.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+report = json.loads(Path(sys.argv[1]).read_text())
+reference = next(item for item in report["extensions"] if item["id"] == "reference-extension")
+assert reference["enabled"] is False and reference["grants"] == []
+assert not report["execution_available"] and not report["ui_available"]
+PY
 python3 - "$temp/paths.json" "$root" "$HOSAKA_HOME" <<'PY'
 import json
 import sys
@@ -36,7 +47,7 @@ assert not host.is_relative_to(Path(sys.argv[2]).resolve())
 for name in ("extensions", "extension-data", "state", "logs", "games/roms/psx"):
     assert (host / "runtime" / name).is_dir(), name
 PY
-mkdir -p "$HOSAKA_HOME/runtime/extensions/qualification-demo"
+cli extensions create qualification-demo --json >"$temp/qualification-package.json"
 printf 'owner-edited package\n' >"$HOSAKA_HOME/runtime/extensions/qualification-demo/owner.txt"
 cli shell <<'SH'
 set -e

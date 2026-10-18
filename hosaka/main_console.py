@@ -54,6 +54,7 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("/doctor --offline", "Check native installation without network probes", "System"),
     ("/paths [--json]", "Show operator and native data/content paths",  "System"),
     ("/migrate --dry-run [--json]", "Inventory runtime ownership without changing files", "System"),
+    ("/extensions <command>", "Author and manage packages (execution/UI not yet available)", "System"),
     ("/restart terminal", "Restart the Hosaka terminal service",         "System"),
     ("/restart gateway",  "Restart the picoclaw gateway service",        "System"),
     ("/restart all",    "Restart both terminal and gateway",             "System"),
@@ -1191,6 +1192,10 @@ def _dispatch_command(raw: str, current_dir: Path, input_mode: str) -> tuple[Pat
             from hosaka.paths import main as paths_main
 
             paths_main(shlex.split(raw)[1:])
+        elif raw == "/extensions" or raw.startswith("/extensions "):
+            from hosaka.extensions.__main__ import main as extensions_main
+
+            extensions_main(shlex.split(raw)[1:])
         elif raw == "/migrate" or raw.startswith("/migrate "):
             from hosaka.migration import main as migration_main
 

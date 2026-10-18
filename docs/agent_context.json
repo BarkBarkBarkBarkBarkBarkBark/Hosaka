@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "generated_at_utc": "2026-05-07T19:14:27Z",
+  "generated_at_utc": "2026-10-18T15:53:09Z",
   "single_source_of_truth": "Hosaka/docs/hosaka.features.yaml",
   "human_seed": "Hosaka/docs/AGENT_CONTEXT.md",
   "plan": "Hosaka/docs/increased_observability.yaml",
@@ -25,8 +25,12 @@
     ]
   },
   "catalog_summary": {
-    "total_features": 8,
+    "total_features": 9,
     "by_status": {
+      "experimental": [
+        "extensions.authoring",
+        "obs.canary"
+      ],
       "stable": [
         "obs.events",
         "device.health",
@@ -37,12 +41,13 @@
       ],
       "beta": [
         "obs.crash"
-      ],
-      "experimental": [
-        "obs.canary"
       ]
     },
     "by_category": {
+      "workflow": [
+        "extensions.authoring",
+        "manual"
+      ],
       "observability": [
         "obs.events"
       ],
@@ -57,9 +62,6 @@
       "network": [
         "network.wifi",
         "network.tailscale"
-      ],
-      "workflow": [
-        "manual"
       ]
     }
   },
@@ -121,6 +123,10 @@
     }
   ],
   "scripts": [
+    {
+      "path": "hosaka/extensions/__main__.py",
+      "feature_id": "extensions.authoring"
+    },
     {
       "path": "scripts/build_crash_bundle.py",
       "feature_id": "obs.crash"

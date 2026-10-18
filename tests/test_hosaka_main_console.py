@@ -34,6 +34,21 @@ def test_tui_migration_uses_shared_dispatch(command, tmp_path, monkeypatch):
     assert calls == [command.split()[1:]]
 
 
+@pytest.mark.parametrize("command", ["/extensions list --json", "/extensions create demo-package", "/extensions"])
+def test_tui_extensions_uses_shared_dispatch(command, tmp_path, monkeypatch):
+    from hosaka.extensions import __main__ as extensions
+
+    calls = []
+    monkeypatch.setattr(extensions, "main", lambda args: calls.append(args) or 0)
+    assert main_console._dispatch_command(command, tmp_path, "llm") == (tmp_path, "llm")
+    assert calls == [command.split()[1:]]
+
+
+def test_tui_extensions_invalid_command_does_not_exit_console(tmp_path, capsys):
+    assert main_console._dispatch_command("/extensions run missing", tmp_path, "llm") == (tmp_path, "llm")
+    assert "invalid choice" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("command", ["/migrate", "/migrate --apply", "/migrate --dry-run --unknown"])
 def test_tui_migration_invalid_arguments_do_not_exit_console(command, tmp_path, monkeypatch, capsys):
     from hosaka import migration

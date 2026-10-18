@@ -165,6 +165,15 @@ fi
 $SUDO /opt/hosaka-field-terminal/.venv/bin/python \
   "$REPO_ROOT/scripts/bootstrap_picoclaw_runtime.py" --appliance-user "$TARGET_USER"
 
+say "staging extension authoring support and validating preserved packages"
+$SUDO rsync -a --delete "$REPO_ROOT/hosaka/extensions/" /opt/hosaka-field-terminal/hosaka/extensions/
+$SUDO rsync -a --delete "$REPO_ROOT/examples/" /opt/hosaka-field-terminal/examples/
+$SUDO /opt/hosaka-field-terminal/.venv/bin/python -m pip install -r "$REPO_ROOT/requirements-hosaka.txt"
+$SUDO runuser -u "$TARGET_USER" -- env \
+  HOSAKA_OPERATOR="$TARGET_USER" HOSAKA_DATA_DIR="${HOSAKA_DATA_DIR:-$TARGET_HOME/.hosaka}" \
+  PYTHONPATH=/opt/hosaka-field-terminal \
+  /opt/hosaka-field-terminal/.venv/bin/python -m hosaka.extensions init
+
 # ── 7. operator-side config files ─────────────────────────────────────────────
 $SUDO install -d -m 0755 -o "$TARGET_USER" -g "$TARGET_GROUP" "$(dirname "$DISPLAY_PREFERENCE")"
 printf '%s\n' "$HOSAKA_DISPLAY_MODE" | $SUDO tee "$DISPLAY_PREFERENCE" >/dev/null

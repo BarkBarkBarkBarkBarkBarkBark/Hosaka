@@ -161,6 +161,28 @@ success claims for inventory work. After this gate, review the inventory with th
 operator and implement an explicitly approved import/ownership switch, coordinated
 with launcher/service paths and elimination of normal root-home bootstrap.
 
+## Extension authoring update, 2026-10-18
+
+Operator direction now starts [the reconciled extension platform plan](extension_plan.md),
+tracked in #32, without first migrating provider ownership. Authoring-only code
+does not invoke providers or execute packages. `extension.yaml` replaces the
+older unimplemented `plugin.yaml` proposal.
+
+The initial authoring/discovery/lifecycle/bootstrap slice is implemented locally:
+`hosaka extensions init/list/create/link/info/validate/enable/disable/remove/doctor`.
+The same metadata commands are available in the TUI. A disabled, ungranted
+reference is installed under the resolved native extensions directory. Its
+standalone actions/tests work; host execution, rendering, generic API/agent
+dispatch, permission enforcement and full Halloween proof remain pending.
+See the [implemented contract](extensions/SPECIFICATION.md) and
+[agent guide](extensions/AGENT_GUIDE.md).
+
+284 focused Python tests, source bootstrap preservation/failure checks,
+Bash/PowerShell client checks, Docker build/live integration and public-mode
+bootstrap/denial checks passed. These are local authoring evidence, not a
+protected runtime or Pi/market qualification. Existing native provider,
+installation and upstream PicoClaw configuration bytes/modes were unchanged.
+
 ## Objective
 
 Make Hosaka a stable appliance people can extend without forking or editing its core repository. Use an independently developed Halloween joke-citation extension as the first complete demonstration. Standardize installation, games, PicoClaw runtime, provider settings, and credential storage so a device owner can understand and troubleshoot them.
@@ -235,7 +257,14 @@ Docker remains a supported compatibility mode. Document its host-to-container pa
 
 ## Extension contract v1
 
-Use the existing plan's `plugin.yaml` filename and call the user-facing feature “extensions.” Add a strict versioned schema. Discover manifests without importing or executing plugin code.
+The 2026-10-18 [extension plan](extension_plan.md) supersedes this section's
+earlier unimplemented `plugin.yaml` proposal. Use `extension.yaml`, explicit
+action input/output schemas, a callable entrypoint and validated declarative UI.
+The current authoring-only implementation and remaining execution/UI gates are
+documented in [extensions/SPECIFICATION.md](extensions/SPECIFICATION.md).
+The following older protocol sketch is historical design input, not an accepted
+manifest or proof of a working manager. Discover manifests without importing or
+executing package code; preserve all isolation and release gates below.
 
 ```yaml
 schema_version: 1

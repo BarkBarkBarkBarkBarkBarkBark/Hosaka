@@ -47,7 +47,7 @@ printf '%s\n' "$REPO_ROOT" | sudo tee /etc/hosaka/repo_root >/dev/null
 sudo rsync -a --delete "$REPO_ROOT/hosaka"               "$APP_ROOT/"
 sudo rsync -a --delete "$REPO_ROOT/docs"                 "$APP_ROOT/"
 sudo rsync -a --delete "$REPO_ROOT/scripts"              "$APP_ROOT/"
-for runtime_dir in identity manager skills context; do
+for runtime_dir in identity manager skills context examples; do
   if [[ -d "$REPO_ROOT/$runtime_dir" ]]; then
     sudo rsync -a --delete "$REPO_ROOT/$runtime_dir/" "$APP_ROOT/$runtime_dir/"
   fi
@@ -228,6 +228,11 @@ sudo -u "$CURRENT_USER" -H env \
   "$APP_ROOT/.venv/bin/python" -m hosaka.paths init \
   --mode appliance --repo-root "$REPO_ROOT" --runtime-root "$APP_ROOT" \
   --launcher /usr/local/bin/hosaka
+sudo -u "$CURRENT_USER" -H env \
+  HOSAKA_OPERATOR="$CURRENT_USER" \
+  HOSAKA_DATA_DIR="${HOSAKA_DATA_DIR:-$CURRENT_HOME/.hosaka}" \
+  PYTHONPATH="$APP_ROOT" \
+  "$APP_ROOT/.venv/bin/python" -m hosaka.extensions init
 PICOCLAW_PATH="${PICOCLAW_BIN:-$(command -v picoclaw || true)}"
 if [[ -z "$PICOCLAW_PATH" && -x "$CURRENT_HOME/.local/bin/picoclaw" ]]; then
   PICOCLAW_PATH="$CURRENT_HOME/.local/bin/picoclaw"

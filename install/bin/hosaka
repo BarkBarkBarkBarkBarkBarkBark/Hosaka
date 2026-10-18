@@ -22,6 +22,7 @@
 #   hosaka paths [--json]      show container paths and host extension storage
 #   hosaka doctor --offline    check container installation directories
 #   hosaka migrate --dry-run   inventory existing container state without initialization
+#   hosaka extensions ...     author and register packages (no host execution yet)
 #   hosaka open                open the web UI in your browser
 #   hosaka logs                follow logs from the local node
 #   hosaka shell               bash shell inside the local container
@@ -383,6 +384,7 @@ case "$cmd" in
     workspace)  cmd_workspace "$@" ;;
     paths)      run_local "$PYTHON_BIN" -m hosaka.paths "$@" ;;
     migrate)    run_local "$PYTHON_BIN" -B -m hosaka.migration "$@" ;;
+    extensions) run_local "$PYTHON_BIN" -B -m hosaka.extensions "$@" ;;
     doctor)     run_local "$PYTHON_BIN" -m hosaka.doctor "$@" ;;
     open)       cmd_open ;;
     logs)       cmd_logs ;;

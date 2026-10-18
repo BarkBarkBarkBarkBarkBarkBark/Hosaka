@@ -103,6 +103,7 @@ RUN python -m venv .venv \
 COPY hosaka/            hosaka/
 COPY hosaka-apps/       hosaka-apps/
 COPY docs/              docs/
+COPY examples/          examples/
 COPY identity/          identity/
 COPY manager/           manager/
 COPY skills/            skills/

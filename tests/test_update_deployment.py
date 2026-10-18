@@ -13,8 +13,8 @@ CLI = ROOT / "scripts/hosaka"
 def test_runtime_identity_and_docs_are_included_in_install_and_updates():
     installer = (ROOT / "scripts/install_hosaka.sh").read_text()
     deploy = CLI.read_text().split("cmd_deploy()", 1)[1].split("\ncmd_", 1)[0]
-    assert "for runtime_dir in identity manager skills context;" in installer
-    assert "for runtime_dir in docs identity manager skills context;" in deploy
+    assert "for runtime_dir in identity manager skills context examples;" in installer
+    assert "for runtime_dir in docs identity manager skills context examples;" in deploy
     assert '"$REPO_ROOT/$runtime_dir/" "$DEPLOY_ROOT/$runtime_dir/"' in deploy
 
 

@@ -2,6 +2,16 @@
 
 > Cross-repo charter for a unified neurotech command station. Authored in the Hosaka repo because Hosaka contributes the canonical shell. The runtime will live in a new monorepo at `neurodeck/`.
 
+> **Scope checkpoint, 2026-10-18:** This is a separate proposed extraction
+> charter, not evidence of an implemented Neurodeck runtime or an instruction to
+> restructure Hosaka during extension work. Hosaka's current product is the
+> Python TUI with a thin React/Electron TUI + Menu host, not the historical
+> independent desktop/webview layout described in parts of the comparison below.
+> Its extension work follows [the reconciled extension plan](docs/extension_plan.md).
+> SAW extraction, Postgres, embedded dashboards, capture services and alternate
+> router cascades require separate explicit work; none is a prerequisite for
+> Hosaka's offline extension authoring foundation.
+
 ## Purpose
 
 Build a single operator-facing workstation that controls and observes a Neuralynx / DHN acquisition rig end-to-end:

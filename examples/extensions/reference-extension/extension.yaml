@@ -1,0 +1,47 @@
+schema_version: 1
+id: reference-extension
+name: Reference Extension
+version: 1.0.0
+description: Offline echo, local value storage and controlled errors for extension authors.
+requires:
+  hosaka_api: 1
+type: view
+category: examples
+entrypoint:
+  file: main.py
+  callable: run
+ui:
+  mode: declarative
+  file: ui.yaml
+permissions:
+  network: false
+  filesystem: data-only
+  subprocess: false
+menu:
+  label: Reference Extension
+  icon: puzzle
+  order: 100
+actions:
+  echo:
+    description: Echo a typed message.
+    input_schema: schemas/message.input.json
+    output_schema: schemas/result.output.json
+  save:
+    description: Save a harmless example value.
+    input_schema: schemas/message.input.json
+    output_schema: schemas/result.output.json
+  load:
+    description: Read the example value.
+    input_schema: schemas/empty.input.json
+    output_schema: schemas/result.output.json
+  delete:
+    description: Delete only the example value.
+    input_schema: schemas/empty.input.json
+    output_schema: schemas/result.output.json
+  fail:
+    description: Return a controlled error without raising.
+    input_schema: schemas/empty.input.json
+    output_schema: schemas/result.output.json
+limits:
+  timeout_seconds: 10
+  max_output_bytes: 65536

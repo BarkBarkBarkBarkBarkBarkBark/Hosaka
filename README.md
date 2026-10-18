@@ -100,7 +100,8 @@ remain bare-TUI by default; source installs with `--gui` open the host.
 Extensions, RetroArch games, and external Flatpak applications remain separate:
 
 - **Extensions:** independent packages and data outside core; the manager and
-  protected runner are subsequent milestones, not implemented by creating folders.
+  authoring metadata manager is available below. Host execution, UI rendering and
+  the protected runner remain subsequent milestones, not implied by folders.
 - **Games:** preserve `hosaka play twisted metal`, `hosaka play tekken`,
   `hosaka play spyro`, and existing RetroArch launch/stop behavior.
 - **Applications:** Foliate and optional VS Code launch integration remain
@@ -119,6 +120,32 @@ The TUI exposes `/paths`, `/paths --json`, and `/doctor --offline`.
 `HOSAKA_OPERATOR` selects an existing account; under sudo its account home is
 used rather than root's home. No `/home/operator` existence-based guessing is
 used by the new resolver. Run initialization as the selected operator.
+
+### Extension authoring foundation
+
+Source/appliance/Docker setup initializes registration metadata and seeds a
+validated standalone reference, disabled and without grants. Existing extension
+source, data, enablement and grants are preserved. Start authoring with:
+
+```sh
+hosaka extensions init
+hosaka extensions list --json
+hosaka extensions create my-extension --path /absolute/path/to/my-extension
+hosaka extensions validate /absolute/path/to/my-extension
+hosaka extensions info my-extension --json
+hosaka extensions doctor --json
+```
+
+The TUI exposes the same commands after `/extensions`. The canonical manifest is
+`extension.yaml`; the older unimplemented `plugin.yaml` proposal is superseded.
+See the [agent guide](docs/extensions/AGENT_GUIDE.md) and
+[specification](docs/extensions/SPECIFICATION.md).
+
+**Current boundary:** scaffolding, validation, discovery and lifecycle metadata
+work. Reference actions/tests run standalone when explicitly invoked by a trusted
+developer; Hosaka does not yet execute or render extensions. `enable` changes
+metadata only. `remove` unregisters/hides while retaining source and data.
+No `extensions run`/`test`, permission broker, sandbox or web API is advertised.
 
 `HOSAKA_DATA_DIR` overrides the new native path foundation (absolute or `~/...`).
 It does not yet migrate legacy credential, PicoClaw, log, or state consumers.

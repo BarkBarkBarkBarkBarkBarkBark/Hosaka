@@ -21,6 +21,37 @@ categories:
   fun:         "vibes"
 
 features:
+  - id: "extensions.authoring"
+    name: "extension authoring foundation"
+    category: "workflow"
+    description: >
+      Scaffold, validate and discover independent extension.yaml packages and
+      declarative views; manage private registration and owner lifecycle metadata.
+      No package execution, UI renderer or enforced permission boundary yet.
+    owner: "core"
+    status: "experimental"
+    commands:
+      - "/extensions init"
+      - "/extensions list"
+      - "/extensions create <id>"
+      - "/extensions validate <id-or-path>"
+      - "/extensions link <path>"
+      - "/extensions info <id>"
+      - "/extensions enable <id>"
+      - "/extensions disable <id>"
+      - "/extensions remove <id>"
+      - "/extensions doctor"
+    entrypoints:
+      - { type: "script", path: "hosaka/extensions/__main__.py" }
+    permissions: ["read:extensions", "write:extensions-metadata"]
+    failure_modes:
+      - "invalid manifests or duplicate IDs are diagnosed without hiding unrelated valid packages"
+      - "corrupt registration fails explicitly; bootstrap never resets owner decisions"
+      - "host execution and declarative rendering remain unavailable"
+    tests: ["tests/extensions/test_authoring.py", "tests/test_source_install.sh"]
+    baller_command: "hosaka extensions create my-extension"
+    why_you_care: "Start an independent package without modifying core or exposing provider secrets."
+
   - id: "obs.events"
     name: "event store"
     category: "observability"

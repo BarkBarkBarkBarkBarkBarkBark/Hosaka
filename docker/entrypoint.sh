@@ -13,6 +13,10 @@ fi
 "$PYTHON" -m hosaka.paths init --mode docker \
     --repo-root "$APP_ROOT" --runtime-root "$APP_ROOT" \
     --launcher /usr/local/bin/hosaka --python "$PYTHON" >/dev/null
+case "$(printf '%s' "${HOSAKA_PUBLIC_MODE:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) ;;  # Public core boot never initializes extension packages.
+    *) "$PYTHON" -m hosaka.extensions init >/dev/null ;;
+esac
 "$PYTHON" "$APP_ROOT/scripts/bootstrap_picoclaw_runtime.py" --home "$HOME" --seed-config >/dev/null
 
 if [ "${1:-}" = "--initialize-only" ]; then

@@ -9,6 +9,21 @@
 
 read this before you touch anything.
 
+## current architecture and extension work
+
+Start with the repository [agent entrypoint](../AGENTS.md) and
+[extension agent guide](extensions/AGENT_GUIDE.md). The Python TUI + small Menu
+host is canonical. The extension authoring foundation is tracked in #32;
+execution, UI rendering and enforced isolation are separate delivery gates.
+The roadmap is [extension_plan.md](extension_plan.md), with appliance gates in
+[hosaka_market_preparation_brief.md](hosaka_market_preparation_brief.md).
+The Neurodeck scientific-workstation charter is separate, not a core rewrite.
+
+The observability text below is historical plan guidance: verify each command
+against current code. It is not evidence that every listed future command exists.
+This file's body is the manual seed; `scripts/gen_agent_context.py` currently
+generates `docs/agent_context.json`, not this Markdown body.
+
 ## the rule
 
 there is **one** source of truth for what hosaka does:

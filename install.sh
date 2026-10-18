@@ -48,6 +48,7 @@ fi
 (cd "$ROOT" && "$VENV/bin/python" -m hosaka.paths init \
   --mode source --repo-root "$ROOT" --runtime-root "$ROOT" --launcher "$TARGET" \
   --python "$VENV/bin/python")
+(cd "$ROOT" && "$VENV/bin/python" -m hosaka.extensions init)
 "$VENV/bin/python" "$ROOT/scripts/bootstrap_picoclaw_runtime.py" --home "$HOME" --seed-config
 if (( GUI )); then
   command -v npm >/dev/null || { echo "Node.js/npm is required for --gui." >&2; exit 1; }
@@ -91,6 +92,7 @@ else
 fi
 echo "Native paths: hosaka paths --json"
 echo "Offline installation checks: hosaka doctor --offline"
+echo "Extension authoring: hosaka extensions list (host execution and UI rendering are pending)"
 echo "Next: hosaka tui   (starts in your current workspace)"
 echo "A fresh install uses OpenAI gpt-4.1 and asks for its API key once, with hidden input."
 echo "Existing provider choices are preserved. Use /select llm only to change providers."

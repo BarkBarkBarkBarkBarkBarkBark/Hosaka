@@ -967,7 +967,7 @@ cmd_deploy() {
     # Also refresh the operator-facing files most useful at runtime so a
     # stale README / scripts dir doesn't lie about what's deployed.
     local runtime_dir
-    for runtime_dir in docs identity manager skills context; do
+    for runtime_dir in docs identity manager skills context examples; do
       if [[ -d "$REPO_ROOT/$runtime_dir" ]]; then
         sudo rsync -a --delete "$REPO_ROOT/$runtime_dir/" "$DEPLOY_ROOT/$runtime_dir/"
       fi
@@ -1041,6 +1041,9 @@ refresh_appliance_launchers() {
   [[ -n "$home" ]] || die "cannot find home directory for $user"
   sudo "$DEPLOY_ROOT/.venv/bin/python" "$DEPLOY_ROOT/scripts/bootstrap_picoclaw_runtime.py" \
     --appliance-user "$user"
+  sudo -u "$user" -H env HOSAKA_OPERATOR="$user" \
+    HOSAKA_DATA_DIR="${HOSAKA_DATA_DIR:-$home/.hosaka}" PYTHONPATH="$DEPLOY_ROOT" \
+    "$DEPLOY_ROOT/.venv/bin/python" -m hosaka.extensions init
   local config="${XDG_CONFIG_HOME:-$home/.config}"
   local preference="$config/hosaka/display-mode"
   if [[ -f "$preference" ]] && [[ ! "$(cat "$preference")" =~ ^(tui|gui)$ ]]; then
@@ -1484,6 +1487,13 @@ cmd_migrate() {
   ( cd "$REPO_ROOT" && exec "$(_hosaka_python)" -B -m hosaka.migration "$@" )
 }
 
+cmd_extensions() {
+  local py
+  py="$(_hosaka_python)"
+  PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+    exec "$py" -B -m hosaka.extensions "$@"
+}
+
 # ── issues (github tracker) ──────────────────────────────────────────────────
 #
 # Persistent dev tracking via `gh issue`. The agent contract is
@@ -1848,6 +1858,7 @@ Modes
   hosaka doctor --offline [--json]   check native installation without network probes
   hosaka paths [--json]              show resolved operator and native paths
   hosaka migrate --dry-run [--json]  inventory ownership; never imports or moves files
+  hosaka extensions <command>       package authoring/metadata; see extensions --help
                                     run structured diagnostics; future MCP-friendly
   hosaka dev [--port N] [--no-open] [-fresh]
                                     local frontend dev without docker.
@@ -1944,6 +1955,7 @@ main() {
     doctor)    cmd_doctor "$@" ;;
     paths)     cmd_paths "$@" ;;
     migrate)   cmd_migrate "$@" ;;
+    extensions) cmd_extensions "$@" ;;
     scan)      (cd "$REPO_ROOT" && PYTHONPATH=. exec python -m hosaka.scan "$@") ;;
     llm)       (cd "$REPO_ROOT" && PYTHONPATH=. exec python -m hosaka.llm_cli "$@") ;;
     inference) (cd "$REPO_ROOT" && PYTHONPATH=. exec python -m hosaka.main_role.inference_client "$@") ;;

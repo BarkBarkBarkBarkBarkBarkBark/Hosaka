@@ -277,6 +277,7 @@ hosaka - client for the Hosaka Field Terminal.
   hosaka uninstall           remove launcher + local container (keeps state)
   hosaka version             print versions
   hosaka migrate --dry-run [--json]  inventory existing state without initialization
+  hosaka extensions ...      author/register packages; no host execution yet
   hosaka help                this message
 
 signal steady. no wrong way.
@@ -294,6 +295,7 @@ switch ($cmd) {
     "workspace"                    { Cmd-Workspace @rest }
     "paths"                        { Run-Local $PythonBin -m hosaka.paths @rest }
     "migrate"                      { Run-Local $PythonBin -B -m hosaka.migration @rest }
+    "extensions"                   { Run-Local $PythonBin -B -m hosaka.extensions @rest }
     "doctor"                       { Run-Local $PythonBin -m hosaka.doctor @rest }
     "configure" {
         if ($rest.Count -lt 1 -or $rest[0] -ne "llm") { Die "usage: hosaka configure llm --provider PROVIDER --model MODEL" }

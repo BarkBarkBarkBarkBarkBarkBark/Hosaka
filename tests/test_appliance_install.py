@@ -50,6 +50,7 @@ def test_appliance_installer_wires_runtime_without_host_changes(tmp_path, boot, 
     assert "--preserve-env=OPENAI_API_KEY,HOSAKA_LOCAL_FIRST" in commands
     assert "bootstrap_picoclaw_runtime.py --appliance-user" in commands
     assert "-m hosaka.paths init --mode appliance" in commands
+    assert "-m hosaka.extensions init" in commands
     assert "npm ci --prefer-offline --loglevel error" in commands
     assert "npm run build" in commands
     assert "apt-get install -y retroarch" in commands

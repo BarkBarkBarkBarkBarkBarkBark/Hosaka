@@ -12,6 +12,27 @@ meta:
 entries:
 
   - commit: "pending"
+    date: "2026-10-18"
+    type: feature
+    title: "Extension authoring foundation and reconciled roadmap"
+    issue: 32
+    fix: |
+      - Reconcile the new extension plan with committed paths/migration work and
+        the canonical TUI + Menu host; keep Neurodeck extraction separate.
+      - Implement strict extension.yaml/action-schema/declarative-UI validation,
+        non-executing discovery, atomic registration and owner lifecycle metadata.
+      - Add create/link/list/info/validate/init/enable/disable/remove/doctor to
+        shared CLI/TUI and Docker client routes.
+      - Seed a disabled reference through shared bootstrap during source,
+        appliance and Docker setup without running extension code.
+      - Preserve modified packages, saved data, grants, enablement and removal;
+        include real standalone reference and second-package authoring tests.
+      - Publish agent guide/specification/security/testing and update context.
+    caveats:
+      - "Host execution, rendering, generic API, agent dispatch and enforced permissions remain pending."
+      - "No provider migration, native Windows or physical deck qualification is implied."
+
+  - commit: "pending"
     date: "2026-10-17"
     type: feature
     session: "2026-10-17"

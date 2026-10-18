@@ -6,13 +6,15 @@ import sys
 from pathlib import Path
 
 # Path inspection must work without loading secrets, logs, or the boot stack.
-if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] in {"paths", "doctor", "migrate"}:
+if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] in {"paths", "doctor", "migrate", "extensions"}:
     if sys.argv[1] == "paths":
         from hosaka.paths import main as diagnostic_main
     elif sys.argv[1] == "doctor":
         from hosaka.doctor import main as diagnostic_main
-    else:
+    elif sys.argv[1] == "migrate":
         from hosaka.migration import main as diagnostic_main
+    else:
+        from hosaka.extensions.__main__ import main as diagnostic_main
     raise SystemExit(diagnostic_main(sys.argv[2:]))
 
 # The TUI is the product. Parent processes (Cursor, CI, a polluted desktop

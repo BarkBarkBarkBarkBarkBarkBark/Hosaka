@@ -4248,6 +4248,10 @@
       "description": "Build a redacted tarball with the last 30 minutes of events, system context, and (optionally) ship it to the triage relay over Tailscale."
     },
     {
+      "name": "extension authoring foundation",
+      "description": "Scaffold, validate and discover independent extension.yaml packages and declarative views; manage private registration and owner lifecycle metadata. No package execution, UI renderer or enforced permission boundary yet."
+    },
+    {
       "name": "user manual",
       "description": "The generated manual. Lowercase, terse, leads with the baller command."
     }

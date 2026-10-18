@@ -1,0 +1,49 @@
+version: 1
+view:
+  type: Stack
+  children:
+    - type: Heading
+      text: Extension authoring reference
+    - type: Text
+      text: This view is validated now; Hosaka rendering and execution are a later platform slice.
+    - type: TextInput
+      id: message
+      label: Message
+      default: Hello Hosaka
+    - type: NumberInput
+      id: count
+      label: Example number
+      default: 1
+    - type: Select
+      id: choice
+      label: Example choice
+      options: [First, Second]
+      default: First
+    - type: Checkbox
+      id: confirmed
+      label: Example confirmation
+      default: false
+    - type: Button
+      label: Echo
+      action: echo
+    - type: Button
+      label: Save value
+      action: save
+    - type: Button
+      label: Load value
+      action: load
+    - type: Button
+      label: Delete value
+      action: delete
+    - type: Button
+      label: Controlled failure
+      action: fail
+    - type: Result
+      bind: result.message
+    - type: Error
+      bind: result.error
+    - type: Status
+      bind: result.success
+    - type: Table
+      bind: result.rows
+      columns: [name, value]

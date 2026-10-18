@@ -47,6 +47,9 @@ try {
     Assert-Argument "hosaka.llm_setup"
     Assert-Argument "claude-example"
     $global:HosakaTestCalls.Clear()
+    & $cli extensions list --json
+    Assert-Argument "hosaka.extensions"
+    $global:HosakaTestCalls.Clear()
     & $cli migrate --dry-run --json
     Assert-Argument "hosaka.migration"
     Assert-Argument "--read-only"

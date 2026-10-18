@@ -46,6 +46,9 @@ grep -qFx claude-example "$TEST_LOG"
 cli paths --json </dev/null
 grep -qFx hosaka.paths "$TEST_LOG"
 : >"$TEST_LOG"
+cli extensions list --json </dev/null
+grep -qFx hosaka.extensions "$TEST_LOG"
+: >"$TEST_LOG"
 cli migrate --dry-run --json </dev/null
 grep -qFx hosaka.migration "$TEST_LOG"
 grep -qFx -- --read-only "$TEST_LOG"

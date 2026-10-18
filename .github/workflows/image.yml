@@ -42,6 +42,7 @@ jobs:
             tests/test_hosaka_chat.py tests/test_hosaka_main_console.py \
             tests/test_play.py tests/test_games.py tests/test_games_api.py \
             tests/test_games_menu.py tests/test_update_deployment.py tests/test_llm_setup.py
+          python -m pytest -q tests/extensions
       - name: Test Unix installer
         if: runner.os == 'Linux'
         run: |
