@@ -54,7 +54,7 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("/doctor --offline", "Check native installation without network probes", "System"),
     ("/paths [--json]", "Show operator and native data/content paths",  "System"),
     ("/migrate --dry-run [--json]", "Inventory runtime ownership without changing files", "System"),
-    ("/extensions <command>", "Author and manage packages (execution/UI not yet available)", "System"),
+    ("/extensions <command>", "Author, approve and run trusted-local extensions", "System"),
     ("/restart terminal", "Restart the Hosaka terminal service",         "System"),
     ("/restart gateway",  "Restart the picoclaw gateway service",        "System"),
     ("/restart all",    "Restart both terminal and gateway",             "System"),

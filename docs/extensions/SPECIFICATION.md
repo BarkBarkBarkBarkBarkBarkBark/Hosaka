@@ -1,4 +1,9 @@
-# Implemented authoring contract v1
+# Implemented extension contract v1
+
+Authoring, trusted-local execution and generic declarative Menu views are
+implemented. Trusted-local approval is explicit and digest-bound; it is **not an
+OS sandbox**. Root/public execution is refused. Packages remain disabled and
+unapproved after installation.
 
 ## Version and identity
 
@@ -20,12 +25,13 @@ Required fields: `schema_version`, `id`, `name`, `version`, `description`,
   `output_schema`, referencing local JSON files.
 - `ui`: `mode: declarative` and a relative `file`.
 - `permissions`: `network: false`, `subprocess: false`,
-  `filesystem: data-only` or `none`. These are **requests**, not enforcement.
-  New registrations are disabled with no grants.
+  `filesystem: data-only` or `none`. These are requests. The context enforces its
+  own data capability, but arbitrary trusted Python retains user privileges;
+  network/subprocess/host filesystem restrictions are NOT OS-enforced.
 - `menu`: bounded `label`, optional `icon` (`puzzle`, `file`, `tool`, `book`),
-  optional integer `order` (0–10000). Metadata only; no navigation renderer yet.
+  optional integer `order` (0–10000). Enabled entries appear dynamically in Menu.
 - `limits`: integer `timeout_seconds` (1–60) and `max_output_bytes`
-  (1024–1048576). Validated metadata only until a supervised runner exists.
+  (1024–1048576). Enforced for worker wall time and combined stdout/stderr bytes.
 
 References cannot be absolute, contain `..`/backslashes or escape via symlinks.
 Referenced files must exist. Registration/copy rejects all package symlinks and
@@ -39,11 +45,74 @@ JSON Schema draft 2020-12 objects are validated using `jsonschema`.
 Only local `#`/`#/...` references are accepted and must point to schemas in the
 same document. `$id`, `$dynamicRef`, `$recursiveRef` and network/file references
 are unsupported. Schema traversal is bounded. Validation never fetches schemas.
-Input/output **instances** are not dispatched or validated by a host yet.
+Input/output instances are validated by core before/after each invocation.
+Parameters are JSON objects of at most 16 KiB; action request bodies at most 32 KiB.
 
-The planned callable is `run(action, params, context) -> dict`. The standalone
-reference implements this; the future host must invoke it only in a supervised
-process with a versioned JSON protocol, never inside the server/TUI process.
+The callable is `run(action, params, context) -> dict`, loaded only inside a
+supervised worker. Results must satisfy their schema and include boolean
+`success`, string `message`, and optional text/null `error`. Additional declared
+fields such as `rows` are allowed. Controlled `success: false` is not host success.
+
+## Trusted-local execution
+
+```sh
+hosaka extensions trust reference-extension --trusted-local --allow-storage
+hosaka extensions enable reference-extension
+hosaka extensions run reference-extension echo --params '{"message":"Hello"}'
+hosaka extensions revoke reference-extension
+hosaka extensions safe-mode on
+hosaka extensions safe-mode off
+```
+
+Trust approves the current source digest and optional `storage:self` grant. It
+does not enable a package. Source edits require inspection/reapproval. Approval,
+grants and enablement survive bootstrap; bootstrap never approves new code.
+No web endpoint can grant trust or enable packages.
+
+Invocation snapshots must match the approved digest. Core launches an isolated
+Python interpreter (`-I -S -B`) with a fixed bridge and argument vector, no shell,
+fresh temporary HOME/TMPDIR and an allowlisted environment without provider
+credentials. The first runtime supports stdlib-only packages; it does not install
+dependencies into the core environment.
+
+One JSON request goes over stdin; one response over stdout includes protocol
+version 1, invocation UUID, result/error and bounded event metadata. Package prints
+go to bounded stderr. Core checks exit status before accepting JSON. Public/root,
+disabled/unregistered/unapproved packages, missing grants, changed code and safe
+mode prevent execution. `HOSAKA_EXTENSIONS_SAFE_MODE=1` overrides persisted mode.
+
+At most two invocations run on the host and one per extension, enforced across
+processes by locks. Wall time, combined output, CPU time, file descriptors and
+file size are bounded; Linux workers additionally have a 256 MiB address-space
+limit. Normal descendants share a process group killed on every exit, timeout or
+cancellation. Trusted code can bypass same-user controls or create detached
+processes: this is not adversarial OS containment or an enforced process-count
+limit. Linux protected execution remains a separate release gate.
+
+Disable, removal, revoke, grant changes and safe mode cancel active jobs through
+registry checks. Disable operates directly on registration, without validating
+package source, so a broken manifest cannot prevent stopping a running package.
+It returns registration-state confirmation rather than a freshly loaded view.
+Explicit cancellation uses
+`hosaka extensions cancel ID INVOCATION_UUID` or the UI Cancel action. API client
+disconnect signals cancellation. A cancellation request does not undo completed
+storage operations; invocation failure reports the actual outcome.
+
+### Production context
+
+- `read_data(name) -> str | None`, `write_data(name, text)`, `delete_data(name)`:
+  require `storage:self` and `filesystem: data-only`; plain filenames only, no
+  symlink/path escape. Private atomic text writes, maximum 64 KiB/file and
+  128 files through this capability. Data lives under `extension-data/ID`.
+- `log(event, metadata)`: bounded event names and metadata field names are
+  recorded; metadata **values**, params, results, stderr and exception text are
+  deliberately not persisted. This privacy rule is part of the API.
+- Core logs timestamp, invocation/action identity, mode, duration, outcome/error
+  code and event metadata under `logs/extensions/ID.jsonl`, rotated to one
+  previous file at 256 KiB each. Log failures are explicit invocation errors.
+
+Context path checks scope these methods; they do not prevent approved Python
+from accessing other user-readable files through ordinary Python APIs.
 
 ## Declarative UI document
 
@@ -53,7 +122,7 @@ Top level is exactly `version: 1` and `view`. Components:
 | --- | --- | --- |
 | Stack | children (nonempty component list) | none |
 | Heading, Text | text | none |
-| Button | label, action (declared action name) | none |
+| Button | label, action (declared action name) | params (property-to-input binding map) |
 | TextInput, NumberInput, Checkbox | id, label | correctly typed default |
 | Select | id, label, options (unique string list) | default from options |
 | Result, Error, Status | bind | none |
@@ -63,8 +132,35 @@ All nodes require `type`. Unknown fields fail. Input IDs are unique lowercase
 identifiers; bindings are only `params.<input_id>` or `result.<field>`.
 Input references must exist. No expression evaluation, raw HTML, arbitrary
 CSS/JavaScript, user modules or remote widgets. Limits: 128 components,
-12 nesting levels. State updates and action parameter binding belong to the
-future renderer and are not executable through this validator.
+12 nesting levels. The host owns all React elements and styling. Text is rendered
+as text, never HTML; terminal/control characters are escaped for display.
+
+`Button.params: {message: params.message}` maps fields explicitly. For older
+buttons without a map, the renderer projects inputs onto the action schema's
+top-level `properties`. Complex schemas without top-level properties require
+explicit bindings. Inputs persist across actions; results/errors/status/table
+update from validated output. Closing a view discards transient input state,
+not stored data or the canonical terminal.
+
+The native Menu contains one generic Extensions section. It polls metadata for
+enabled entries; disable/removal removes navigation and aborts its active view.
+No per-package frontend build/router edit is needed.
+
+## Generic API
+
+`GET /api/v1/extensions`, `GET /api/v1/extensions/ID/view`,
+`POST /api/v1/extensions/ID/actions/ACTION`,
+`POST /api/v1/extensions/ID/cancel/INVOCATION_UUID`.
+All use the stricter existing write-auth policy even for metadata: loopback or
+valid bearer token. Public mode, cross-site origins and local DNS-rebinding Host
+names are denied. Same-origin and the native Vite loopback port 5173 are accepted.
+There is no LAN-anonymous metadata endpoint or trust/grant mutation endpoint.
+
+Action bodies contain `invocation_id`, source `digest` from the view and `params`.
+Stale views cannot invoke newly approved code. Responses explicitly label
+`execution_mode: trusted-local`, `sandboxed: false`, `ok`, `result` and structured
+`error`. Policy/input/process failures use non-success HTTP codes; controlled
+action failures return their validated structured result with `ok: false`.
 
 ## Discovery and registration
 
@@ -79,6 +175,8 @@ enabled state, grants and removal tombstone. A separate transaction lock
 serializes manager writes. Reinitialization preserves owner decisions and never
 refreshes a stored digest/version silently. `info` reports current versus
 registered version and whether source changed. An edit is not an automatic grant.
+Optional `approved_digest` and `execution_mode` record explicit owner approval;
+registry-level `safe_mode` disables execution without deleting packages.
 
 `remove` unregisters/hides via a tombstone, retaining source/data and grants.
 `link` can explicitly restore the same package disabled; no recursive delete.
@@ -89,6 +187,8 @@ are explicit failures, not empty-success fallbacks.
 
 `init`, `list`, `info ID`, `validate ID|PATH`, `create ID [--path PATH]`,
 `link PATH`, `enable ID`, `disable ID`, `remove ID`, `doctor`.
+Also `trust ID --trusted-local [--allow-storage]`, `revoke ID`,
+`run ID ACTION [--params JSON]`, `cancel ID UUID`, `safe-mode on|off|status`.
 Each accepts `--json`; current output is structured JSON in either mode.
 The same commands are available after `/extensions` in the TUI.
 Unknown or unsupported commands fail without exiting the TUI.
@@ -104,7 +204,7 @@ Python-only unless `--gui` is selected.
 
 ## Still pending
 
-Host execution, runtime schema enforcement, per-package dependencies, permission
-grants/broker, safe mode, isolation, bounded workers/cancellation, persistent
-execution logs, authenticated web API, UI renderer/navigation, agent invocation,
-archive installation/upgrades/rollback, and full external Halloween proof.
+OS-enforced isolation and process/network/filesystem confinement, per-package
+dependency environments, a general privileged capability broker, dedicated
+PicoClaw tool dispatch, archive installation/upgrades/rollback, an extension test
+runner command, and full external Halloween/clean-device proof.

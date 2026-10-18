@@ -161,7 +161,23 @@ success claims for inventory work. After this gate, review the inventory with th
 operator and implement an explicitly approved import/ownership switch, coordinated
 with launcher/service paths and elimination of normal root-home bootstrap.
 
-## Extension authoring update, 2026-10-18
+## Trusted-local execution and Menu update, 2026-10-18
+
+Authoring is committed at `0baf7a99`. The operator selected execution and
+declarative views together (#33), explicitly accepting trusted-local execution
+with digest-bound approval and a separate storage grant. This is not a fallback
+claim of protected execution: approved Python retains user privileges. Root and
+public hosts refuse execution; installs do not approve or enable packages.
+
+Core now supplies the bounded JSON process protocol, runtime schema checks,
+scoped data/log methods, safe mode/cancellation and one authenticated generic API.
+The native Menu renders validated controls/results/errors/tables dynamically
+without package React or per-package routes. Normal environment sanitation is
+not filesystem secrecy. Linux OS containment, privileged capability brokerage,
+per-package dependencies, dedicated agent tools and full external/device proof
+remain release gates. See [the current specification](extensions/SPECIFICATION.md).
+
+## Extension authoring update, 2026-10-18 (historical slice A)
 
 Operator direction now starts [the reconciled extension platform plan](extension_plan.md),
 tracked in #32, without first migrating provider ownership. Authoring-only code

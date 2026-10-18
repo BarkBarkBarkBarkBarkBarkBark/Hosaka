@@ -17,7 +17,7 @@ Start an independent package without modifying core or exposing provider secrets
 
 ## what it does
 
-Scaffold, validate and discover independent extension.yaml packages and declarative views; manage private registration and owner lifecycle metadata. No package execution, UI renderer or enforced permission boundary yet.
+Scaffold, validate and discover independent extension.yaml packages and declarative views; manage private registration and owner lifecycle metadata. Authoring never executes package code; execution requires separate approval.
 
 ## commands
 
@@ -42,7 +42,7 @@ if it works, it's quiet. if it doesn't, expect one of:
 
 - invalid manifests or duplicate IDs are diagnosed without hiding unrelated valid packages
 - corrupt registration fails explicitly; bootstrap never resets owner decisions
-- host execution and declarative rendering remain unavailable
+- enablement alone never grants code approval or data access
 
 dig deeper:
 - `curl -s http://127.0.0.1:8421/api/v1/events?feature_id=extensions.authoring&limit=20 | jq`

@@ -99,9 +99,9 @@ SSH and non-graphical shells use the bare TUI. Source installs without `--gui`
 remain bare-TUI by default; source installs with `--gui` open the host.
 Extensions, RetroArch games, and external Flatpak applications remain separate:
 
-- **Extensions:** independent packages and data outside core; the manager and
-  authoring metadata manager is available below. Host execution, UI rendering and
-  the protected runner remain subsequent milestones, not implied by folders.
+- **Extensions:** independent packages and data outside core; authoring,
+  explicitly approved trusted-local execution and declarative Menu views are
+  available. OS-protected execution remains a separate milestone.
 - **Games:** preserve `hosaka play twisted metal`, `hosaka play tekken`,
   `hosaka play spyro`, and existing RetroArch launch/stop behavior.
 - **Applications:** Foliate and optional VS Code launch integration remain
@@ -121,7 +121,7 @@ The TUI exposes `/paths`, `/paths --json`, and `/doctor --offline`.
 used rather than root's home. No `/home/operator` existence-based guessing is
 used by the new resolver. Run initialization as the selected operator.
 
-### Extension authoring foundation
+### Extensions: authoring and trusted-local execution
 
 Source/appliance/Docker setup initializes registration metadata and seeds a
 validated standalone reference, disabled and without grants. Existing extension
@@ -141,16 +141,41 @@ The TUI exposes the same commands after `/extensions`. The canonical manifest is
 See the [agent guide](docs/extensions/AGENT_GUIDE.md) and
 [specification](docs/extensions/SPECIFICATION.md).
 
-**Current boundary:** scaffolding, validation, discovery and lifecycle metadata
-work. Reference actions/tests run standalone when explicitly invoked by a trusted
-developer; Hosaka does not yet execute or render extensions. `enable` changes
-metadata only. `remove` unregisters/hides while retaining source and data.
-No `extensions run`/`test`, permission broker, sandbox or web API is advertised.
+After inspecting a package, an unprivileged owner can explicitly approve its
+current code digest, grant its data capability, and enable it:
+
+```sh
+hosaka extensions trust reference-extension --trusted-local --allow-storage
+hosaka extensions enable reference-extension
+hosaka extensions run reference-extension echo --params '{"message":"Hello"}'
+```
+
+Enabled packages appear dynamically under **Menu → Extensions**. The host renders
+validated forms/results/tables without extension-authored React or per-package
+routes. The CLI/TUI and generic authenticated API use the same bounded worker.
+Closing the menu does not restart the canonical terminal.
+
+**Trusted-local is NOT an OS sandbox.** Approved Python retains your user
+privileges, including possible access to user-readable files and network APIs.
+Its process environment is sanitized, but backing credential files are not
+hidden. Root/public execution is refused. New installs never approve or enable
+packages. Code edits require reapproval; enablement and storage grants are
+separate. Normal root-run Docker/appliance web services cannot execute extensions:
+run the backend as the configured unprivileged operator, not through an implicit
+root fallback.
+
+`extensions revoke ID` revokes approval/grants; `extensions safe-mode on` blocks
+and cancels all extension execution. Disable/removal/revocation cancel active
+jobs. `remove` retains source/data. Persistent values live in `extension-data/ID`;
+bounded metadata-only logs in `logs/extensions/ID.jsonl`.
+OS isolation, dependency environments, `extensions test`, dedicated agent tools
+and archive upgrades remain pending. Existing reference copies are preserved;
+new scaffolds use reference version 1.1.0.
 
 `HOSAKA_DATA_DIR` overrides the new native path foundation (absolute or `~/...`).
 It does not yet migrate legacy credential, PicoClaw, log, or state consumers.
-The reported secrets/provider/extension-lock locations are architectural targets,
-not proof that provider ownership or extension execution has been implemented.
+The reported secrets/provider locations remain architectural targets, not proof
+that provider ownership has been consolidated. Extension registration is active.
 For appliance use, supply the same custom-root environment to setup and runtime;
 automatic machine-wide propagation is still pending. Source setup remembers an
 explicit data-root override in its launcher.

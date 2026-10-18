@@ -92,7 +92,7 @@ else
 fi
 echo "Native paths: hosaka paths --json"
 echo "Offline installation checks: hosaka doctor --offline"
-echo "Extension authoring: hosaka extensions list (host execution and UI rendering are pending)"
+echo "Extensions: hosaka extensions list (disabled/untrusted by default; explicit trusted-local approval is required)"
 echo "Next: hosaka tui   (starts in your current workspace)"
 echo "A fresh install uses OpenAI gpt-4.1 and asks for its API key once, with hidden input."
 echo "Existing provider choices are preserved. Use /select llm only to change providers."

@@ -9,7 +9,7 @@ html, body, #root { height: 100%; margin: 0; background: #0b0d10; color-scheme: 
   color: #d8dee4;
   font: 14px "JetBrains Mono", Menlo, Consolas, monospace;
 }
-.terminal-gui button, .terminal-gui input {
+.terminal-gui button, .terminal-gui input, .terminal-gui select {
   font: inherit;
 }
 .terminal-gui button {
@@ -22,7 +22,7 @@ html, body, #root { height: 100%; margin: 0; background: #0b0d10; color-scheme: 
   cursor: pointer;
 }
 .terminal-gui button:disabled { opacity: .55; cursor: wait; }
-.terminal-gui button:focus-visible, .terminal-gui input:focus-visible {
+.terminal-gui button:focus-visible, .terminal-gui input:focus-visible, .terminal-gui select:focus-visible {
   outline: 2px solid #ffbf46;
   outline-offset: 2px;
 }
@@ -74,6 +74,7 @@ html, body, #root { height: 100%; margin: 0; background: #0b0d10; color-scheme: 
 .deck-menu-games { width: min(800px, 100%); }
 .deck-menu > header { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; padding: 8px 12px; gap: 8px; }
 .deck-menu > nav { display: flex; flex-shrink: 0; gap: 6px; padding: 0 12px 8px; }
+.deck-menu > nav { flex-wrap: wrap; }
 .deck-menu > nav button { flex: 1; padding: 8px 4px; }
 .deck-menu > nav button[aria-pressed="true"] { border-color: #ffbf46; color: #ffbf46; }
 .deck-menu-content { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
@@ -151,6 +152,13 @@ html, body, #root { height: 100%; margin: 0; background: #0b0d10; color-scheme: 
 .deck-actions { display: flex; gap: 8px; }
 .deck-settings input:not([type="checkbox"]) { width: 100%; box-sizing: border-box; min-height: 44px; background: #0b0d10; border: 1px solid #343c46; border-radius: 1px; color: inherit; padding: 8px; }
 .deck-settings .deck-checkbox { flex-direction: row; align-items: center; }
+.deck-settings select { width: 100%; min-height: 44px; padding: 8px; background: #0b0d10; color: inherit; border: 1px solid #343c46; }
+.deck-extension-stack { display: flex; flex-direction: column; gap: 12px; }
+.deck-extension-stack h2 { font-size: 16px; }
+.deck-extension-result { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.deck-extension-table { overflow: auto; }
+.deck-extension-table table { width: 100%; border-collapse: collapse; }
+.deck-extension-table th, .deck-extension-table td { padding: 8px; text-align: left; border: 1px solid #343c46; overflow-wrap: anywhere; }
 .deck-device-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .deck-device-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .deck-device-list li > button:first-child { width: 100%; text-align: left; }

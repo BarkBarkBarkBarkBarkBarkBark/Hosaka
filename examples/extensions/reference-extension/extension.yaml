@@ -1,7 +1,7 @@
 schema_version: 1
 id: reference-extension
 name: Reference Extension
-version: 1.0.0
+version: 1.1.0
 description: Offline echo, local value storage and controlled errors for extension authors.
 requires:
   hosaka_api: 1

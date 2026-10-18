@@ -215,7 +215,7 @@ UI_FIELDS = {
     "Stack": {"type", "children"},
     "Heading": {"type", "text"},
     "Text": {"type", "text"},
-    "Button": {"type", "label", "action"},
+    "Button": {"type", "label", "action", "params"},
     "TextInput": {"type", "id", "label", "default"},
     "NumberInput": {"type", "id", "label", "default"},
     "Select": {"type", "id", "label", "options", "default"},
@@ -266,6 +266,17 @@ def validate_view(document: object, actions: set[str]) -> None:
             action = component.get("action")
             if not isinstance(action, str) or action not in actions:
                 raise ExtensionError("UI button refers to an undeclared action.")
+            if "params" in component:
+                parameters = component["params"]
+                if not isinstance(parameters, dict) or len(parameters) > 32:
+                    raise ExtensionError("Button params must map bounded property names to input bindings.")
+                for name, binding in parameters.items():
+                    if (
+                        not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", name)
+                        or not isinstance(binding, str) or not re.fullmatch(r"params\.[a-z][a-z0-9_]{0,63}", binding)
+                    ):
+                        raise ExtensionError("Button params use only params.<input_id> bindings.")
+                    bindings.append(binding)
         if kind == "Select":
             options = component.get("options")
             if not isinstance(options, list) or not 1 <= len(options) <= 100 or any(

@@ -11,7 +11,38 @@
 
 This document is the extension-platform roadmap. Its full definition of done is
 not a claim that all phases have shipped. Track the first authoring slice in #32;
-#31 owns the native replication foundation.
+#31 owns the native replication foundation. Execution and Menu views are #33.
+
+### Current execution/UI checkpoint
+
+Authoring is now committed at `0baf7a99` on `dev`. Following explicit operator
+approval, #33 adds **trusted-local** execution and declarative Menu views together.
+This mode requires per-package code-digest approval, a separate storage grant
+and enablement; new installations remain disabled/unapproved. Root/public
+execution is refused. The operator explicitly accepted that this is NOT an
+OS sandbox; Linux protected execution remains a separate release requirement.
+
+The shared runner validates inputs/outputs, snapshots approved source, supervises
+bounded stdlib workers and records private bounded metadata logs. Safe mode,
+disable/removal/revoke and caller cancellation stop active invocations. One
+guarded API supplies enabled views and actions to the host-owned renderer;
+CLI/TUI use the same runtime. No package-authored HTML/JS or per-package routes.
+The canonical terminal stays mounted while Menu views are used.
+
+The following slice-A notes are historical. Their execution/UI-unavailable
+statements are superseded by this checkpoint and the implemented specification.
+Remaining work includes OS containment, dependency environments, dedicated
+PicoClaw tools, archives/upgrades and complete external Halloween/device proof.
+
+Verified locally: 379 focused Python tests, real CLI/TUI/API dispatch, source and
+client regressions, frontend type-check/build, rebuilt/live Docker integration,
+real non-root Linux workers, and browser echo/persistence/error/cancellation.
+A second package appeared and executed without rebuilding the frontend or
+changing core; disable removed navigation without remounting the terminal.
+The native backend was restarted only after explicit operator approval; the
+updated Menu is available on port 8421. Native packages remain unapproved and
+disabled. These execution/UI changes are uncommitted and are not a protected
+runtime or physical-device release qualification.
 
 Current source baseline is `dev` at `5f254629`: shared paths/installation
 records, CLI/TUI path diagnostics, read-only migration inventory, and graphical
@@ -27,7 +58,7 @@ that baseline. Runtime provider ownership is still transitional.
   proposal: the canonical filename is `extension.yaml`, with schema version 1
   and `requires.hosaka_api: 1`. Do not maintain two competing loaders.
 - The callable `run(action, params, context)` describes the package interface,
-  not permission to import package code into core. Future execution must use a
+  not permission to import package code into core. Execution must use a
   supervised process and versioned JSON stdin/stdout protocol.
 - Add explicit `actions` with package-relative JSON input/output schema files,
   and bounded `limits`, to the manifest shown below. Declarative button actions
@@ -62,7 +93,7 @@ advertised as working until their respective implementations exist.
 
 ### Slice A result
 
-Implemented locally on 2026-10-18, not yet committed or deployed: the authoring
+Implemented on 2026-10-18 and committed as `0baf7a99`: the authoring
 commands in slice A, strict metadata validation, standalone reference and shared
 source/appliance/Docker bootstrap. The native reference is now installed under
 the resolved extensions root, disabled with no grants; native `extensions doctor`
@@ -75,9 +106,9 @@ type-check/build, live container reference/persistence/provider regressions and
 public bootstrap/management-denial checks passed. Pylance diagnostics and shell
 syntax checks passed. Context-hub validation is recorded with the handoff.
 
-The full definition of done below is still **not complete**. The next concrete
-slice is the supervised request/result runtime and capability context, followed
-by authenticated declarative rendering and shared agent dispatch.
+The full definition of done below is still **not complete**. The subsequent
+trusted-local execution/UI slice is described above; OS containment and full
+external proof remain separate gates.
 
 Use [extensions/AGENT_GUIDE.md](extensions/AGENT_GUIDE.md) and
 [extensions/SPECIFICATION.md](extensions/SPECIFICATION.md) for the implemented

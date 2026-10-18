@@ -5,7 +5,7 @@ view:
     - type: Heading
       text: Extension authoring reference
     - type: Text
-      text: This view is validated now; Hosaka rendering and execution are a later platform slice.
+      text: Echo and persist a message through the shared trusted-local runner. Preview inputs below; approval and enablement are explicit.
     - type: TextInput
       id: message
       label: Message
@@ -23,12 +23,22 @@ view:
       id: confirmed
       label: Example confirmation
       default: false
+    - type: Result
+      bind: params.count
+    - type: Result
+      bind: params.choice
+    - type: Result
+      bind: params.confirmed
     - type: Button
       label: Echo
       action: echo
+      params:
+        message: params.message
     - type: Button
       label: Save value
       action: save
+      params:
+        message: params.message
     - type: Button
       label: Load value
       action: load

@@ -27,7 +27,7 @@ features:
     description: >
       Scaffold, validate and discover independent extension.yaml packages and
       declarative views; manage private registration and owner lifecycle metadata.
-      No package execution, UI renderer or enforced permission boundary yet.
+      Authoring never executes package code; execution requires separate approval.
     owner: "core"
     status: "experimental"
     commands:
@@ -47,10 +47,59 @@ features:
     failure_modes:
       - "invalid manifests or duplicate IDs are diagnosed without hiding unrelated valid packages"
       - "corrupt registration fails explicitly; bootstrap never resets owner decisions"
-      - "host execution and declarative rendering remain unavailable"
+      - "enablement alone never grants code approval or data access"
     tests: ["tests/extensions/test_authoring.py", "tests/test_source_install.sh"]
     baller_command: "hosaka extensions create my-extension"
     why_you_care: "Start an independent package without modifying core or exposing provider secrets."
+
+  - id: "extensions.execution"
+    name: "trusted-local extension execution"
+    category: "workflow"
+    description: >
+      Run explicitly digest-approved code in bounded workers with schema checks,
+      narrow data/log context, safe mode and cancellation. NOT an OS sandbox;
+      approved Python retains user privileges. Root/public execution is refused.
+    owner: "core"
+    status: "experimental"
+    commands:
+      - "/extensions trust <id> --trusted-local --allow-storage"
+      - "/extensions revoke <id>"
+      - "/extensions run <id> <action> --params JSON"
+      - "/extensions cancel <id> <invocation-uuid>"
+      - "/extensions safe-mode on"
+      - "/extensions safe-mode off"
+    entrypoints:
+      - { type: "http", method: "POST", path: "/api/v1/extensions/{identifier}/actions/{action}" }
+      - { type: "http", method: "POST", path: "/api/v1/extensions/{identifier}/cancel/{invocation_id}" }
+    permissions: ["execute:trusted-local", "storage:self"]
+    failure_modes:
+      - "disabled, unapproved, changed, root/public or safe-mode packages cannot execute"
+      - "invalid input/output, timeout, output flood, nonzero exit and exceptions return explicit failures"
+      - "trusted code is not OS-contained and can bypass same-user advisory limits"
+    tests: ["tests/extensions/test_execution.py", "tests/extensions/test_api.py"]
+    baller_command: "hosaka extensions run reference-extension echo --params '{\"message\":\"Hello\"}'"
+    why_you_care: "One supervised runtime for CLI, TUI and Menu actions, with honest trust boundaries."
+
+  - id: "extensions.views"
+    name: "declarative extension Menu views"
+    category: "workflow"
+    description: >
+      Discover enabled packages dynamically and render validated host-owned
+      controls, results, errors and tables without extension HTML or core edits.
+    owner: "core"
+    status: "experimental"
+    commands: []
+    entrypoints:
+      - { type: "http", method: "GET", path: "/api/v1/extensions" }
+      - { type: "http", method: "GET", path: "/api/v1/extensions/{identifier}/view" }
+    permissions: ["read:extensions-authenticated"]
+    failure_modes:
+      - "public/cross-site requests and unauthenticated LAN clients are rejected"
+      - "disabled/removed packages disappear; unapproved packages render read-only"
+      - "unknown UI or executable bindings are rejected before rendering"
+    tests: ["tests/extensions/test_api.py", "tests/test_terminal_gui.py"]
+    baller_command: "hosaka extensions enable reference-extension"
+    why_you_care: "A second extension needs no per-package React, routes or frontend rebuild."
 
   - id: "obs.events"
     name: "event store"

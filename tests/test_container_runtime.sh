@@ -31,7 +31,8 @@ from pathlib import Path
 report = json.loads(Path(sys.argv[1]).read_text())
 reference = next(item for item in report["extensions"] if item["id"] == "reference-extension")
 assert reference["enabled"] is False and reference["grants"] == []
-assert not report["execution_available"] and not report["ui_available"]
+assert not report["execution_available"] and report["ui_available"]
+assert not reference["ui_available"]
 PY
 python3 - "$temp/paths.json" "$root" "$HOSAKA_HOME" <<'PY'
 import json

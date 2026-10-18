@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Generator, Literal
 
 from pydantic import Field, ValidationError, field_validator
+import yaml
 
 from hosaka.paths import CORE_ROOT, HosakaPaths, resolve_paths
 from hosaka.extensions.manifest import (
@@ -29,10 +30,13 @@ class Registration(StrictModel):
     enabled: bool = False
     removed: bool = False
     grants: list[Literal["storage:self"]] = Field(default_factory=list)
+    execution_mode: Literal["trusted-local"] | None = None
+    approved_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class Registry(StrictModel):
     schema_version: Literal[1] = 1
+    safe_mode: bool = False
     extensions: dict[str, Registration] = Field(default_factory=dict)
 
     @field_validator("schema_version", mode="before")
@@ -130,6 +134,8 @@ class Manager:
             _atomic_json(self.lock, registry.model_dump())
 
     def discover(self) -> dict:
+        from hosaka.extensions.runner import approval_reason
+
         registry = self.registry()
         candidates: dict[Path, Registration | None] = {
             Path(entry.path).resolve(): entry for entry in registry.extensions.values() if not entry.removed
@@ -149,13 +155,18 @@ class Manager:
                 identifier = package.manifest.id
                 if registration is not None and registry.extensions.get(identifier) is not registration:
                     raise ExtensionError("Registered package identity changed; repair explicitly before enabling.")
+                reason = approval_reason(package, registration, safe_mode=registry.safe_mode)
                 item = {
                     "id": identifier, "name": package.manifest.name,
                     "version": package.manifest.version, "path": str(path),
                     "registered": registration is not None,
                     "enabled": registration.enabled if registration else False,
                     "grants": registration.grants if registration else [],
-                    "execution_available": False, "ui_available": False,
+                    "execution_available": reason is None, "ui_available": bool(registration and registration.enabled),
+                    "execution_reason": reason,
+                    "execution_mode": registration.execution_mode if registration else None,
+                    "approved_digest": registration.approved_digest if registration else None,
+                    "menu": package.manifest.menu.model_dump(),
                     "actions": list(package.manifest.actions),
                     "registered_version": registration.version if registration else None,
                 }
@@ -170,7 +181,8 @@ class Manager:
         return {
             "schema_version": 1,
             "extensions": [item for item in found if item["id"] not in duplicates],
-            "errors": errors, "execution_available": False, "ui_available": False,
+            "errors": errors, "execution_available": any(item["execution_available"] for item in found if item["id"] not in duplicates),
+            "ui_available": True, "safe_mode": registry.safe_mode or os.getenv("HOSAKA_EXTENSIONS_SAFE_MODE", "").lower() in {"1", "true", "yes", "on"},
         }
 
     def _register(self, registry: Registry, package: Package) -> None:
@@ -232,7 +244,13 @@ class Manager:
             staged = Path(temporary) / "package"
             shutil.copytree(template, staged, ignore=shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache", ".venv"))
             manifest = staged / "extension.yaml"
-            manifest.write_text(manifest.read_text(encoding="utf-8").replace("reference-extension", identifier), encoding="utf-8")
+            values = read_document(manifest)
+            if values["id"] != identifier:
+                label = identifier.replace("-", " ").title()
+                values["id"] = identifier
+                values["name"] = label
+                values["menu"]["label"] = label
+                manifest.write_text(yaml.safe_dump(values, sort_keys=False), encoding="utf-8")
             validate_package(staged)
             staged.rename(destination)
 
@@ -280,6 +298,15 @@ class Manager:
         }
 
     def enable(self, identifier: str, enabled: bool) -> dict:
+        validate_id(identifier)
+        if not enabled:
+            # Safety controls must remain usable when package source is broken.
+            with self.transaction() as registry:
+                entry = registry.extensions.get(identifier)
+                if entry is None:
+                    raise ExtensionError("Extension is not registered.")
+                entry.enabled = False
+            return {"id": identifier, "enabled": False, "removed": entry.removed}
         info = self.info(identifier)
         with self.transaction() as registry:
             self._register(registry, validate_package(Path(info["path"])))
@@ -296,6 +323,43 @@ class Manager:
             entry.removed = True
             entry.enabled = False
         return {"id": identifier, "removed": True, "code_retained": True, "data_retained": True}
+
+    def trust(self, identifier: str, *, allow_storage: bool = False) -> dict:
+        if os.geteuid() == 0:
+            raise ExtensionError("Trusted-local approval refuses root; use the unprivileged operator.")
+        info = self.info(identifier)
+        package = validate_package(Path(info["path"]))
+        with self.transaction() as registry:
+            self._register(registry, package)
+            entry = registry.extensions[identifier]
+            entry.execution_mode = "trusted-local"
+            entry.approved_digest = digest(package.root)
+            entry.grants = ["storage:self"] if allow_storage else []
+        return {
+            **self.info(identifier),
+            "warning": "Approved code runs with your user privileges. This is NOT an OS sandbox. Enablement remains separate.",
+        }
+
+    def revoke(self, identifier: str) -> dict:
+        validate_id(identifier)
+        with self.transaction() as registry:
+            entry = registry.extensions.get(identifier)
+            if entry is None:
+                raise ExtensionError("Extension is not registered.")
+            entry.approved_digest = None
+            entry.execution_mode = None
+            entry.grants = []
+        return {"id": identifier, "approval_revoked": True, "grants": []}
+
+    def safe_mode(self, setting: str) -> dict:
+        if setting not in {"on", "off", "status"}:
+            raise ExtensionError("Safe mode must be on, off or status.")
+        if setting != "status":
+            with self.transaction() as registry:
+                registry.safe_mode = setting == "on"
+        saved = self.registry().safe_mode
+        environment = os.getenv("HOSAKA_EXTENSIONS_SAFE_MODE", "").lower() in {"1", "true", "yes", "on"}
+        return {"safe_mode": saved or environment, "saved_safe_mode": saved, "environment_override": environment}
 
     def doctor(self) -> dict:
         report = self.discover()
@@ -317,7 +381,8 @@ class Manager:
             or report["paths"]["data"]["mode"] != "0700"
         ) else "pass"
         report["limitations"] = [
-            "Host execution, declarative rendering and enforced permissions are not implemented.",
-            "Enabled state is metadata, not a permission grant or execution capability.",
+            "Trusted-local execution is not an OS sandbox; approved code retains user privileges.",
+            "Root/public execution is refused; OS-enforced Linux containment remains pending.",
+            "Approval is digest-bound; enablement and storage grants are separate.",
         ]
         return report

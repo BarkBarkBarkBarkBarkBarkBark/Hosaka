@@ -420,11 +420,13 @@ from hosaka.web.sync_ws import router as sync_router  # noqa: E402
 from hosaka.web.tui_ws import router as tui_router  # noqa: E402
 from hosaka.web.bluetooth_api import router as bluetooth_router  # noqa: E402
 from hosaka.web.games_api import router as games_router  # noqa: E402
+from hosaka.web.extensions_api import router as extensions_router  # noqa: E402
 
 app.include_router(v1_router)
 app.include_router(tui_router)
 app.include_router(bluetooth_router)
 app.include_router(games_router)
+app.include_router(extensions_router)
 app.include_router(voice_router)
 app.include_router(docs_router)
 app.include_router(diag_router)

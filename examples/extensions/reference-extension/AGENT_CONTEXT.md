@@ -8,5 +8,9 @@ This is standalone extension source, not a core customization workspace.
 - Run the local unittest suite explicitly after inspecting/trusting the source.
 - Do not edit core, provider configurations, other extensions or shared runtime
   state to make this package work.
-- Current authoring phase validates the UI but does not render or execute it
-  through Hosaka. Do not claim permission enforcement or a working host runner.
+- The host now renders the declarative UI and runs explicitly approved code in
+  a bounded trusted-local worker. Owner approval/grants and enablement are
+  separate. Do not self-approve on the owner's behalf.
+- Trusted-local is not OS isolation. Environment sanitation and context path
+  checks do not prevent arbitrary approved Python from accessing user files,
+  sockets or subprocesses. Root/public execution is refused.

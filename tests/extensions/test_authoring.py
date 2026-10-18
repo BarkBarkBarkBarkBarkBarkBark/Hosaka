@@ -67,7 +67,8 @@ def test_init_seeds_disabled_reference_and_private_registry_idempotently(manager
     assert len(first["extensions"]) == 1
     assert first["extensions"][0]["enabled"] is False
     assert first["extensions"][0]["grants"] == []
-    assert not first["execution_available"] and not first["ui_available"]
+    assert not first["execution_available"] and first["ui_available"]
+    assert not first["extensions"][0]["ui_available"]
     assert manager.lock.stat().st_mode & 0o777 == 0o600
     assert manager.root.stat().st_mode & 0o777 == 0o700
     before = snapshot(manager.root)
@@ -101,6 +102,7 @@ def test_create_second_external_package_without_core_changes(manager, tmp_path):
     target = tmp_path / "independent project"
     created = manager.create("second-extension", target)
     assert created["id"] == "second-extension"
+    assert created["name"] == "Second Extension"
     assert created["path"] == str(target)
     assert not created["enabled"]
     assert not (target / "example.txt").exists()
@@ -288,7 +290,7 @@ def test_changed_reference_version_is_reported_not_replaced(manager):
     assert result["reference_differs"]
     info = manager.info("reference-extension")
     assert info["version"] == "2.0.0"
-    assert info["registered_version"] == "1.0.0"
+    assert info["registered_version"] == validate_package(REFERENCE).manifest.version
     assert info["source_modified"]
 
 

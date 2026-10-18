@@ -5,9 +5,10 @@ import { menuOrbs, nextWelcomeIndex } from "./orb";
 import { LoreMenu } from "./components/LoreMenu";
 import { ApiHelp } from "./components/ApiHelp";
 import { BrowserDemoTerminal } from "./components/BrowserDemoTerminal";
+import { ExtensionMenu } from "./extensions/ExtensionMenu";
 import "./styles/terminal-gui.css";
 
-type Page = "wifi" | "bluetooth" | "games" | "flash" | "lore" | "api";
+type Page = "wifi" | "bluetooth" | "games" | "flash" | "lore" | "api" | "extensions";
 const loreKeys = ["menuLore", "menuLoreStars", "menuLoreHum", "menuLoreMargins", "menuLoreWaiting"] as const;
 const browserDemo = import.meta.env.VITE_HOSAKA_DEMO === "1";
 const hostedTerminal = Boolean(import.meta.env.VITE_HOSAKA_TUI_URL);
@@ -250,7 +251,7 @@ export function TerminalGui() {
         event.stopImmediatePropagation();
         close();
       } else if (event.key === "Tab" && drawer.current) {
-        const focusable = Array.from(drawer.current.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), a[href]"));
+        const focusable = Array.from(drawer.current.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href]"));
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
         if (event.shiftKey && document.activeElement === first) {
@@ -291,7 +292,7 @@ export function TerminalGui() {
           <aside className={`deck-menu${page === "games" ? " deck-menu-games" : ""}`} id="deck-menu" role="dialog" aria-modal="true" aria-label={t("menu")} ref={drawer}>
             <header><strong>{t("menu")}</strong><button onClick={close}>{t("close")}</button></header>
             {!browserDemo && !hostedTerminal && <nav aria-label={t("menu")}>
-              {(["games", "wifi", "bluetooth", "flash"] as const).map((item) => (
+              {(["games", "wifi", "bluetooth", "flash", "extensions"] as const).map((item) => (
                 <button key={item} aria-pressed={page === item} onClick={() => setPage(page === item ? null : item)}>{t(item)}</button>
               ))}
             </nav>}
@@ -337,6 +338,7 @@ export function TerminalGui() {
               {page === "flash" && <FlashMenu onShow={(text) => { setMenu(false); setFlash(text); }} />}
               {page === "lore" && <LoreMenu initialSlug={loreSlug} />}
               {page === "api" && <ApiHelp />}
+              {page === "extensions" && <ExtensionMenu />}
             </div>}
           </aside>
         </>

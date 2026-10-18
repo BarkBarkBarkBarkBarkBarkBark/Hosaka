@@ -11,6 +11,9 @@
   [the market brief](docs/hosaka_market_preparation_brief.md) for appliance gates.
   Planned commands, UI and sandboxing are not implemented merely by documenting
   them. Request a tracked platform upgrade when the current API is insufficient.
+- Execution is explicit, digest-approved trusted-local mode, not an OS sandbox.
+  Never silently approve/enable packages or grant storage. Root/public execution
+  is refused; do not weaken that boundary to work around service configuration.
 - Reuse [native paths](hosaka/paths.py); preserve user packages, data, sessions,
   credentials and permissions. Do not migrate standalone PicoClaw implicitly.
 - Follow [issue tracking](docs/issue-tracking.md) before nontrivial core changes.

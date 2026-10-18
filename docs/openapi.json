@@ -1110,6 +1110,435 @@
         ]
       }
     },
+    "/api/v1/bluetooth/devices": {
+      "get": {
+        "tags": [
+          "bluetooth"
+        ],
+        "summary": "Devices",
+        "operationId": "devices_api_v1_bluetooth_devices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BluetoothList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/bluetooth/scan": {
+      "post": {
+        "tags": [
+          "bluetooth"
+        ],
+        "summary": "Scan",
+        "operationId": "scan_api_v1_bluetooth_scan_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BluetoothList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/bluetooth/pair": {
+      "post": {
+        "tags": [
+          "bluetooth"
+        ],
+        "summary": "Pair",
+        "operationId": "pair_api_v1_bluetooth_pair_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/games": {
+      "get": {
+        "tags": [
+          "games"
+        ],
+        "summary": "Games",
+        "operationId": "games_api_v1_games_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/games/launch": {
+      "post": {
+        "tags": [
+          "games"
+        ],
+        "summary": "Launch",
+        "operationId": "launch_api_v1_games_launch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LaunchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/games/stop": {
+      "post": {
+        "tags": [
+          "games"
+        ],
+        "summary": "Stop",
+        "operationId": "stop_api_v1_games_stop_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/extensions": {
+      "get": {
+        "tags": [
+          "extensions",
+          "declarative extension Menu views"
+        ],
+        "summary": "Catalog",
+        "operationId": "catalog_api_v1_extensions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Catalog Api V1 Extensions Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "x-feature-id": "extensions.views"
+      }
+    },
+    "/api/v1/extensions/{identifier}/view": {
+      "get": {
+        "tags": [
+          "extensions",
+          "declarative extension Menu views"
+        ],
+        "summary": "View",
+        "operationId": "view_api_v1_extensions__identifier__view_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response View Api V1 Extensions  Identifier  View Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-feature-id": "extensions.views"
+      }
+    },
+    "/api/v1/extensions/{identifier}/actions/{action}": {
+      "post": {
+        "tags": [
+          "extensions",
+          "trusted-local extension execution"
+        ],
+        "summary": "Invoke",
+        "operationId": "invoke_api_v1_extensions__identifier__actions__action__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Action"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "invocation_id": {
+                    "format": "uuid",
+                    "title": "Invocation Id",
+                    "type": "string"
+                  },
+                  "digest": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "title": "Digest",
+                    "type": "string"
+                  },
+                  "params": {
+                    "additionalProperties": true,
+                    "maxProperties": 32,
+                    "title": "Params",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "invocation_id",
+                  "digest",
+                  "params"
+                ],
+                "title": "InvocationRequest",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "x-feature-id": "extensions.execution"
+      }
+    },
+    "/api/v1/extensions/{identifier}/cancel/{invocation_id}": {
+      "post": {
+        "tags": [
+          "extensions",
+          "trusted-local extension execution"
+        ],
+        "summary": "Cancel Invocation",
+        "operationId": "cancel_invocation_api_v1_extensions__identifier__cancel__invocation_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          },
+          {
+            "name": "invocation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invocation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Cancel Invocation Api V1 Extensions  Identifier  Cancel  Invocation Id  Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-feature-id": "extensions.execution"
+      }
+    },
     "/api/v1/voice/ephemeral-token": {
       "post": {
         "tags": [
@@ -1929,6 +2358,157 @@
         "x-feature-id": "obs.events"
       }
     },
+    "/api/v1/suggest": {
+      "get": {
+        "tags": [
+          "manual"
+        ],
+        "summary": "Suggest",
+        "operationId": "suggest_api_v1_suggest_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/manual": {
+      "get": {
+        "tags": [
+          "manual"
+        ],
+        "summary": "Manual Index",
+        "operationId": "manual_index_api_v1_manual_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeaturesListOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/manual/{feature_id}": {
+      "get": {
+        "tags": [
+          "manual"
+        ],
+        "summary": "Manual Page",
+        "operationId": "manual_page_api_v1_manual__feature_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "feature_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Feature Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/features": {
+      "get": {
+        "tags": [
+          "manual"
+        ],
+        "summary": "Features",
+        "description": "Return the agent_context.json as the canonical features JSON.",
+        "operationId": "features_api_v1_features_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Features Api V1 Features Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/tailscale/status": {
       "get": {
         "summary": "Tailscale Status",
@@ -2100,6 +2680,23 @@
         "summary": "Patch Llm Key",
         "description": "Store provider/model/api_key/base_url and apply immediately.",
         "operationId": "patch_llm_key_api_llm_key_patch",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ollama/discover": {
+      "post": {
+        "summary": "Discover Ollama",
+        "description": "Probe configured local Ollama hosts and persist a confirmed model.",
+        "operationId": "discover_ollama_api_ollama_discover_post",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2718,6 +3315,40 @@
         "type": "object",
         "title": "AudioVolumeSet"
       },
+      "BluetoothDevice": {
+        "properties": {
+          "address": {
+            "type": "string",
+            "title": "Address"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "address",
+          "name"
+        ],
+        "title": "BluetoothDevice"
+      },
+      "BluetoothList": {
+        "properties": {
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/BluetoothDevice"
+            },
+            "type": "array",
+            "title": "Devices"
+          }
+        },
+        "type": "object",
+        "required": [
+          "devices"
+        ],
+        "title": "BluetoothList"
+      },
       "Body_save_backend_setup_backend_post": {
         "properties": {
           "backend_endpoint": {
@@ -3288,6 +3919,99 @@
         ],
         "title": "FeatureSummary"
       },
+      "FeatureSummaryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "baller_command": {
+            "type": "string",
+            "title": "Baller Command",
+            "default": ""
+          },
+          "why_you_care": {
+            "type": "string",
+            "title": "Why You Care",
+            "default": ""
+          },
+          "manual_url": {
+            "type": "string",
+            "title": "Manual Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "category",
+          "status",
+          "manual_url"
+        ],
+        "title": "FeatureSummaryOut"
+      },
+      "FeaturesListOut": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/FeatureSummaryOut"
+            },
+            "type": "array",
+            "title": "Features"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "features"
+        ],
+        "title": "FeaturesListOut"
+      },
+      "Game": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "Game"
+      },
+      "GameList": {
+        "properties": {
+          "games": {
+            "items": {
+              "$ref": "#/components/schemas/Game"
+            },
+            "type": "array",
+            "title": "Games"
+          }
+        },
+        "type": "object",
+        "required": [
+          "games"
+        ],
+        "title": "GameList"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3692,6 +4416,22 @@
         ],
         "title": "InboxPostIn"
       },
+      "LaunchRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "LaunchRequest"
+      },
       "MemInfo": {
         "properties": {
           "total_mb": {
@@ -3825,6 +4565,20 @@
         "type": "object",
         "title": "NetInfo"
       },
+      "PairRequest": {
+        "properties": {
+          "address": {
+            "type": "string",
+            "pattern": "^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$",
+            "title": "Address"
+          }
+        },
+        "type": "object",
+        "required": [
+          "address"
+        ],
+        "title": "PairRequest"
+      },
       "ServiceInfo": {
         "properties": {
           "name": {
@@ -3899,6 +4653,68 @@
           "counters"
         ],
         "title": "StatsOut"
+      },
+      "SuggestOut": {
+        "properties": {
+          "input": {
+            "type": "string",
+            "title": "Input"
+          },
+          "did_you_mean": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Did You Mean"
+          },
+          "feature_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feature Id"
+          },
+          "manual_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manual Url"
+          },
+          "api_docs_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Docs Url"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "input",
+          "message"
+        ],
+        "title": "SuggestOut"
       },
       "SummaryOut": {
         "properties": {
@@ -4249,7 +5065,15 @@
     },
     {
       "name": "extension authoring foundation",
-      "description": "Scaffold, validate and discover independent extension.yaml packages and declarative views; manage private registration and owner lifecycle metadata. No package execution, UI renderer or enforced permission boundary yet."
+      "description": "Scaffold, validate and discover independent extension.yaml packages and declarative views; manage private registration and owner lifecycle metadata. Authoring never executes package code; execution requires separate approval."
+    },
+    {
+      "name": "trusted-local extension execution",
+      "description": "Run explicitly digest-approved code in bounded workers with schema checks, narrow data/log context, safe mode and cancellation. NOT an OS sandbox; approved Python retains user privileges. Root/public execution is refused."
+    },
+    {
+      "name": "declarative extension Menu views",
+      "description": "Discover enabled packages dynamically and render validated host-owned controls, results, errors and tables without extension HTML or core edits."
     },
     {
       "name": "user manual",

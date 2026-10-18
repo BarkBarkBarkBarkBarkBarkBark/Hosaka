@@ -13,8 +13,10 @@ read this before you touch anything.
 
 Start with the repository [agent entrypoint](../AGENTS.md) and
 [extension agent guide](extensions/AGENT_GUIDE.md). The Python TUI + small Menu
-host is canonical. The extension authoring foundation is tracked in #32;
-execution, UI rendering and enforced isolation are separate delivery gates.
+host is canonical. Authoring is committed at `0baf7a99` (#32); #33 adds bounded,
+explicitly approved trusted-local execution and generic declarative Menu views.
+Trusted-local is not OS isolation. Enforced Linux isolation remains a separate
+gate; never approve package code or grants silently on an owner's behalf.
 The roadmap is [extension_plan.md](extension_plan.md), with appliance gates in
 [hosaka_market_preparation_brief.md](hosaka_market_preparation_brief.md).
 The Neurodeck scientific-workstation charter is separate, not a core rewrite.

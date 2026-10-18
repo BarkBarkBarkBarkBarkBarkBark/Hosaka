@@ -22,7 +22,7 @@
 #   hosaka paths [--json]      show container paths and host extension storage
 #   hosaka doctor --offline    check container installation directories
 #   hosaka migrate --dry-run   inventory existing container state without initialization
-#   hosaka extensions ...     author and register packages (no host execution yet)
+#   hosaka extensions ...     author, approve and run trusted-local packages
 #   hosaka open                open the web UI in your browser
 #   hosaka logs                follow logs from the local node
 #   hosaka shell               bash shell inside the local container

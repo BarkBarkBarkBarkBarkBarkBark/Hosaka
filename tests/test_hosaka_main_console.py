@@ -45,7 +45,7 @@ def test_tui_extensions_uses_shared_dispatch(command, tmp_path, monkeypatch):
 
 
 def test_tui_extensions_invalid_command_does_not_exit_console(tmp_path, capsys):
-    assert main_console._dispatch_command("/extensions run missing", tmp_path, "llm") == (tmp_path, "llm")
+    assert main_console._dispatch_command("/extensions unsupported-command", tmp_path, "llm") == (tmp_path, "llm")
     assert "invalid choice" in capsys.readouterr().err
 
 

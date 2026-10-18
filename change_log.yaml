@@ -14,6 +14,28 @@ entries:
   - commit: "pending"
     date: "2026-10-18"
     type: feature
+    title: "Explicit trusted-local execution and declarative extension Menu views"
+    issue: 33
+    fix: |
+      - Add digest-bound owner approval, separate storage grant, safe mode and
+        shared bounded process execution for CLI/TUI and generic authenticated API.
+      - Sanitize worker environment, snapshot approved code, validate runtime
+        input/output and protocol, bound concurrency/time/output and clean ordinary
+        child process groups on success, timeout and cancellation.
+      - Implement scoped atomic data methods and bounded metadata-only logs;
+        disable/removal/revoke/safe mode and caller disconnect cancel active jobs.
+      - Render dynamic validated Menu forms/results/errors/tables using host-owned
+        React components; preserve terminal state and reject cross-site/public API use.
+      - Keep installation disabled/unapproved and preserve existing reference code.
+        New reference source is version 1.1.0 with explicit parameter bindings.
+    caveats:
+      - "Operator explicitly approved trusted-local mode; it is NOT an OS sandbox."
+      - "Root/public execution is refused; same-user files/network/subprocesses are not OS-confined."
+      - "Linux containment, per-package dependencies, dedicated agent tools and external/device proof remain pending."
+
+  - commit: "pending"
+    date: "2026-10-18"
+    type: feature
     title: "Extension authoring foundation and reconciled roadmap"
     issue: 32
     fix: |

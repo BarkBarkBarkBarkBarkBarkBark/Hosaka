@@ -4,8 +4,9 @@
 
 Read [SPECIFICATION.md](SPECIFICATION.md) and [SECURITY.md](SECURITY.md), then
 inspect the [reference package](../../examples/extensions/reference-extension/).
-This guide describes the implemented **authoring slice**, not the complete
-execution/UI platform. Do not edit core to implement an ordinary extension.
+This guide describes authoring, explicitly approved **trusted-local execution**
+and declarative Menu views. It does not claim OS isolation. Do not edit core to
+implement an ordinary extension.
 If the requested application requires a missing host capability, report the gap
 and request an explicitly tracked platform upgrade.
 
@@ -46,15 +47,17 @@ reference, not a symlink, copy, import, install script or dependency installatio
 1. Edit `extension.yaml`: unique ID, version, explicit actions, relative input
    and output JSON Schema files, Python file/callable, declarative UI and
    requested permissions. Unknown fields/permissions are errors.
-2. Edit `ui.yaml` using only the validated components and bindings. Validation
-   is implemented; **rendering and host action binding are not yet implemented**.
+2. Edit `ui.yaml` using only the validated components and bindings. The native
+   Menu renderer handles state, action binding and validated results dynamically.
    Arbitrary HTML, CSS, JavaScript and expressions are not accepted.
 3. Implement `run(action, params, context)` without importing Hosaka internals.
    The reference actions demonstrate echo, local persistence and a structured
    controlled failure. Validate inputs and do not put user data in package source.
-4. The reference test context implements `read_data`, `write_data`, `delete_data`
-   and `log` only for standalone tests. A production capability context and
-   persistent host logging are pending. Do not treat that fixture as a sandbox.
+4. The production context implements `read_data`, `write_data`, `delete_data`
+   and `log`. Data methods require the separate `storage:self` grant and plain
+   filenames. Persist values only in the supplied data capability, not source.
+   Logs keep bounded event names/field names, not input/result/metadata values.
+   The standalone test context is a fixture, not an OS sandbox.
 5. Add package-local tests and use the published validator.
 
 ## Validate and test deliberately
@@ -75,8 +78,8 @@ PYTHONPATH=/absolute/path/to/Hosaka \
 
 This **executes code as your user**. Inspect/trust the package first.
 Discovery, validation, bootstrap and core startup never run these tests.
-There is no `hosaka extensions test` or `run` yet. Do not invent a shell or
-dynamic-import bypass and describe it as platform execution.
+There is no `hosaka extensions test` command yet. Never run arbitrary package
+tests during discovery or boot.
 
 Platform compatibility tests are `python -m pytest -q tests/extensions` using
 the checkout's Python environment. [TESTING.md](TESTING.md) describes the
@@ -84,8 +87,27 @@ second-package and preservation checks.
 
 ## Lifecycle and diagnosis
 
-`enable` and `disable` persist owner intent only; grants stay separate and no
-execution is possible. `remove ID` unregisters and hides the package while
+Ask the owner to inspect and approve the source before enabling execution:
+
+```sh
+hosaka extensions trust my-extension --trusted-local --allow-storage
+hosaka extensions enable my-extension
+hosaka extensions run my-extension echo --params '{"message":"Hello"}'
+```
+
+Do not silently approve code on the owner's behalf. Trusted-local Python runs
+with the user's privileges, not a sandbox. Source changes invalidate approval.
+Only the owner CLI/TUI exposes approval/grants; the API cannot grant them.
+`--allow-storage` is needed for `filesystem: data-only`. Stdlib-only packages are
+currently supported; dependency installation into core is not supported.
+
+Open **Menu → Extensions → your package**. `Button.params` maps action properties
+to `params.<input_id>`; legacy buttons project onto schema top-level properties.
+Results, errors, status and tables bind to validated output; HTML is never
+injected. No core UI edits or rebuild are needed for a second package.
+
+`disable`, `revoke` and `safe-mode on` block/cancel jobs.
+`remove ID` unregisters and hides the package while
 retaining source and data. Bootstrap respects removal. An explicit `link PATH`
 can restore it, disabled. There is no data purge or archive updater yet.
 
@@ -106,4 +128,5 @@ provider files, upstream PicoClaw, other extensions or permission grants to make
 an ordinary application work.
 
 Report the package path, ID/version, validation and actual test results,
-installation/link instructions, and the explicit current execution/UI limitation.
+installation/link/approval instructions, and the trusted-local security boundary.
+Never describe sanitized environment variables as hiding host credential files.

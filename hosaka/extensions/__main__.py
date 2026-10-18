@@ -11,15 +11,32 @@ from hosaka.extensions.manifest import ExtensionError, validate_package
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Extension authoring metadata (no package execution or UI rendering).")
+    parser = argparse.ArgumentParser(description="Extension authoring and explicitly approved trusted-local execution (not sandboxed).")
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("init", "list", "doctor"):
         command = commands.add_parser(name)
         command.add_argument("--json", action="store_true")
-    for name in ("info", "enable", "disable", "remove"):
+    for name in ("info", "enable", "disable", "remove", "revoke"):
         command = commands.add_parser(name)
         command.add_argument("id")
         command.add_argument("--json", action="store_true")
+    command = commands.add_parser("trust")
+    command.add_argument("id")
+    command.add_argument("--trusted-local", action="store_true", required=True, help="Approve current source to run with your user privileges; NOT sandboxed")
+    command.add_argument("--allow-storage", action="store_true", help="Grant only this extension's data capability")
+    command.add_argument("--json", action="store_true")
+    command = commands.add_parser("run")
+    command.add_argument("id")
+    command.add_argument("action")
+    command.add_argument("--params", default="{}", help="JSON object; never pass provider credentials")
+    command.add_argument("--json", action="store_true")
+    command = commands.add_parser("cancel")
+    command.add_argument("id")
+    command.add_argument("invocation_id")
+    command.add_argument("--json", action="store_true")
+    command = commands.add_parser("safe-mode")
+    command.add_argument("setting", choices=["on", "off", "status"])
+    command.add_argument("--json", action="store_true")
     command = commands.add_parser("create")
     command.add_argument("id")
     command.add_argument("--path", type=Path, help="New external working-copy directory")
@@ -58,6 +75,21 @@ def main(argv: list[str] | None = None) -> int:
             result = manager.enable(args.id, args.command == "enable")
         elif args.command == "remove":
             result = manager.remove(args.id)
+        elif args.command == "trust":
+            result = manager.trust(args.id, allow_storage=args.allow_storage)
+        elif args.command == "revoke":
+            result = manager.revoke(args.id)
+        elif args.command == "safe-mode":
+            result = manager.safe_mode(args.setting)
+        elif args.command == "run":
+            from hosaka.extensions.runner import run
+
+            result = run(manager, args.id, args.action, json.loads(args.params))
+        elif args.command == "cancel":
+            from hosaka.extensions.runner import cancel
+
+            cancel(manager, args.id, args.invocation_id)
+            result = {"cancel_requested": True, "invocation_id": args.invocation_id}
         else:
             result = manager.info(args.id)
     except (OSError, ExtensionError, ValueError, RecursionError) as exc:
@@ -67,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "init" and result.get("errors"):
         print("Extension bootstrap completed; invalid packages were preserved and skipped. Run hosaka extensions doctor.", file=sys.stderr)
         return 0
-    return 1 if result.get("errors") or result.get("status") == "fail" else 0
+    return 1 if result.get("errors") or result.get("status") == "fail" or result.get("ok") is False else 0
 
 
 if __name__ == "__main__":

@@ -277,7 +277,7 @@ hosaka - client for the Hosaka Field Terminal.
   hosaka uninstall           remove launcher + local container (keeps state)
   hosaka version             print versions
   hosaka migrate --dry-run [--json]  inventory existing state without initialization
-  hosaka extensions ...      author/register packages; no host execution yet
+  hosaka extensions ...      author/approve packages; execution refuses root/public hosts
   hosaka help                this message
 
 signal steady. no wrong way.
