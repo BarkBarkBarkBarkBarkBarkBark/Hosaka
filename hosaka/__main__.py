@@ -5,6 +5,16 @@ import os
 import sys
 from pathlib import Path
 
+# Path inspection must work without loading secrets, logs, or the boot stack.
+if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] in {"paths", "doctor", "migrate"}:
+    if sys.argv[1] == "paths":
+        from hosaka.paths import main as diagnostic_main
+    elif sys.argv[1] == "doctor":
+        from hosaka.doctor import main as diagnostic_main
+    else:
+        from hosaka.migration import main as diagnostic_main
+    raise SystemExit(diagnostic_main(sys.argv[2:]))
+
 # The TUI is the product. Parent processes (Cursor, CI, a polluted desktop
 # session) often export NO_COLOR=1 / TERM=dumb — strip that before style.py
 # bakes its palette at import time.

@@ -15,4 +15,13 @@ if command -v dbus-update-activation-environment >/dev/null 2>&1; then
     dbus-update-activation-environment --systemd DISPLAY XAUTHORITY XDG_RUNTIME_DIR 2>/dev/null || true
 fi
 
-exec openbox-session
+SESSION_FILE="${HOSAKA_STATE_DIR:-/var/lib/hosaka}/x-session"
+SESSION=kiosk
+if [ -f "$SESSION_FILE" ]; then
+    SESSION="$(cat "$SESSION_FILE")"
+fi
+case "$SESSION" in
+    lxqt) exec startlxqt ;;
+    kiosk|openbox) exec openbox-session ;;
+    *) echo "[hosaka] invalid X session in $SESSION_FILE: $SESSION" >&2; exit 1 ;;
+esac

@@ -5,11 +5,74 @@
 ##
 
 meta:
-  last_updated: "2026-04-24"
+  last_updated: "2026-10-17"
   repo: "https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka"
   image_registry: "ghcr.io/barkbarkbarkbarkbarkbarkbark/hosaka"
 
 entries:
+
+  - commit: "pending"
+    date: "2026-10-17"
+    type: feature
+    session: "2026-10-17"
+    title: "Read-only runtime ownership and credential migration inventory"
+    issue: 31
+    fix: |
+      - Add shared CLI/TUI migrate --dry-run inventory with explicit current-process
+        versus proposed canonical paths, saved profiles and workspace/session locations.
+      - Report credential presence, source candidates, redacted disagreements and
+        actionable file/schema/ownership/permission issues without provider requests.
+      - Keep environment files and stored PicoClaw references observational; do not
+        hydrate, import, bootstrap, chmod, relocate or delete runtime content.
+      - Bypass Docker initialization for inventory, using read-only mounts when stopped.
+      - Declare PyYAML for strict sidecar parsing rather than silently accepting
+        malformed credential YAML through a permissive runtime fallback.
+    caveats:
+      - "Applying a migration and automatic appliance custom-root propagation remain pending."
+      - "Already hydrated environments cannot reveal their original credential provenance."
+      - "No real provider request, native Windows or physical deck qualification is implied."
+
+  - commit: "pending"
+    date: "2026-10-17"
+    type: fix
+    session: "2026-10-17"
+    title: "Preserve TUI + Menu host and consolidate graphical boot/update supervision"
+    issue: 31
+    fix: |
+      - Clarify the small Menu button and real Python TUI remain the graphical
+        deck interface. Only the independent desktop/arcade frontend is retired.
+      - Preserve saved display choices during deployment rather than forcing
+        the old one-time GUI migration. Fresh graphical installs retain GUI default.
+      - Use one session supervisor for Openbox and LXQt, honor saved X-session
+        choices, and yield to a systemd-owned kiosk between respawns.
+      - Fail explicitly on incomplete Electron or unavailable backend; boot no
+        longer runs npm/postinstall or deletes an existing live kiosk profile.
+      - Restore saved boot mode before services, avoid kiosk startup in device/
+        build or bare-TUI modes, and verify built UI, build stamp and expected
+        graphical host process before claiming update completion.
+    caveats:
+      - "No physical deck reboot/update qualification has been performed."
+      - "Credential migration and protected extensions remain separate work."
+
+  - commit: "pending"
+    date: "2026-10-17"
+    type: refactor
+    session: "2026-10-17"
+    title: "TUI-first replication foundation: native paths, installation record, offline diagnostics"
+    issue: 31
+    fix: |
+      - Default the native CLI to TUI on every platform/session and detect source
+        checkouts using the Python package rather than frontend artifacts.
+      - Add a shared operator/native-data/game path resolver, private idempotent
+        directory initialization and a versioned nonsecret installation record.
+      - Wire native source/appliance setup and existing RetroArch ROM discovery.
+      - Add CLI/TUI path inspection and offline native diagnostics, without
+        importing provider secrets or requiring a web/GUI process.
+      - Preserve existing populated ROM libraries in place; keep explicit overrides.
+    caveats:
+      - "Credential/PicoClaw migration and protected extension execution are not implemented."
+      - "Legacy appliance boot/update frontend paths still need consolidation."
+      - "No physical deck changes or clean-device acceptance were performed."
 
   - commit: "pending"
     date: "2026-04-24"

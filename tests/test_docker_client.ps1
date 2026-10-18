@@ -25,7 +25,10 @@ try {
     Assert-Argument "type=bind,src=$project,dst=/workspace,readonly"
     Assert-Argument "tui"
     Assert-Argument "HOSAKA_PROJECT_DIR=/workspace"
-    Assert-Argument "--seed-config"
+    Assert-Argument "--initialize-only"
+    foreach ($directory in @("runtime/extensions", "runtime/extension-data")) {
+        if (-not (Test-Path (Join-Path $env:HOSAKA_HOME $directory) -PathType Container)) { throw "Missing directory: $directory" }
+    }
     & $cli workspace $project --read-write
     $global:HosakaTestCalls.Clear()
     & $cli secrets set EXAMPLE_KEY
@@ -43,6 +46,30 @@ try {
     & $cli configure llm --provider anthropic --model claude-example
     Assert-Argument "hosaka.llm_setup"
     Assert-Argument "claude-example"
+    $global:HosakaTestCalls.Clear()
+    & $cli migrate --dry-run --json
+    Assert-Argument "hosaka.migration"
+    Assert-Argument "--read-only"
+    Assert-Argument "--pull=never"
+    Assert-Argument "none"
+    Assert-Argument "type=bind,src=$(Join-Path $env:HOSAKA_HOME 'runtime'),dst=/root/.hosaka,readonly"
+    foreach ($call in $global:HosakaTestCalls) {
+        if ($call -contains "--initialize-only") { throw "Inventory initialized the runtime" }
+    }
+    $global:HosakaTestRunning = $true
+    $global:HosakaTestCalls.Clear()
+    & $cli migrate --dry-run --json
+    Assert-Argument "exec"
+    Assert-Argument "hosaka.migration"
+    foreach ($call in $global:HosakaTestCalls) {
+        if ($call -contains "--initialize-only") { throw "Running inventory initialized the runtime" }
+    }
+    $global:HosakaTestRunning = $false
+    $originalHome = $env:HOSAKA_HOME
+    $env:HOSAKA_HOME = Join-Path $Temp "absent-runtime"
+    & $cli migrate --dry-run --json
+    if (Test-Path $env:HOSAKA_HOME) { throw "Inventory created host directories" }
+    $env:HOSAKA_HOME = $originalHome
     Write-Host "Windows Docker client regression tests passed"
     $global:LASTEXITCODE = 0
 } finally {

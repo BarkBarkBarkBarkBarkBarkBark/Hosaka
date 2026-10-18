@@ -22,6 +22,7 @@ def test_appliance_installer_wires_runtime_without_host_changes(tmp_path, boot, 
         "npm": 'printf "npm %s\\n" "$*" >>"$TEST_LOG"',
         "cp": 'printf "cp %s\\n" "$*" >>"$TEST_LOG"',
         "picoclaw": 'echo "picoclaw 0.3.1"',
+        "agetty": "exit 0",
     }
     for name, body in mocks.items():
         path = tools / name
@@ -48,6 +49,7 @@ def test_appliance_installer_wires_runtime_without_host_changes(tmp_path, boot, 
     commands = log.read_text()
     assert "--preserve-env=OPENAI_API_KEY,HOSAKA_LOCAL_FIRST" in commands
     assert "bootstrap_picoclaw_runtime.py --appliance-user" in commands
+    assert "-m hosaka.paths init --mode appliance" in commands
     assert "npm ci --prefer-offline --loglevel error" in commands
     assert "npm run build" in commands
     assert "apt-get install -y retroarch" in commands

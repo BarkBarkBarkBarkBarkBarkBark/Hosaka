@@ -17,8 +17,13 @@ $LinkFile  = Join-Path $Home_ "link"
 $EnvFile   = Join-Path $Home_ "env"
 $WorkspaceFile = Join-Path $Home_ "workspace.conf"
 $PythonBin = "/opt/hosaka-field-terminal/.venv/bin/python"
+$ReadOnlyInventory = $args.Count -gt 0 -and $args[0] -eq "migrate"
 
-New-Item -ItemType Directory -Force -Path $Home_, $StateDir, (Join-Path $Home_ "runtime"), (Join-Path $Home_ "picoclaw"), (Join-Path $Home_ "workspace") | Out-Null
+if (-not $ReadOnlyInventory) {
+  New-Item -ItemType Directory -Force -Path $Home_, $StateDir, (Join-Path $Home_ "runtime"), (Join-Path $Home_ "picoclaw"), (Join-Path $Home_ "workspace"),
+    (Join-Path $Home_ "runtime/extensions"), (Join-Path $Home_ "runtime/extension-data"),
+    (Join-Path $Home_ "runtime/state"), (Join-Path $Home_ "runtime/logs"), (Join-Path $Home_ "runtime/games/roms/psx") | Out-Null
+}
 
 function Note($m) { Write-Host "  > $m" -ForegroundColor Cyan }
 function OK($m)   { Write-Host "  + $m" -ForegroundColor Green }
@@ -71,20 +76,21 @@ function Runtime-Args {
         if (-not (Test-Path $workspace -PathType Container)) { Die "shared workspace is missing: $workspace" }
     }
     if ($workspace.Contains(',') -or $Home_.Contains(',')) { Die "Docker mount paths cannot contain commas" }
+    $readonly = ""
+    if ($ReadOnlyInventory) { $mode = "ro"; $readonly = ",readonly" }
     $mount = "type=bind,src=$workspace,dst=/workspace"
     if ($mode -eq "ro") { $mount += ",readonly" }
     return @(
-        "--mount", "type=bind,src=$StateDir,dst=/var/lib/hosaka",
-        "--mount", "type=bind,src=$(Join-Path $Home_ 'runtime'),dst=/root/.hosaka",
-        "--mount", "type=bind,src=$(Join-Path $Home_ 'picoclaw'),dst=/root/.picoclaw",
+        "--mount", "type=bind,src=$StateDir,dst=/var/lib/hosaka$readonly",
+        "--mount", "type=bind,src=$(Join-Path $Home_ 'runtime'),dst=/root/.hosaka$readonly",
+        "--mount", "type=bind,src=$(Join-Path $Home_ 'picoclaw'),dst=/root/.picoclaw$readonly",
         "--mount", $mount, "--workdir", "/workspace",
         "-e", "PYTHONPATH=/opt/hosaka-field-terminal", "-e", "HOSAKA_PROJECT_DIR=/workspace"
     ) + (Env-File-Args)
 }
 
 function Initialize-Runtime($RuntimeArgs) {
-    Invoke-Docker run --rm @RuntimeArgs --entrypoint $PythonBin $Image `
-        /opt/hosaka-field-terminal/scripts/bootstrap_picoclaw_runtime.py --home /root --seed-config | Out-Null
+    Invoke-Docker run --rm @RuntimeArgs $Image --initialize-only | Out-Null
 }
 
 function Run-Local {
@@ -93,12 +99,20 @@ function Run-Local {
     $tty = @("-i")
     if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) { $tty += "-t" }
     if (Container-Running) {
+        if ($ReadOnlyInventory) {
+            & docker exec @tty --workdir /workspace -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/opt/hosaka-field-terminal $Container @command
+            exit $LASTEXITCODE
+        }
         Invoke-Docker exec @tty --workdir /workspace -e PYTHONPATH=/opt/hosaka-field-terminal -e HOSAKA_PROJECT_DIR=/workspace $Container @command
     } else {
         $runtime = Runtime-Args
-        Initialize-Runtime $runtime
         $rest = @()
         if ($command.Count -gt 1) { $rest = $command[1..($command.Count - 1)] }
+        if ($ReadOnlyInventory) {
+            & docker run --rm @tty --read-only --pull=never --network none -e PYTHONDONTWRITEBYTECODE=1 @runtime --entrypoint $command[0] $Image @rest
+            exit $LASTEXITCODE
+        }
+        Initialize-Runtime $runtime
         Invoke-Docker run --rm @tty @runtime --entrypoint $command[0] $Image @rest
     }
 }
@@ -262,6 +276,7 @@ hosaka - client for the Hosaka Field Terminal.
   hosaka unlink              go back to using the local node
   hosaka uninstall           remove launcher + local container (keeps state)
   hosaka version             print versions
+  hosaka migrate --dry-run [--json]  inventory existing state without initialization
   hosaka help                this message
 
 signal steady. no wrong way.
@@ -277,6 +292,9 @@ switch ($cmd) {
     {"down","stop"              -contains $_} { Cmd-Down }
     {"tui","console"            -contains $_} { Cmd-Tui @rest }
     "workspace"                    { Cmd-Workspace @rest }
+    "paths"                        { Run-Local $PythonBin -m hosaka.paths @rest }
+    "migrate"                      { Run-Local $PythonBin -B -m hosaka.migration @rest }
+    "doctor"                       { Run-Local $PythonBin -m hosaka.doctor @rest }
     "configure" {
         if ($rest.Count -lt 1 -or $rest[0] -ne "llm") { Die "usage: hosaka configure llm --provider PROVIDER --model MODEL" }
         $options = @()

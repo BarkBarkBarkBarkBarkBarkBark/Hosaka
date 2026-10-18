@@ -46,10 +46,19 @@ def shell(code, env=None):
                           env=env, text=True, capture_output=True, timeout=10)
 
 
-@pytest.mark.parametrize("display,expected", [(":0", "GUI"), ("", "TUI")])
-def test_plain_hosaka_chooses_terminal_gui_when_graphical(display, expected):
-    result = shell('uname() { echo Linux; }; cmd_gui() { echo GUI; }; cmd_tui() { echo TUI; }; main',
-                   dict(os.environ, DISPLAY=display))
+@pytest.mark.parametrize("platform,display,ssh,source,source_gui,expected", [
+    ("Linux", ":0", "", "0", "0", "GUI"),
+    ("Linux", "", "", "0", "0", "TUI"),
+    ("Linux", ":0", "remote", "0", "0", "TUI"),
+    ("Linux", "", "", "1", "1", "TUI"),
+    ("Linux", ":0", "", "1", "0", "TUI"),
+    ("Darwin", "", "", "1", "1", "GUI"),
+    ("Darwin", "", "remote", "1", "1", "TUI"),
+])
+def test_default_hosaka_preserves_menu_host_locally_and_bare_tui_over_ssh(platform, display, ssh, source, source_gui, expected):
+    result = shell('uname() { echo "$TEST_PLATFORM"; }; cmd_gui() { echo GUI; }; cmd_tui() { echo TUI; }; main',
+                   dict(os.environ, TEST_PLATFORM=platform, DISPLAY=display, WAYLAND_DISPLAY="",
+                        SSH_CONNECTION=ssh, SSH_TTY="", HOSAKA_SOURCE_INSTALL=source, HOSAKA_SOURCE_GUI=source_gui))
     assert result.returncode == 0
     assert result.stdout.strip() == expected
 
@@ -111,23 +120,50 @@ def test_deploy_fails_for_missing_runtime_directory(tmp_path):
     assert "SHOULD_NOT_BUILD" not in result.stdout
 
 
-def test_first_deploy_migrates_gui_then_preserves_explicit_tui(tmp_path):
+@pytest.mark.parametrize("preference", ["tui", "gui", None])
+def test_deploy_preserves_display_choice_and_defaults_only_fresh_devices(tmp_path, preference):
     config = tmp_path / "config"
     (config / "hosaka").mkdir(parents=True)
-    (config / "hosaka/display-mode").write_text("tui\n")
+    if preference is not None:
+        (config / "hosaka/display-mode").write_text(preference + "\n")
     result = shell(
         'getent() { printf "operator:x:1000:1000:Operator:%s:/bin/bash\\n" "$TEST_HOME"; }; '
         'sudo() { case "$1" in tee|touch) "$@";; *) return 0;; esac; }; '
-        'refresh_appliance_launchers; cmd_display tui; refresh_appliance_launchers; cmd_display show',
+        'refresh_appliance_launchers; refresh_appliance_launchers; cmd_display show',
         dict(os.environ, TEST_HOME=str(tmp_path), XDG_CONFIG_HOME=str(config)))
     assert result.returncode == 0, result.stderr
-    assert "migrated graphical boot" in result.stdout
-    assert result.stdout.strip().endswith("tui")
-    assert (config / "hosaka/terminal-gui-default-v1").exists()
+    assert result.stdout.strip().endswith(preference or "gui")
+    assert (config / "hosaka/display-mode").read_text() == (preference or "gui") + "\n"
+    assert not (config / "hosaka/terminal-gui-default-v1").exists()
 
 
-@pytest.mark.parametrize("deploy_exit,health_exit,stamp", [(0, 0, "abc123"), (7, 0, "abc123"), (0, 1, "abc123"), (0, 0, "wrong")])
-def test_update_worker_restores_services_on_success_and_failure(tmp_path, deploy_exit, health_exit, stamp):
+def test_deploy_refreshes_session_dispatcher_with_a_preserved_original_backup(tmp_path):
+    config = tmp_path / "config"
+    (config / "hosaka").mkdir(parents=True)
+    (config / "hosaka/display-mode").write_text("gui\n")
+    (tmp_path / ".xinitrc").write_text("original session script\n")
+    result = shell(
+        'getent() { printf "deck:x:1000:1000:Deck:%s:/bin/bash\\n" "$TEST_HOME"; }; '
+        'sudo() { case "$1" in cp) "$@";; install) '
+        'if [[ "${@: -1}" == "$TEST_HOME/.xinitrc" ]]; then '
+        'cp "$REPO_ROOT/dotfiles/xinitrc" "$TEST_HOME/.xinitrc"; fi;; *) return 0;; esac; }; '
+        'refresh_appliance_launchers; refresh_appliance_launchers',
+        dict(os.environ, TEST_HOME=str(tmp_path), XDG_CONFIG_HOME=str(config)))
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / ".xinitrc").read_text() == (ROOT / "dotfiles/xinitrc").read_text()
+    assert (tmp_path / ".xinitrc.pre-hosaka").read_text() == "original session script\n"
+
+
+@pytest.mark.parametrize("initial_mode,display", [("console", "gui"), ("console", "tui"), ("device", "gui"), ("build", "gui")])
+@pytest.mark.parametrize("deploy_exit,health_exit,stamp,ui_built,host_running", [
+    (0, 0, "abc123", True, True),
+    (7, 0, "abc123", True, True),
+    (0, 1, "abc123", True, True),
+    (0, 0, "wrong", True, True),
+    (0, 0, "abc123", False, True),
+    (0, 0, "abc123", True, False),
+])
+def test_update_worker_restores_services_on_success_and_failure(tmp_path, deploy_exit, health_exit, stamp, ui_built, host_running, initial_mode, display):
     tools = tmp_path / "bin"
     tools.mkdir()
     log = tmp_path / "commands"
@@ -136,9 +172,9 @@ def test_update_worker_restores_services_on_success_and_failure(tmp_path, deploy
         "flock": 'exit 0',
         "install": 'exit 0',
         "chown": 'exit 0',
-        "pgrep": 'if [ "$*" = "-x Xorg" ]; then exit 0; fi\nexit 1',
+        "pgrep": 'case "$*" in "-x Xorg") exit 0;; *kiosk/node_modules/electron/dist/electron*) exit "$TEST_HOST_EXIT";; esac\nexit 1',
         "getent": f'echo "operator:x:1000:1000:Operator:{tmp_path}:/bin/bash"',
-        "curl": f'case "$*" in *build-stamp.json*) echo \'{{"sha":"{stamp}"}}\';; esac\nexit {health_exit}',
+        "curl": f'case "$*" in *build-stamp.json*) echo \'{{"sha":"{stamp}"}}\';; *) echo \'{{"ui_built":{str(ui_built).lower()}}}\';; esac\nexit {health_exit}',
         "seq": 'echo 1',
         "sleep": 'exit 0',
         "runuser": 'echo abc123',
@@ -153,20 +189,27 @@ def test_update_worker_restores_services_on_success_and_failure(tmp_path, deploy
     (repo / "scripts/hosaka").write_text(f'#!/bin/sh\necho "DEPLOY $*" >>"$TEST_LOG"\nexit {deploy_exit}\n')
     state = tmp_path / "state"
     state.mkdir()
-    (state / "mode").write_text("console\n")
+    (state / "mode").write_text(initial_mode + "\n")
+    config = tmp_path / "config"
+    (config / "hosaka").mkdir(parents=True)
+    preference = config / "hosaka/display-mode"
+    preference.write_text(display + "\n")
     worker = tmp_path / "worker"
     worker.write_text((ROOT / "scripts/hosaka-update-worker.sh").read_text().replace(
         "/run/lock/hosaka-update.lock", str(tmp_path / "update.lock")))
     result = subprocess.run(["bash", str(worker)], text=True, capture_output=True, timeout=10,
                             env=dict(os.environ, PATH=str(tools) + os.pathsep + os.environ["PATH"],
                                      HOSAKA_REPO=str(repo), HOSAKA_STATE_DIR=str(state),
-                                     HOSAKA_OPERATOR="operator", TEST_LOG=str(log)))
-    success = deploy_exit == 0 and health_exit == 0 and stamp == "abc123"
+                                     HOSAKA_OPERATOR="operator", TEST_LOG=str(log),
+                                     XDG_CONFIG_HOME=str(config), TEST_HOST_EXIT="0" if host_running else "1"))
+    needs_host = initial_mode == "console" and display == "gui"
+    success = deploy_exit == 0 and health_exit == 0 and stamp == "abc123" and ui_built and (not needs_host or host_running)
     assert (result.returncode == 0) == success, result.stderr
-    assert (state / "mode").read_text().strip() == "console"
+    assert (state / "mode").read_text().strip() == initial_mode
+    assert preference.read_text() == display + "\n"
     commands = log.read_text()
     assert "stop hosaka-webserver.service" in commands
     assert "start hosaka-webserver.service" in commands
-    assert "start hosaka-kiosk.service" in commands
+    assert ("start hosaka-kiosk.service" in commands) == needs_host
     assert "getty@tty1" not in commands
     assert ("UPDATE COMPLETE" if success else "UPDATE FAILED") in result.stdout + result.stderr

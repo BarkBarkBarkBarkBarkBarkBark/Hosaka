@@ -13,20 +13,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+from hosaka.paths import ROM_EXTENSIONS, resolve_paths
+
 log = logging.getLogger("hosaka.play")
-ROM_EXTENSIONS = (".m3u", ".cue", ".chd", ".pbp", ".iso")
 
 
 def rom_root() -> Path:
-    configured = os.getenv("HOSAKA_PSX_ROMS", "").strip()
-    if configured:
-        return Path(configured).expanduser()
-    candidates = (
-        Path.home() / "RetroPie/roms/psx",
-        Path.home() / "Games/PlayStation",
-        Path.home() / "Games/psx",
-    )
-    return next((path for path in candidates if path.is_dir()), candidates[0])
+    return resolve_paths().psx_roms
 
 
 def catalog() -> list[Path]:

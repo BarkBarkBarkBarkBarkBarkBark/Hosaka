@@ -5,6 +5,44 @@ from hosaka import main_console
 from hosaka.tui import style as tui_style
 
 
+@pytest.mark.parametrize("command", ["/paths", "/paths --json"])
+def test_tui_paths_uses_shared_dispatch(command, tmp_path, monkeypatch):
+    from hosaka import paths
+
+    calls = []
+    monkeypatch.setattr(paths, "main", lambda args: calls.append(args) or 0)
+    assert main_console._dispatch_command(command, tmp_path, "llm") == (tmp_path, "llm")
+    assert calls == [command.split()[1:]]
+
+
+def test_tui_offline_doctor_uses_shared_dispatch(tmp_path, monkeypatch):
+    from hosaka import doctor
+
+    calls = []
+    monkeypatch.setattr(doctor, "main", lambda args: calls.append(args) or 0)
+    main_console._dispatch_command("/doctor --offline", tmp_path, "llm")
+    assert calls == [["--offline"]]
+
+
+@pytest.mark.parametrize("command", ["/migrate --dry-run", "/migrate --dry-run --json", "/migrate --json --dry-run"])
+def test_tui_migration_uses_shared_dispatch(command, tmp_path, monkeypatch):
+    from hosaka import migration
+
+    calls = []
+    monkeypatch.setattr(migration, "main", lambda args: calls.append(args) or 0)
+    assert main_console._dispatch_command(command, tmp_path, "llm") == (tmp_path, "llm")
+    assert calls == [command.split()[1:]]
+
+
+@pytest.mark.parametrize("command", ["/migrate", "/migrate --apply", "/migrate --dry-run --unknown"])
+def test_tui_migration_invalid_arguments_do_not_exit_console(command, tmp_path, monkeypatch, capsys):
+    from hosaka import migration
+
+    monkeypatch.setattr(migration, "main", lambda args: pytest.fail("Invalid inventory dispatched"))
+    assert main_console._dispatch_command(command, tmp_path, "llm") == (tmp_path, "llm")
+    assert "Usage: /migrate --dry-run" in capsys.readouterr().out
+
+
 def test_first_run_saves_hidden_key_without_mutating_picoclaw(tmp_path, monkeypatch, capsys):
     import json
     from hosaka.llm import llm_config, openai_adapter, picoclaw_adapter

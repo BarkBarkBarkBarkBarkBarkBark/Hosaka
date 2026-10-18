@@ -34,6 +34,8 @@ x-hosaka-common: &hosaka-common
     # ── persist state + picoclaw config across restarts ────────────
     - hosaka-state:/var/lib/hosaka
     - picoclaw-config:/root/.picoclaw
+    # Host-editable packages/data live outside the Hosaka checkout.
+    - ${HOSAKA_HOME:-${HOME}/.hosaka}/runtime:/root/.hosaka
 
 services:
   # ── frontend watcher — rebuild the SPA into hosaka/web/ui on edits ──────
@@ -53,6 +55,7 @@ services:
     volumes:
       - ../frontend:/workspace/frontend
       - ../hosaka:/workspace/hosaka
+      - ../docs:/workspace/docs:ro
       - frontend-node-modules:/workspace/frontend/node_modules
     restart: unless-stopped
 
@@ -79,6 +82,7 @@ services:
   console:
     <<: *hosaka-common
     container_name: hosaka-console
+    command: ["tui"]
     ports:
       - "8422:8421"
     env_file:

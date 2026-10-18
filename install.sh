@@ -45,6 +45,9 @@ fi
 if (( INSTALL_PICO )); then
   bash "$ROOT/scripts/install-picoclaw.sh" --prefix "$PREFIX" --no-runtime
 fi
+(cd "$ROOT" && "$VENV/bin/python" -m hosaka.paths init \
+  --mode source --repo-root "$ROOT" --runtime-root "$ROOT" --launcher "$TARGET" \
+  --python "$VENV/bin/python")
 "$VENV/bin/python" "$ROOT/scripts/bootstrap_picoclaw_runtime.py" --home "$HOME" --seed-config
 if (( GUI )); then
   command -v npm >/dev/null || { echo "Node.js/npm is required for --gui." >&2; exit 1; }
@@ -59,6 +62,12 @@ trap 'rm -f "$TMP"' EXIT
   printf 'export HOSAKA_REPO=%q\n' "$ROOT"
   printf 'export HOSAKA_PREFIX=%q\n' "$PREFIX"
   printf 'export HOSAKA_SOURCE_INSTALL=1\n'
+  if [[ -n "${HOSAKA_DATA_DIR+x}" ]]; then
+    printf 'export HOSAKA_DATA_DIR=%q\n' "$HOSAKA_DATA_DIR"
+  fi
+  if [[ -n "${HOSAKA_GAMES_DIR+x}" ]]; then
+    printf 'export HOSAKA_GAMES_DIR=%q\n' "$HOSAKA_GAMES_DIR"
+  fi
   printf 'export PATH=%q:"$PATH"\n' "$PREFIX/bin"
   printf 'export HOSAKA_SOURCE_GUI=%s\n' "$GUI"
   printf 'exec bash "$HOSAKA_REPO/scripts/hosaka" "$@"\n'
@@ -80,6 +89,8 @@ if [[ -n "$RC" ]]; then
 else
   printf 'Installed %s. Add to your shell PATH: %s\n' "$TARGET" "$PREFIX/bin"
 fi
+echo "Native paths: hosaka paths --json"
+echo "Offline installation checks: hosaka doctor --offline"
 echo "Next: hosaka tui   (starts in your current workspace)"
 echo "A fresh install uses OpenAI gpt-4.1 and asks for its API key once, with hidden input."
 echo "Existing provider choices are preserved. Use /select llm only to change providers."

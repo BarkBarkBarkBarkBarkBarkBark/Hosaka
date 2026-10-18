@@ -6,6 +6,14 @@ set -euo pipefail
 REPO_ROOT="${HOSAKA_REPO:?HOSAKA_REPO is required}"
 STATE_DIR="${HOSAKA_STATE_DIR:-/var/lib/hosaka}"
 OPERATOR="${HOSAKA_OPERATOR:?HOSAKA_OPERATOR is required}"
+HOME_DIR="$(getent passwd "$OPERATOR" | cut -d: -f6)"
+[[ "$HOME_DIR" == /* ]] || { echo "Cannot find operator home for $OPERATOR." >&2; exit 1; }
+DISPLAY_PREFERENCE="${XDG_CONFIG_HOME:-$HOME_DIR/.config}/hosaka/display-mode"
+display_mode=gui
+if [[ -f "$DISPLAY_PREFERENCE" ]]; then
+  display_mode="$(cat "$DISPLAY_PREFERENCE")"
+fi
+[[ "$display_mode" =~ ^(tui|gui)$ ]] || { echo "Invalid saved display mode at $DISPLAY_PREFERENCE." >&2; exit 1; }
 exec 9>/run/lock/hosaka-update.lock
 flock -n 9 || { echo "Another Hosaka update is already running." >&2; exit 1; }
 export HOSAKA_UPDATE_WORKER=1
@@ -28,17 +36,19 @@ restore() {
   trap - EXIT
   set +e
   local restore_failed=0
+  printf '%s\n' "$previous_mode" >"$STATE_DIR/mode" || restore_failed=1
   for unit in "${services[@]}"; do
+    if [[ "$unit" == "hosaka-kiosk.service" ]] \
+      && [[ "$display_mode" != "gui" || "$previous_mode" == "device" || "$previous_mode" == "build" ]]; then
+      continue
+    fi
     systemctl start "$unit" || restore_failed=1
   done
-  printf '%s\n' "$previous_mode" >"$STATE_DIR/mode" || restore_failed=1
   if (( ui_paused )) && [[ "$previous_mode" == "console" || "$previous_mode" == "kiosk" ]]; then
-    local home display_mode
-    home="$(getent passwd "$OPERATOR" | cut -d: -f6)"
-    display_mode="$(cat "$home/.config/hosaka/display-mode" 2>/dev/null || echo gui)"
     # Existing graphical supervisors wait through the update. Only start a
     # service when no supervisor owns the window; never reset the login/TTY.
     if [[ "$display_mode" == "gui" ]] && pgrep -x Xorg >/dev/null \
+      && ! systemctl is-active --quiet hosaka-kiosk.service \
       && ! pgrep -u "$OPERATOR" -f 'hosaka-lxqt-kiosk|/\.config/openbox/autostart' >/dev/null; then
       systemctl start hosaka-kiosk.service || restore_failed=1
     fi
@@ -49,11 +59,15 @@ restore() {
   fi
   local ready=0
   for _ in $(seq 1 30); do
-    if curl --noproxy '*' -fsS --max-time 2 http://127.0.0.1:8421/api/health >/dev/null; then ready=1; break; fi
+    if curl --noproxy '*' -fsS --max-time 2 http://127.0.0.1:8421/api/health \
+      | node -e 'let data=""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => { try { if (JSON.parse(data).ui_built !== true) process.exit(1); } catch { process.exit(1); } });'; then
+      ready=1
+      break
+    fi
     sleep 1
   done
   if (( ! ready )); then
-    echo "UPDATE FAILED: deployed web server did not become healthy." >&2
+    echo "UPDATE FAILED: deployed backend/terminal UI did not become healthy." >&2
     exit 1
   fi
   local sha
@@ -66,7 +80,22 @@ restore() {
     echo "UPDATE FAILED: the web server is not serving this commit's frontend build." >&2
     exit 1
   fi
-  echo "UPDATE COMPLETE: $sha. Boot display is the saved terminal GUI preference."
+  if [[ "$display_mode" == "gui" && ( "$previous_mode" == "console" || "$previous_mode" == "kiosk" ) ]] \
+    && pgrep -x Xorg >/dev/null; then
+    local host_ready=0
+    for _ in $(seq 1 30); do
+      if pgrep -u "$OPERATOR" -f 'kiosk/node_modules/electron/dist/electron' >/dev/null; then
+        host_ready=1
+        break
+      fi
+      sleep 1
+    done
+    if (( ! host_ready )); then
+      echo "UPDATE FAILED: terminal + Menu host did not restart; inspect hosaka-kiosk and session logs." >&2
+      exit 1
+    fi
+  fi
+  echo "UPDATE COMPLETE: $sha. Saved display ($display_mode) and boot mode ($previous_mode) preserved."
 }
 trap restore EXIT
 

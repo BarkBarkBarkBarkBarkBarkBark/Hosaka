@@ -28,7 +28,7 @@ COPY frontend/ ./
 # resolve those imports during the SPA build.
 COPY hosaka-apps/ /build/hosaka-apps/
 COPY docs/ /build/docs/
-RUN npm run build
+RUN npm run build:check
 # output lands in /build/hosaka/web/ui (vite.config.ts outDir)
 
 FROM python:3.12-slim-bookworm AS base
@@ -64,7 +64,7 @@ RUN ARCH=$(dpkg --print-architecture) \
          arm64) PICOCLAW_ARCH="arm64"   ;; \
          *)     echo "Unsupported arch: $ARCH" && exit 1 ;; \
        esac \
-    && curl -L "https://github.com/sipeed/picoclaw/releases/download/v${PICOCLAW_VERSION}/picoclaw_Linux_${PICOCLAW_ARCH}.tar.gz" \
+    && curl -fSL "https://github.com/sipeed/picoclaw/releases/download/v${PICOCLAW_VERSION}/picoclaw_Linux_${PICOCLAW_ARCH}.tar.gz" \
          -o /tmp/picoclaw.tar.gz \
     && tar -xzf /tmp/picoclaw.tar.gz -C /tmp \
     && chmod +x /tmp/picoclaw \
@@ -82,6 +82,8 @@ ENV APP_ROOT=/opt/hosaka-field-terminal \
     HOSAKA_BOOT_MODE=headless \
     HOSAKA_WEB_HOST=0.0.0.0 \
     HOSAKA_WEB_PORT=8421 \
+    PYTHONPATH=/opt/hosaka-field-terminal \
+    PATH=/opt/hosaka-field-terminal/.venv/bin:${PATH} \
     PYTHONUNBUFFERED=1 \
     HOSAKA_COMMIT=${HOSAKA_COMMIT}
 
@@ -108,19 +110,20 @@ COPY scripts/           scripts/
 COPY systemd/           systemd/
 COPY tests/             tests/
 COPY README.md          .
+COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/hosaka
 
 # ── inject the pre-built frontend SPA ────────────────────────────────────────
 COPY --from=frontend-builder /build/hosaka/web/ui hosaka/web/ui/
 
 RUN chmod +x scripts/*.sh
-RUN python scripts/bootstrap_picoclaw_runtime.py --home /root --seed-config
+RUN /usr/local/bin/hosaka --initialize-only
 
 # ── expose the web setup / progress API ──────────────────────────────────────
 EXPOSE 8421
 
 # ── healthcheck ──────────────────────────────────────────────────────────────
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
-    CMD curl -sf http://localhost:8421/progress || exit 1
+    CMD curl -sf http://localhost:8421/api/health || exit 1
 
 # ── default entrypoint ───────────────────────────────────────────────────────
-ENTRYPOINT ["/opt/hosaka-field-terminal/.venv/bin/python", "-m", "hosaka"]
+ENTRYPOINT ["/usr/local/bin/hosaka"]

@@ -54,7 +54,7 @@ while [[ -L "$SOURCE_PATH" ]]; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "$SOURCE_PATH")" && pwd)"
-if [[ -f "$SCRIPT_DIR/../frontend/package.json" && -f "$SCRIPT_DIR/../README.md" ]]; then
+if [[ -d "$SCRIPT_DIR/../hosaka" && -f "$SCRIPT_DIR/../README.md" ]]; then
   DEFAULT_REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 else
   if [[ -f /etc/hosaka/repo_root ]]; then
@@ -106,7 +106,6 @@ DEV_CONFLICT_RESULT="continue"
 BACKEND_PORT_DEFAULT="${HOSAKA_BACKEND_PORT:-8421}"
 DEV_LOG_DIR_DEFAULT="${HOSAKA_DEV_LOGDIR:-$REPO_ROOT/logs/dev}"
 HOSAKA_OPERATOR="${HOSAKA_OPERATOR:-${SUDO_USER:-$(id -un)}}"
-if [[ "$HOSAKA_OPERATOR" == "root" && -d /home/operator ]]; then HOSAKA_OPERATOR=operator; fi
 export HOSAKA_OPERATOR
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -1043,6 +1042,10 @@ refresh_appliance_launchers() {
   sudo "$DEPLOY_ROOT/.venv/bin/python" "$DEPLOY_ROOT/scripts/bootstrap_picoclaw_runtime.py" \
     --appliance-user "$user"
   local config="${XDG_CONFIG_HOME:-$home/.config}"
+  local preference="$config/hosaka/display-mode"
+  if [[ -f "$preference" ]] && [[ ! "$(cat "$preference")" =~ ^(tui|gui)$ ]]; then
+    die "invalid display preference at $preference; use hosaka display gui or tui"
+  fi
   note "refreshing installed CLI, kiosk launchers, and graphical autostart"
   sudo install -m 0755 "$REPO_ROOT/scripts/hosaka" /usr/local/bin/hosaka
   sudo install -m 0755 "$REPO_ROOT/scripts/kiosk-electron.sh" /usr/local/bin/hosaka-kiosk-electron
@@ -1054,23 +1057,25 @@ refresh_appliance_launchers() {
   sudo systemctl daemon-reload
   sudo systemctl enable hosaka-webserver.service
   sudo install -D -m 0755 -o "$user" "$REPO_ROOT/scripts/hosaka-tui-term" "$home/bin/hosaka-tui-term"
+  if [[ -f "$home/.xinitrc" && ! -e "$home/.xinitrc.pre-hosaka" ]]; then
+    sudo cp -p "$home/.xinitrc" "$home/.xinitrc.pre-hosaka"
+  fi
+  sudo install -D -m 0755 -o "$user" "$REPO_ROOT/dotfiles/xinitrc" "$home/.xinitrc"
   sudo install -D -m 0755 -o "$user" "$REPO_ROOT/dotfiles/openbox/autostart" "$config/openbox/autostart"
   for entry in hosaka-kiosk.desktop hosaka-tui.desktop; do
     sudo install -D -m 0644 -o "$user" "$REPO_ROOT/dotfiles/autostart/$entry" "$config/autostart/$entry"
   done
   sudo install -d -m 0755 -o "$user" "$config/hosaka"
-  if [[ ! -f "$config/hosaka/terminal-gui-default-v1" ]]; then
+  if [[ ! -e "$preference" ]]; then
     printf '%s\n' gui | sudo tee "$config/hosaka/display-mode" >/dev/null
-    sudo touch "$config/hosaka/terminal-gui-default-v1"
-    sudo chown "$user" "$config/hosaka/display-mode" "$config/hosaka/terminal-gui-default-v1"
-    ok "migrated graphical boot to the terminal + menu GUI"
+    sudo chown "$user" "$preference"
+    ok "initialized boot display to the TUI + Menu host"
   fi
 }
 
 start_update_job() {
   [[ -d /run/systemd/system ]] || die "systemd is required for disconnect-safe updates; use --foreground only from a stable local shell"
   local user="${HOSAKA_OPERATOR:-${SUDO_USER:-$(id -un)}}"
-  if [[ "$user" == "root" && -d /home/operator ]]; then user=operator; fi
   local home
   home="$(getent passwd "$user" | cut -d: -f6)"
   [[ -n "$home" ]] || die "cannot find operator account $user"
@@ -1078,12 +1083,15 @@ start_update_job() {
     die "an update is already running; use hosaka update logs"
   fi
   sudo systemctl reset-failed hosaka-update.service 2>/dev/null || true
+  local path_environment=("--setenv=XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-$home/.config}")
+  [[ -z "${HOSAKA_DATA_DIR+x}" ]] || path_environment+=("--setenv=HOSAKA_DATA_DIR=$HOSAKA_DATA_DIR")
   sudo systemd-run --unit=hosaka-update --description="Hosaka pull, build, and deploy" \
     --property=Type=oneshot --property=MemoryMax=650M --property=MemorySwapMax=512M \
     --property=OOMScoreAdjust=700 --property=CPUQuota=200% \
     --setenv="HOSAKA_OPERATOR=$user" --setenv="HOME=$home" \
     --setenv="HOSAKA_REPO=$REPO_ROOT" --setenv="HOSAKA_DEPLOY=$DEPLOY_ROOT" \
     --setenv="HOSAKA_STATE_DIR=$STATE_DIR" \
+    "${path_environment[@]}" \
     /bin/bash "$REPO_ROOT/scripts/hosaka-update-worker.sh" "$@"
   ok "update job started independently of this terminal/SSH session"
   note "follow progress: hosaka update logs"
@@ -1432,7 +1440,7 @@ cmd_gui() {
   export HOSAKA_DISPLAY_MODE=gui
   if [[ "${HOSAKA_SOURCE_INSTALL:-0}" == "1" || "$(uname -s)" != "Linux" ]]; then
     cmd_dev "$@"
-  elif [[ -n "${DISPLAY:-}" ]]; then
+  elif [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
     exec bash "$REPO_ROOT/scripts/hosaka-lxqt-kiosk.sh"
   else
     die "GUI requires a graphical session. Run hosaka display gui, then log in on the deck."
@@ -1466,6 +1474,14 @@ cmd_doctor() {
   local py
   py="$(_hosaka_python)"
   ( cd "$REPO_ROOT" && exec "$py" -m hosaka.doctor "$@" )
+}
+
+cmd_paths() {
+  ( cd "$REPO_ROOT" && exec "$(_hosaka_python)" -m hosaka.paths "$@" )
+}
+
+cmd_migrate() {
+  ( cd "$REPO_ROOT" && exec "$(_hosaka_python)" -B -m hosaka.migration "$@" )
 }
 
 # ── issues (github tracker) ──────────────────────────────────────────────────
@@ -1829,6 +1845,9 @@ Modes
   hosaka dashboard                  print the device dashboard once and exit
   hosaka diag [--json] [--host URL] shared device/network/peripheral snapshot
   hosaka doctor [--json] [--strict] [--profile PROFILE] [--host URL]
+  hosaka doctor --offline [--json]   check native installation without network probes
+  hosaka paths [--json]              show resolved operator and native paths
+  hosaka migrate --dry-run [--json]  inventory ownership; never imports or moves files
                                     run structured diagnostics; future MCP-friendly
   hosaka dev [--port N] [--no-open] [-fresh]
                                     local frontend dev without docker.
@@ -1883,7 +1902,12 @@ USAGE
 main() {
   local cmd="${1:-}"
   if [[ -z "$cmd" ]]; then
-    if [[ "$(uname -s)" != "Linux" || -n "${DISPLAY:-}" ]]; then
+    if [[ "${HOSAKA_SOURCE_INSTALL:-0}" == "1" && "${HOSAKA_SOURCE_GUI:-0}" != "1" ]]; then
+      cmd=tui
+    elif [[ -n "${SSH_CONNECTION:-}${SSH_TTY:-}" ]]; then
+      cmd=tui
+    elif [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]] \
+      || [[ "${HOSAKA_SOURCE_GUI:-0}" == "1" && "$(uname -s)" == "Darwin" ]]; then
       cmd=gui
     else
       cmd=tui
@@ -1918,6 +1942,8 @@ main() {
     dashboard) exec /usr/local/bin/hosaka-device-dashboard --once ;;
     diag)      cmd_diag "$@" ;;
     doctor)    cmd_doctor "$@" ;;
+    paths)     cmd_paths "$@" ;;
+    migrate)   cmd_migrate "$@" ;;
     scan)      (cd "$REPO_ROOT" && PYTHONPATH=. exec python -m hosaka.scan "$@") ;;
     llm)       (cd "$REPO_ROOT" && PYTHONPATH=. exec python -m hosaka.llm_cli "$@") ;;
     inference) (cd "$REPO_ROOT" && PYTHONPATH=. exec python -m hosaka.main_role.inference_client "$@") ;;

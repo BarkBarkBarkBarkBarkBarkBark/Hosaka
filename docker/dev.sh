@@ -31,6 +31,9 @@ ok()    { echo -e "${GREEN}[hosaka-dev]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[hosaka-dev]${NC} $*"; }
 
 dc() {
+  local runtime="${HOSAKA_HOME:-$HOME/.hosaka}/runtime"
+  mkdir -p "$runtime/extensions" "$runtime/extension-data" "$runtime/state" \
+    "$runtime/logs" "$runtime/games/roms/psx"
   LOCAL_UID="$(id -u)" LOCAL_GID="$(id -g)" docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" "$@"
 }
 

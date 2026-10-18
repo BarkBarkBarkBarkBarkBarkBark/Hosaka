@@ -81,14 +81,97 @@ virtualenv, installs PicoClaw if missing, seeds Hosaka's agent runtime, and
 adds a launcher to `~/.local/bin` and your Bash/Zsh PATH. Keep the checkout:
 the launcher uses it directly. `HOSAKA_PREFIX` overrides the installation
 prefix. `bash install.sh --gui` additionally installs/builds the frontend and
-Electron dependencies (Node.js/npm required); `hosaka gui` uses the local
-development GUI. `hosaka update` fast-forwards a clean checkout and refreshes
+Electron dependencies for the TUI + Menu host (Node.js/npm required); these are
+not required for a bare terminal. `hosaka update` fast-forwards a clean checkout and refreshes
 dependencies; commit or stash your edits first.
 An older PicoClaw is upgraded to a config-v3-compatible release (0.3.1+).
 
 **Source installs run with your host user's permissions.** The caller's
 current directory becomes the TUI agent workspace. Use Docker instead if you
 want tools and shell commands separated from the host.
+
+### Native replication foundation (development branch)
+
+The Python TUI is canonical, and the small **Menu** button stays. On the deck,
+React/Electron host that same TUI rather than a separate desktop/chat UI.
+An appliance's `hosaka` opens the terminal + Menu host in a graphical session;
+SSH and non-graphical shells use the bare TUI. Source installs without `--gui`
+remain bare-TUI by default; source installs with `--gui` open the host.
+Extensions, RetroArch games, and external Flatpak applications remain separate:
+
+- **Extensions:** independent packages and data outside core; the manager and
+  protected runner are subsequent milestones, not implemented by creating folders.
+- **Games:** preserve `hosaka play twisted metal`, `hosaka play tekken`,
+  `hosaka play spyro`, and existing RetroArch launch/stop behavior.
+- **Applications:** Foliate and optional VS Code launch integration remain
+  separate from extensions; Flatpak manages their installation and updates.
+
+Native setup initializes private data directories and a versioned, nonsecret
+`~/.hosaka/installation.json` record. Inspect without loading provider secrets:
+
+```bash
+hosaka paths --json
+hosaka doctor --offline --json
+hosaka doctor --offline --strict  # warnings also produce a nonzero exit
+```
+
+The TUI exposes `/paths`, `/paths --json`, and `/doctor --offline`.
+`HOSAKA_OPERATOR` selects an existing account; under sudo its account home is
+used rather than root's home. No `/home/operator` existence-based guessing is
+used by the new resolver. Run initialization as the selected operator.
+
+`HOSAKA_DATA_DIR` overrides the new native path foundation (absolute or `~/...`).
+It does not yet migrate legacy credential, PicoClaw, log, or state consumers.
+The reported secrets/provider/extension-lock locations are architectural targets,
+not proof that provider ownership or extension execution has been implemented.
+For appliance use, supply the same custom-root environment to setup and runtime;
+automatic machine-wide propagation is still pending. Source setup remembers an
+explicit data-root override in its launcher.
+
+Before any provider/runtime migration, inspect the current split layout:
+
+```bash
+hosaka migrate --dry-run
+hosaka migrate --dry-run --json
+```
+
+The TUI exposes `/migrate --dry-run [--json]` using the same inventory.
+The report separates effective **current-process** paths from proposed canonical
+destinations, inventories saved profiles and PicoClaw workspace/session locations,
+and shows credential presence/sources and candidate conflicts without key values.
+It does not import credentials, create directories, bootstrap an agent, change
+permissions/environment, or contact a provider. Applying a migration is unsupported.
+Exit codes are 0 for a completed inventory, 2 for differing credential candidates
+requiring review, and 1 for invalid/unreadable configuration or missing parsers.
+Permission/ownership warnings remain visible in the report.
+
+Environment files and stored profile references are inspected, not hydrated.
+If a TUI/service has already hydrated its environment, the original source of
+those environment values is unknown; the report explicitly labels this context.
+Candidate differences within a provider/model are migration review items, not
+proof of a failed provider request. Existing standalone `~/.picoclaw` models,
+memories, sessions and skills remain untouched. Strict sidecar inspection uses
+PyYAML, now included in the native requirements.
+
+Docker clients inspect **container storage**, not the host's native PicoClaw
+runtime. On a stopped node they bypass initialization and mount existing runtime
+directories read-only; missing bind-mount directories produce a Docker error,
+not an automatic installation. Stopped-node inventory has no network and cannot
+pull an image; the image must already exist locally.
+On a running node the same read-only inventory
+executes inside that container without bootstrapping.
+
+`HOSAKA_PSX_ROMS` remains the highest-priority ROM override. Otherwise
+`HOSAKA_GAMES_DIR/roms/psx` or nonsecret `config.json` path settings can select
+content. Without an explicit selection, initialization records an existing
+library in place; populated legacy libraries take precedence over empty legacy
+folders. Fresh layouts default to `~/Games/Hosaka/roms/psx`. Nothing relocates or
+copies ROMs, BIOS, or saves.
+
+Boot/update work preserves the terminal + Menu host and saved display/session
+choices. It does not restore the retired desktop/arcade frontend, import
+credentials, or establish clean-device/reboot qualification.
+See the [architecture brief](docs/hosaka_market_preparation_brief.md) and #31.
 
 ## Set up a model and API key
 
@@ -167,50 +250,39 @@ cd Hosaka
 ./docker/dev.sh up
 ```
 
-## Terminal-first GUI and boot choice
+## TUI, Menu, and boot display
 
 For console-agent integration details, see the
 [PicoClaw backend notes](docs/picoclaw_cli_backend.md).
 
-The Python TUI is the canonical console. The default graphical Hosaka now
-hosts that exact `python -m hosaka tui` process in a resizable terminal, with
-one **Menu** button for **Wi-Fi**, **Bluetooth**, **Games**, and **Flash**. Opening or
-closing the menu does not restart the TUI or discard its scrollback.
-The menu opens with no section selected; forms, device requests, and status
-messages appear only after choosing a section. Select it again to collapse it.
-When no section is selected, the cyan block-art orb from `/orb` and a short fragment from the lore
-archive accompany the menu. The orb is decorative, not a voice control.
-Both change on each reopening without immediate repeats. The compact welcome
-display scales to the drawer's available space without scrolling; selected
-settings sections can still scroll.
-Square pixels orbit the artwork with a stepped retro animation, and mouse
-movement gives it a subtle bounded offset. Reduced-motion mode disables both.
-**Orb notes** opens the complete orb record; **Complete lore** opens the full
-archive in the drawer. Reading does not restart the terminal.
-
-In this GUI, `/flash` fills the window with alternating blue/red colors and
-**BUSTED** in black, white-outlined text. `/flash your text` replaces **BUSTED**
-with your custom text (up to 80 characters, displayed uppercase). No return hint
-is shown. Tap anywhere or press Escape, Enter, or Space to dismiss without
-restarting the terminal. The background switches every 250 ms (two complete
-blue/red cycles per second) while the text stays steady. Reduced-motion
-preferences use a static blue background. Flashing colors may affect
-photosensitive viewers. Plain terminal sessions explain that the GUI is required.
+The deck interface is the real Python TUI plus a small Menu button. The
+React/Electron host, local PTY bridge, and touchscreen menu are maintained
+parts of the architecture; only the old independent desktop/arcade is retired.
+RetroArch and Foliate can still use the same underlying graphical session.
 
 ```bash
-hosaka              # terminal + menu in a graphical session; plain TUI over SSH
-hosaka tui          # canonical terminal, no Chromium
-hosaka gui          # Electron terminal + menu
-hosaka display tui  # opt into a plain TUI at next graphical login
-hosaka display gui  # terminal + menu at next graphical login (fresh-deck default)
+hosaka              # TUI + Menu on the graphical appliance; bare TUI over SSH
+hosaka gui          # explicitly open the TUI + Menu host
+hosaka tui          # explicitly open a bare terminal
+hosaka display gui  # TUI + Menu at graphical login (fresh-deck default)
+hosaka display tui  # bare-TUI launcher at graphical login
 hosaka display show # saved boot display choice
 ```
 
-For fresh Linux appliances, use `HOSAKA_DISPLAY_MODE=gui` (default) or
-`HOSAKA_DISPLAY_MODE=tui` with the installer. The TUI path does not install or
-autostart Electron; selecting GUI during installation installs its runtime.
-Existing saved display choices are preserved when reinstalling unless explicitly
-overridden. A graphical login/session is still required for these display modes.
+Fresh graphical appliances default to `HOSAKA_DISPLAY_MODE=gui`, which means
+the TUI + Menu, not the retired desktop. Existing saved `gui`/`tui` choices
+survive reinstall/update; an update no longer forces a one-time GUI migration.
+The saved X session (`/var/lib/hosaka/x-session`) selects LXQt or Openbox;
+both launch the same terminal-host supervisor. Existing session choices are
+not overwritten. New installations select LXQt when installed, otherwise Openbox.
+Setup/update refresh the session dispatcher, backing up an existing `.xinitrc`
+once as `.xinitrc.pre-hosaka` before replacing it.
+
+The Electron launcher never installs dependencies or deletes a live profile
+during boot. Missing/incomplete Electron or a failed bounded backend health
+check is an actionable startup error. Install/update stages provision dependencies.
+The supervisor yields to an active kiosk service on each restart and pauses
+in device/build mode rather than opening competing terminal windows.
 
 The GUI's `/ws/tui` endpoint only accepts loopback clients and loopback browser
 origins, and is disabled in public mode (`HOSAKA_PUBLIC_MODE=1`) or with
@@ -599,10 +671,12 @@ and checks that the served frontend build stamp matches the deployed commit.
 Failures appear in `hosaka update status`; no successful deployment is claimed
 after a failed build. A sudo password may be requested when starting the job.
 
-The first deployment migrates saved graphical boot from the old plain-TUI
-default to **terminal + menu**. Subsequent deployments preserve explicit
-`hosaka display tui|gui` choices. An intentionally selected device/build mode
-is preserved; use `hosaka mode console` to return to the graphical screen.
+Every deployment preserves explicit `hosaka display tui|gui` choices; only a
+missing preference receives the **TUI + Menu** default. An intentionally selected
+device/build mode is preserved without restarting the kiosk. A normal graphical
+update also checks that the Electron host process returns; a matching frontend
+stamp alone does not establish successful screen restoration.
+Use `hosaka mode console` to return to the graphical screen.
 The `/update` TUI command uses this same workflow and reports that a job was
 started, not that a background deployment already finished.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Hosaka kiosk launcher for the LXQt session.
+# Shared TUI + Menu host supervisor for LXQt and Openbox sessions.
 #
 # LXQt is the base desktop (see ~/.xinitrc + `hosaka mode`). This script is run
 # once per LXQt login via ~/.config/autostart/hosaka-kiosk.desktop. It brings up
@@ -15,7 +15,6 @@ set -u
 HOSAKA_MODE_FILE="${HOSAKA_STATE_DIR:-/var/lib/hosaka}/mode"
 HOSAKA_BOOT_MARK="/boot/firmware/hosaka-build-mode"
 LOG="${HOSAKA_KIOSK_LOG:-/tmp/hosaka-lxqt-kiosk.log}"
-HEALTH_URL="${HOSAKA_KIOSK_HEALTH_URL:-http://127.0.0.1:8421/api/health}"
 ELECTRON_LAUNCHER="${HOSAKA_KIOSK_LAUNCHER:-/usr/local/bin/hosaka-kiosk-electron}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 BRANDING_SCRIPT="${HOSAKA_DESKTOP_BRANDING:-}"
@@ -83,22 +82,23 @@ if [ -x "$BRANDING_SCRIPT" ]; then
   "$BRANDING_SCRIPT" >>"$LOG" 2>&1 || true
 fi
 
-# Wait for the FastAPI server so Electron doesn't cache a connection-error page.
-for _ in $(seq 1 60); do
-  curl -sf "$HEALTH_URL" >/dev/null 2>&1 && break
-  sleep 1
-done
-
 if [ ! -x "$ELECTRON_LAUNCHER" ]; then
   log "launcher missing: $ELECTRON_LAUNCHER"
-  exit 0
+  echo "Hosaka terminal host launcher missing: $ELECTRON_LAUNCHER. Rerun appliance setup." >&2
+  exit 1
 fi
 
 # Respawn loop: keep Hosaka on top. Bail cleanly if the operator switches to
 # device mode at runtime (the next iteration sees it and exits).
 while true; do
   while is_device_mode; do sleep 3; done
+  if systemctl is-active --quiet hosaka-kiosk.service 2>/dev/null; then
+    sleep 3
+    continue
+  fi
   log "launching electron kiosk"
-  "$ELECTRON_LAUNCHER" >>"$LOG" 2>&1 || true
+  if ! "$ELECTRON_LAUNCHER" >>"$LOG" 2>&1; then
+    log "terminal host exited unsuccessfully; retrying after backoff"
+  fi
   sleep 3
 done

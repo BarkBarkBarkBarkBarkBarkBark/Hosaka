@@ -205,6 +205,11 @@ def test_graphical_boot_preserves_explicit_tui(tmp_path, script):
     env = dict(os.environ, HOME=str(tmp_path), XDG_CONFIG_HOME=str(tmp_path / ".config"))
     env["HOSAKA_DISPLAY_MODE"] = "tui"
     source = Path(__file__).resolve().parents[1] / script
+    if script == "dotfiles/openbox/autostart":
+        delegated = tmp_path / "autostart"
+        delegated.write_text(source.read_text().replace(
+            "/usr/local/bin/hosaka-lxqt-kiosk", str(source.parents[2] / "scripts/hosaka-lxqt-kiosk.sh")))
+        source = delegated
     result = subprocess.run(["bash", str(source)], env=env, capture_output=True, text=True, timeout=5, check=True)
     assert result.stdout.strip() == "CANONICAL_TUI"
 
@@ -232,6 +237,11 @@ def test_graphical_boot_default_is_gui(tmp_path, script):
                HOSAKA_DESKTOP_BRANDING=str(tools / "curl"), PATH=str(tools) + os.pathsep + os.environ["PATH"])
     env.pop("HOSAKA_DISPLAY_MODE", None)
     source = Path(__file__).resolve().parents[1] / script
+    if script == "dotfiles/openbox/autostart":
+        delegated = tmp_path / "autostart"
+        delegated.write_text(source.read_text().replace(
+            "/usr/local/bin/hosaka-lxqt-kiosk", str(source.parents[2] / "scripts/hosaka-lxqt-kiosk.sh")))
+        source = delegated
     result = subprocess.run(["bash", str(source)], env=env, capture_output=True, text=True, timeout=10)
     assert result.returncode in (0, -15)
     assert "CANONICAL_GUI" in (tmp_path / "kiosk.log").read_text()

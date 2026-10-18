@@ -51,6 +51,9 @@ COMMANDS: list[tuple[str, str, str]] = [
     # ── System ──
     ("/status",         "System overview — uptime, IP, model, services", "System"),
     ("/doctor",         "Diagnose picoclaw config and connectivity",     "System"),
+    ("/doctor --offline", "Check native installation without network probes", "System"),
+    ("/paths [--json]", "Show operator and native data/content paths",  "System"),
+    ("/migrate --dry-run [--json]", "Inventory runtime ownership without changing files", "System"),
     ("/restart terminal", "Restart the Hosaka terminal service",         "System"),
     ("/restart gateway",  "Restart the picoclaw gateway service",        "System"),
     ("/restart all",    "Restart both terminal and gateway",             "System"),
@@ -1180,6 +1183,22 @@ def _dispatch_command(raw: str, current_dir: Path, input_mode: str) -> tuple[Pat
             _show_status(current_dir)
         elif raw in {"/doctor", "/picoclaw doctor", "/picoclaw"}:
             _picoclaw_doctor()
+        elif raw in {"/doctor --offline", "/doctor --offline --json"}:
+            from hosaka.doctor import main as doctor_main
+
+            doctor_main(shlex.split(raw)[1:])
+        elif raw in {"/paths", "/paths --json"}:
+            from hosaka.paths import main as paths_main
+
+            paths_main(shlex.split(raw)[1:])
+        elif raw == "/migrate" or raw.startswith("/migrate "):
+            from hosaka.migration import main as migration_main
+
+            arguments = shlex.split(raw)[1:]
+            if "--dry-run" not in arguments or any(arg not in {"--dry-run", "--json"} for arg in arguments):
+                print("Usage: /migrate --dry-run [--json]. Applying a migration is not supported.")
+            else:
+                migration_main(arguments)
         elif raw in {"/picoclaw status"}:
             _picoclaw_status()
         elif raw.startswith("/restart"):

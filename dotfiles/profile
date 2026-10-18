@@ -27,7 +27,7 @@ if [ -d "$HOME/.local/bin" ] ; then
 fi
 
 # tty1 boot dispatcher.
-#   console mode (default) → startx → LXQt → Hosaka TUI in a terminal
+#   console mode (default) → startx → saved X session → Hosaka TUI + Menu
 #   device  mode           → live dashboard on tty1 (no X)
 if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
     HOSAKA_MODE=""

@@ -19,6 +19,9 @@
 #   hosaka picoclaw <args>     configure the container's PicoClaw runtime
 #   hosaka workspace PATH [--read-write] share a folder at /workspace (default read-only)
 #   hosaka workspace clear     return to the private container workspace
+#   hosaka paths [--json]      show container paths and host extension storage
+#   hosaka doctor --offline    check container installation directories
+#   hosaka migrate --dry-run   inventory existing container state without initialization
 #   hosaka open                open the web UI in your browser
 #   hosaka logs                follow logs from the local node
 #   hosaka shell               bash shell inside the local container
@@ -47,8 +50,14 @@ LINK_FILE="$HOSAKA_HOME/link"
 ENV_FILE="$HOSAKA_HOME/env"
 WORKSPACE_FILE="$HOSAKA_HOME/workspace.conf"
 PYTHON_BIN=/opt/hosaka-field-terminal/.venv/bin/python
+READ_ONLY_INVENTORY=0
+[[ "${1:-}" != migrate ]] || READ_ONLY_INVENTORY=1
 
-mkdir -p "$HOSAKA_HOME" "$STATE_DIR" "$HOSAKA_HOME/runtime" "$HOSAKA_HOME/picoclaw" "$HOSAKA_HOME/workspace"
+if (( ! READ_ONLY_INVENTORY )); then
+  mkdir -p "$HOSAKA_HOME" "$STATE_DIR" "$HOSAKA_HOME/runtime" "$HOSAKA_HOME/picoclaw" "$HOSAKA_HOME/workspace" \
+    "$HOSAKA_HOME/runtime/extensions" "$HOSAKA_HOME/runtime/extension-data" \
+    "$HOSAKA_HOME/runtime/state" "$HOSAKA_HOME/runtime/logs" "$HOSAKA_HOME/runtime/games/roms/psx"
+fi
 
 # ── style ────────────────────────────────────────────────────────────────────
 if [ -t 1 ]; then
@@ -93,19 +102,23 @@ link_url() {
 }
 
 runtime_args() {
-    local workspace="$HOSAKA_HOME/workspace" mode=rw
+    local workspace="$HOSAKA_HOME/workspace" mode=rw readonly=""
     if [[ -f "$WORKSPACE_FILE" ]]; then
         { IFS= read -r workspace; IFS= read -r mode; } <"$WORKSPACE_FILE"
         [[ "$mode" == ro || "$mode" == rw ]] || die "invalid workspace mode; run hosaka workspace clear"
         [[ "$workspace" == /* && -d "$workspace" ]] || die "shared workspace is missing: $workspace"
     fi
+    if (( READ_ONLY_INVENTORY )); then
+        mode=ro
+        readonly=",readonly"
+    fi
     [[ "$workspace" != *','* && "$HOSAKA_HOME" != *','* ]] || die "Docker mount paths cannot contain commas"
     local mount="type=bind,src=$workspace,dst=/workspace"
     [[ "$mode" != ro ]] || mount="$mount,readonly"
     CONTAINER_ARGS=(
-        --mount "type=bind,src=$STATE_DIR,dst=/var/lib/hosaka"
-        --mount "type=bind,src=$HOSAKA_HOME/runtime,dst=/root/.hosaka"
-        --mount "type=bind,src=$HOSAKA_HOME/picoclaw,dst=/root/.picoclaw"
+        --mount "type=bind,src=$STATE_DIR,dst=/var/lib/hosaka$readonly"
+        --mount "type=bind,src=$HOSAKA_HOME/runtime,dst=/root/.hosaka$readonly"
+        --mount "type=bind,src=$HOSAKA_HOME/picoclaw,dst=/root/.picoclaw$readonly"
         --mount "$mount"
         --workdir /workspace
         -e PYTHONPATH=/opt/hosaka-field-terminal
@@ -120,8 +133,7 @@ tty_args() {
 }
 
 initialize_runtime() {
-    docker run --rm "${CONTAINER_ARGS[@]}" --entrypoint "$PYTHON_BIN" "$HOSAKA_IMAGE" \
-        /opt/hosaka-field-terminal/scripts/bootstrap_picoclaw_runtime.py --home /root --seed-config >/dev/null
+    docker run --rm "${CONTAINER_ARGS[@]}" "$HOSAKA_IMAGE" --initialize-only >/dev/null
 }
 
 run_local() {
@@ -132,6 +144,11 @@ run_local() {
             -e PYTHONPATH=/opt/hosaka-field-terminal -e HOSAKA_PROJECT_DIR=/workspace "$HOSAKA_CONTAINER" "$@"
     fi
     runtime_args
+    if (( READ_ONLY_INVENTORY )); then
+        exec docker run --rm "${TTY_ARGS[@]}" --read-only --pull=never --network none \
+            -e PYTHONDONTWRITEBYTECODE=1 "${CONTAINER_ARGS[@]}" \
+            --entrypoint "$1" "$HOSAKA_IMAGE" "${@:2}"
+    fi
     initialize_runtime
     exec docker run --rm "${TTY_ARGS[@]}" "${CONTAINER_ARGS[@]}" \
         --entrypoint "$1" "$HOSAKA_IMAGE" "${@:2}"
@@ -364,6 +381,9 @@ case "$cmd" in
     secrets)    cmd_secrets "$@" ;;
     picoclaw)   run_local /usr/local/bin/picoclaw "$@" ;;
     workspace)  cmd_workspace "$@" ;;
+    paths)      run_local "$PYTHON_BIN" -m hosaka.paths "$@" ;;
+    migrate)    run_local "$PYTHON_BIN" -B -m hosaka.migration "$@" ;;
+    doctor)     run_local "$PYTHON_BIN" -m hosaka.doctor "$@" ;;
     open)       cmd_open ;;
     logs)       cmd_logs ;;
     shell|sh)   cmd_shell ;;

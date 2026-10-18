@@ -41,51 +41,29 @@ KIOSK_DIR="$HOSAKA_REPO/kiosk"
 ELECTRON_BIN="$KIOSK_DIR/node_modules/.bin/electron"
 
 # ── deps ──────────────────────────────────────────────────────────────────
-if [ ! -x "$ELECTRON_BIN" ]; then
-    log "electron not found — running npm install in $KIOSK_DIR"
-    # NOTE: electron is declared in devDependencies (that's the conventional
-    # place for it), but we absolutely need it at runtime — it IS the runtime.
-    # Do not pass --omit=dev here; it would skip the binary we're trying to
-    # install.
-    (cd "$KIOSK_DIR" && npm install --no-fund --no-audit)
-fi
-
-# postinstall sometimes fails silently on a thrashing Pi (network blip, SD
-# card EIO). Detect and retry once before we give up.
-if [ ! -d "$KIOSK_DIR/node_modules/electron/dist" ]; then
-    log "electron/dist missing — re-running postinstall"
-    (cd "$KIOSK_DIR" && node node_modules/electron/install.js) || {
-        log "electron postinstall failed; cannot start kiosk"
-        exit 1
-    }
+if [ ! -x "$ELECTRON_BIN" ] || [ ! -x "$KIOSK_DIR/node_modules/electron/dist/electron" ]; then
+    log "Electron runtime missing or incomplete at $KIOSK_DIR; rerun appliance setup or hosaka deploy."
+    log "Boot never downloads or installs dependencies."
+    exit 2
 fi
 
 # ── wait for FastAPI ──────────────────────────────────────────────────────
 TARGET_URL="${HOSAKA_KIOSK_URL:-http://127.0.0.1:8421/}"
-HEALTH_URL="${TARGET_URL%/}/api/health"
+HEALTH_URL="${HOSAKA_KIOSK_HEALTH_URL:-${TARGET_URL%/}/api/health}"
+ready=0
 for i in $(seq 1 60); do
-    if curl -sf "$HEALTH_URL" >/dev/null 2>&1; then
+    if curl --noproxy '*' -fsS --connect-timeout 2 --max-time 2 "$HEALTH_URL" >/dev/null 2>&1; then
+        ready=1
         break
     fi
     sleep 1
 done
-
-# ── evict only the HTTP cache so updated index.html is fetched fresh ──
-# Content-hashed JS/CSS already prevents stale asset reuse, so we only need
-# to drop the HTTP byte-cache and any registered service workers. Keeping
-# Code Cache (V8 bytecode) + GPUCache (compiled shaders) is critical on the
-# Pi 3B+ — wiping them used to force a full re-parse of the 3.7 MB
-# Automerge chunk + a shader recompile on every kiosk restart, which was
-# the dominant contributor to cold-start latency.
-ELECTRON_CACHE_DIR="${HOME}/.config/hosaka-kiosk"
-if [ -d "$ELECTRON_CACHE_DIR" ]; then
-    rm -rf \
-        "$ELECTRON_CACHE_DIR/Cache" \
-        "$ELECTRON_CACHE_DIR/Service Worker" \
-        "$ELECTRON_CACHE_DIR/CacheStorage" \
-        "$ELECTRON_CACHE_DIR/Network"
-    log "evicted HTTP cache at $ELECTRON_CACHE_DIR (kept Code Cache + GPUCache)"
+if [ "$ready" != "1" ]; then
+    log "backend health check failed at $HEALTH_URL; not opening an unusable terminal."
+    exit 1
 fi
+# The single-instance Electron owner clears HTTP cache before loading the page.
+# A second launcher must not delete the live instance's profile or caches.
 
 # ── OOM bias ──────────────────────────────────────────────────────────────
 # Bias the electron process HIGH for the OOM killer, matching the old

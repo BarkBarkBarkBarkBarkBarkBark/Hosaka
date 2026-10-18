@@ -24,14 +24,18 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SUDO="sudo"
 [[ "$(id -u)" == "0" ]] && SUDO=""
-TARGET_USER="${SUDO_USER:-operator}"
+TARGET_USER="${HOSAKA_OPERATOR:-${SUDO_USER:-$(id -un)}}"
 TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
-[[ -z "$TARGET_HOME" ]] && TARGET_HOME="/home/$TARGET_USER"
-DISPLAY_PREFERENCE="$TARGET_HOME/.config/hosaka/display-mode"
-if [[ -z "${HOSAKA_DISPLAY_MODE:-}" && -f "$DISPLAY_PREFERENCE" ]]; then
-  HOSAKA_DISPLAY_MODE="$(cat "$DISPLAY_PREFERENCE")"
+[[ "$TARGET_HOME" == /* ]] || { echo "Cannot find home for operator $TARGET_USER." >&2; exit 1; }
+TARGET_GROUP="$(id -gn "$TARGET_USER")"
+DISPLAY_PREFERENCE="${XDG_CONFIG_HOME:-$TARGET_HOME/.config}/hosaka/display-mode"
+if [[ -z "${HOSAKA_DISPLAY_MODE:-}" ]]; then
+  if [[ -f "$DISPLAY_PREFERENCE" ]]; then
+    HOSAKA_DISPLAY_MODE="$(cat "$DISPLAY_PREFERENCE")"
+  else
+    HOSAKA_DISPLAY_MODE=gui
+  fi
 fi
-HOSAKA_DISPLAY_MODE="${HOSAKA_DISPLAY_MODE:-gui}"
 [[ "$HOSAKA_DISPLAY_MODE" =~ ^(tui|gui)$ ]] || { echo "HOSAKA_DISPLAY_MODE must be tui or gui" >&2; exit 1; }
 
 say() { printf '[hosaka-lean] %s\n' "$*"; }
@@ -82,7 +86,7 @@ done
 if [[ -f /etc/systemd/system/hosaka-kiosk.service ]]; then
   $SUDO sed -i \
     -e "s/^User=.*/User=${TARGET_USER}/" \
-    -e "s/^Group=.*/Group=${TARGET_USER}/" \
+    -e "s/^Group=.*/Group=${TARGET_GROUP}/" \
     -e "s|^Environment=XAUTHORITY=.*|Environment=XAUTHORITY=${TARGET_HOME}/.Xauthority|" \
     /etc/systemd/system/hosaka-kiosk.service
 fi
@@ -162,9 +166,14 @@ $SUDO /opt/hosaka-field-terminal/.venv/bin/python \
   "$REPO_ROOT/scripts/bootstrap_picoclaw_runtime.py" --appliance-user "$TARGET_USER"
 
 # ── 7. operator-side config files ─────────────────────────────────────────────
-$SUDO install -d -m 0755 -o "$TARGET_USER" -g "$TARGET_USER" "$TARGET_HOME/.config/hosaka"
+$SUDO install -d -m 0755 -o "$TARGET_USER" -g "$TARGET_GROUP" "$(dirname "$DISPLAY_PREFERENCE")"
 printf '%s\n' "$HOSAKA_DISPLAY_MODE" | $SUDO tee "$DISPLAY_PREFERENCE" >/dev/null
-$SUDO chown "$TARGET_USER:$TARGET_USER" "$DISPLAY_PREFERENCE"
+$SUDO chown "$TARGET_USER:$TARGET_GROUP" "$DISPLAY_PREFERENCE"
+if [[ -f "$TARGET_HOME/.xinitrc" && ! -e "$TARGET_HOME/.xinitrc.pre-hosaka" ]]; then
+  $SUDO cp -p "$TARGET_HOME/.xinitrc" "$TARGET_HOME/.xinitrc.pre-hosaka"
+fi
+$SUDO install -D -m 0755 -o "$TARGET_USER" -g "$TARGET_GROUP" \
+  "$REPO_ROOT/dotfiles/xinitrc" "$TARGET_HOME/.xinitrc"
 $SUDO install -D -m 0755 -o "$TARGET_USER" -g "$TARGET_USER" \
   "$REPO_ROOT/scripts/hosaka-lxqt-kiosk.sh" /usr/local/bin/hosaka-lxqt-kiosk
 for name in hosaka-ui-session hosaka-ui-switch hosaka-tui-term; do
@@ -173,8 +182,7 @@ for name in hosaka-ui-session hosaka-ui-switch hosaka-tui-term; do
 done
 $SUDO install -D -m 0644 -o "$TARGET_USER" -g "$TARGET_USER" \
   "$REPO_ROOT/dotfiles/autostart/hosaka-tui.desktop" "$TARGET_HOME/.config/autostart/hosaka-tui.desktop"
-# We only overwrite if the in-repo source has the device-mode guard (so we
-# don't clobber operator hand-edits with an outdated copy).
+# Only install the shared supervisor entry point, not an older competing loop.
 SRC_AUTOSTART="$REPO_ROOT/dotfiles/openbox/autostart"
 SRC_PROFILE="$REPO_ROOT/dotfiles/profile"
 DST_AUTOSTART="$TARGET_HOME/.config/openbox/autostart"
@@ -182,9 +190,8 @@ DST_PROFILE="$TARGET_HOME/.profile"
 
 # If the dotfiles aren't in the repo (older checkout) but the running system
 # has a newer one, leave it alone. Otherwise sync.
-if [[ -f "$SRC_AUTOSTART" ]] && grep -q "device mode short-circuit" "$SRC_AUTOSTART"; then
-  install -d -m 0755 "$(dirname "$DST_AUTOSTART")"
-  install -m 0755 "$SRC_AUTOSTART" "$DST_AUTOSTART"
+if [[ -f "$SRC_AUTOSTART" ]] && grep -qF '/usr/local/bin/hosaka-lxqt-kiosk' "$SRC_AUTOSTART"; then
+  $SUDO install -D -m 0755 -o "$TARGET_USER" -g "$TARGET_GROUP" "$SRC_AUTOSTART" "$DST_AUTOSTART"
   say "refreshed $DST_AUTOSTART"
 fi
 if [[ -f "$SRC_PROFILE" ]] && grep -q "tty1 boot dispatcher" "$SRC_PROFILE"; then

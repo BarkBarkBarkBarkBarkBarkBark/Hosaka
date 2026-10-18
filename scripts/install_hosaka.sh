@@ -12,11 +12,20 @@ INSTALL_TAILSCALE="${INSTALL_TAILSCALE:-1}"    # default ON for appliance
 INSTALL_CADDY="${INSTALL_CADDY:-0}"
 INSTALL_DOCKER="${INSTALL_DOCKER:-0}"
 HOSAKA_BOOT_MODE="${HOSAKA_BOOT_MODE:-kiosk}"  # kiosk | console | headless
-display_preference="${XDG_CONFIG_HOME:-$HOME/.config}/hosaka/display-mode"
-if [[ -z "${HOSAKA_DISPLAY_MODE:-}" && -f "$display_preference" ]]; then
-  HOSAKA_DISPLAY_MODE="$(cat "$display_preference")"
+[[ "$HOSAKA_BOOT_MODE" =~ ^(kiosk|console|headless)$ ]] || { echo "HOSAKA_BOOT_MODE must be kiosk, console or headless." >&2; exit 1; }
+CURRENT_USER="${HOSAKA_OPERATOR:-${SUDO_USER:-$(id -un)}}"
+CURRENT_HOME="$(getent passwd "$CURRENT_USER" | cut -d: -f6)"
+[[ "$CURRENT_HOME" == /* ]] || { echo "Cannot find home for operator $CURRENT_USER." >&2; exit 1; }
+CURRENT_GROUP="$(id -gn "$CURRENT_USER")"
+OPERATOR_CONFIG="${XDG_CONFIG_HOME:-$CURRENT_HOME/.config}"
+display_preference="$OPERATOR_CONFIG/hosaka/display-mode"
+if [[ -z "${HOSAKA_DISPLAY_MODE:-}" ]]; then
+  if [[ -f "$display_preference" ]]; then
+    HOSAKA_DISPLAY_MODE="$(cat "$display_preference")"
+  else
+    HOSAKA_DISPLAY_MODE=gui
+  fi
 fi
-HOSAKA_DISPLAY_MODE="${HOSAKA_DISPLAY_MODE:-gui}"  # tui | gui
 if [[ ! "$HOSAKA_DISPLAY_MODE" =~ ^(tui|gui)$ ]]; then
   echo "HOSAKA_DISPLAY_MODE must be tui or gui" >&2
   exit 1
@@ -117,23 +126,6 @@ if [[ "$HOSAKA_BOOT_MODE" == "kiosk" ]]; then
   ok "Xorg and Openbox are ready."
 fi
 
-# ── Chromium fallback for graphical kiosk ────────────────────────────────────
-if [[ "$HOSAKA_BOOT_MODE" == "kiosk" && "$HOSAKA_DISPLAY_MODE" == "gui" ]]; then
-  info "Installing Chromium kiosk fallback..."
-  sudo apt-get update -qq
-  chromium_ok=0
-  for pkg in chromium chromium-browser; do
-    if sudo apt-get install -y "$pkg"; then
-      ok "Installed apt package: $pkg"
-      chromium_ok=1
-      break
-    fi
-  done
-  if [[ "$chromium_ok" -eq 0 ]]; then
-    echo "[install] WARNING: neither chromium nor chromium-browser installed — try: sudo apt-cache search chromium" >&2
-  fi
-fi
-
 # ── Docker (optional smoke-test image) ───────────────────────────────────────
 if [[ "$INSTALL_DOCKER" == "1" ]]; then
   if ! command -v docker >/dev/null 2>&1; then
@@ -229,9 +221,13 @@ for unit in alsa-restore.service alsa-state.service; do
 done
 
 # Patch picoclaw service user to match whoever is running the install
-CURRENT_USER="${SUDO_USER:-$(id -un)}"
-CURRENT_HOME="$(getent passwd "$CURRENT_USER" | cut -d: -f6)"
-CURRENT_GROUP="$(id -gn "$CURRENT_USER")"
+sudo -u "$CURRENT_USER" -H env \
+  HOSAKA_OPERATOR="$CURRENT_USER" \
+  HOSAKA_DATA_DIR="${HOSAKA_DATA_DIR:-$CURRENT_HOME/.hosaka}" \
+  PATH="$CURRENT_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" \
+  "$APP_ROOT/.venv/bin/python" -m hosaka.paths init \
+  --mode appliance --repo-root "$REPO_ROOT" --runtime-root "$APP_ROOT" \
+  --launcher /usr/local/bin/hosaka
 PICOCLAW_PATH="${PICOCLAW_BIN:-$(command -v picoclaw || true)}"
 if [[ -z "$PICOCLAW_PATH" && -x "$CURRENT_HOME/.local/bin/picoclaw" ]]; then
   PICOCLAW_PATH="$CURRENT_HOME/.local/bin/picoclaw"
@@ -255,9 +251,9 @@ sudo --preserve-env=OPENAI_API_KEY,HOSAKA_LOCAL_FIRST \
   --appliance-user "$CURRENT_USER"
 ok "shared LLM settings and compatible PicoClaw runtimes are ready"
 if [[ -n "$CURRENT_HOME" ]]; then
-  sudo install -d -m 755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" "$CURRENT_HOME/.config/hosaka"
-  printf '%s\n' "$HOSAKA_DISPLAY_MODE" | sudo tee "$CURRENT_HOME/.config/hosaka/display-mode" >/dev/null
-  sudo chown "$CURRENT_USER:$CURRENT_GROUP" "$CURRENT_HOME/.config/hosaka/display-mode"
+  sudo install -d -m 755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" "$OPERATOR_CONFIG/hosaka"
+  printf '%s\n' "$HOSAKA_DISPLAY_MODE" | sudo tee "$display_preference" >/dev/null
+  sudo chown "$CURRENT_USER:$CURRENT_GROUP" "$display_preference"
 fi
 
 if [[ "$HOSAKA_BOOT_MODE" == "kiosk" && -n "$CURRENT_HOME" ]]; then
@@ -272,6 +268,9 @@ if [[ "$HOSAKA_BOOT_MODE" == "kiosk" && -n "$CURRENT_HOME" ]]; then
     sed -n '/^# tty1 boot dispatcher/,$p' "$PROFILE_SOURCE" \
       | sudo tee -a "$PROFILE_FILE" >/dev/null
     sudo chown "$CURRENT_USER:$CURRENT_GROUP" "$PROFILE_FILE"
+  fi
+  if [[ -f "$CURRENT_HOME/.xinitrc" && ! -e "$CURRENT_HOME/.xinitrc.pre-hosaka" ]]; then
+    sudo cp -p "$CURRENT_HOME/.xinitrc" "$CURRENT_HOME/.xinitrc.pre-hosaka"
   fi
   sudo install -D -m 0755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
     "$REPO_ROOT/dotfiles/xinitrc" "$CURRENT_HOME/.xinitrc"
@@ -298,7 +297,7 @@ sudo sed -i "s/^User=operator/User=${CURRENT_USER}/" "/etc/systemd/system/$PICOC
 # imports take effect after updates.
 if [[ -n "$CURRENT_HOME" && -f "$REPO_ROOT/dotfiles/openbox/autostart" ]]; then
   sudo install -D -m 755 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
-    "$REPO_ROOT/dotfiles/openbox/autostart" "$CURRENT_HOME/.config/openbox/autostart"
+    "$REPO_ROOT/dotfiles/openbox/autostart" "$OPERATOR_CONFIG/openbox/autostart"
 fi
 
 # LXQt is the base desktop; the Hosaka SPA rides on top of it as an XDG
@@ -309,11 +308,11 @@ if [[ -n "$CURRENT_HOME" ]]; then
   if [[ -f "$REPO_ROOT/dotfiles/autostart/hosaka-kiosk.desktop" ]]; then
     sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/dotfiles/autostart/hosaka-kiosk.desktop" \
-      "$CURRENT_HOME/.config/autostart/hosaka-kiosk.desktop"
+      "$OPERATOR_CONFIG/autostart/hosaka-kiosk.desktop"
   fi
   sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
     "$REPO_ROOT/dotfiles/autostart/hosaka-tui.desktop" \
-    "$CURRENT_HOME/.config/autostart/hosaka-tui.desktop"
+    "$OPERATOR_CONFIG/autostart/hosaka-tui.desktop"
   if [[ -f "$REPO_ROOT/dotfiles/wallpaper/hosaka-desktop.png" ]]; then
     sudo install -D -m 644 -o "$CURRENT_USER" -g "$CURRENT_GROUP" \
       "$REPO_ROOT/dotfiles/wallpaper/hosaka-desktop.png" \
@@ -458,16 +457,18 @@ PY
       "$REPO_ROOT/dotfiles/pcmanfm-qt/settings.conf" \
       "$CURRENT_HOME/.config/pcmanfm-qt/lxqt/settings.conf"
   fi
-  # Make LXQt the default X session so boot lands on the desktop-with-apps with
-  # Hosaka on top, rather than the bare openbox kiosk.
-  sudo mkdir -p /var/lib/hosaka 2>/dev/null || true
-  echo "lxqt" | sudo tee /var/lib/hosaka/x-session >/dev/null 2>&1 || true
+  if [[ ! -e /var/lib/hosaka/x-session ]]; then
+    initial_session=kiosk
+    if command -v startlxqt >/dev/null 2>&1; then initial_session=lxqt; fi
+    printf '%s\n' "$initial_session" | sudo tee /var/lib/hosaka/x-session >/dev/null
+  fi
 fi
 
 # Kiosk Chromium must run as the graphical-session user (X11 cookie path).
 if [[ -f "/etc/systemd/system/$SERVICE_KIOSK" ]]; then
   sudo sed -i "s/^User=.*/User=${CURRENT_USER}/" "/etc/systemd/system/$SERVICE_KIOSK"
-  sudo sed -i "s|^Environment=XAUTHORITY=.*|Environment=XAUTHORITY=/home/${CURRENT_USER}/.Xauthority|" \
+  sudo sed -i "s/^Group=.*/Group=${CURRENT_GROUP}/" "/etc/systemd/system/$SERVICE_KIOSK"
+  sudo sed -i "s|^Environment=XAUTHORITY=.*|Environment=XAUTHORITY=${CURRENT_HOME}/.Xauthority|" \
     "/etc/systemd/system/$SERVICE_KIOSK"
 fi
 

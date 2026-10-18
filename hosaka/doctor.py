@@ -685,11 +685,30 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
     parser.add_argument("--strict", action="store_true", help="Exit non-zero on warnings as well as failures")
     parser.add_argument("--no-redact", action="store_true", help="Do not redact sensitive-looking fields in output artifacts")
+    parser.add_argument("--offline", action="store_true", help="Check native paths and installation only; no network/provider/GUI probes")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = parse_args(argv or sys.argv[1:])
+    args = parse_args(sys.argv[1:] if argv is None else argv)
+    if args.offline:
+        from hosaka.paths import offline_report
+
+        try:
+            report = offline_report()
+        except (OSError, ValueError) as exc:
+            print(f"Hosaka doctor failed: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(f"hosaka doctor: offline native checks ({report['overall_status']})")
+            for check in report["checks"]:
+                print(f"[{check['status']}] {check['name']}: {check['message']}")
+            print("No provider request or hardware check was performed.")
+        if report["overall_status"] == "fail":
+            return 1
+        return 2 if args.strict and report["overall_status"] == "warn" else 0
     profile = _detect_profile(args.profile, args.host)
     report = build_report(args.host, args.token, profile, redact=not args.no_redact)
     if args.json:
