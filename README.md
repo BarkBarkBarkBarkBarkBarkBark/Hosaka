@@ -7,227 +7,138 @@
   ██╔══██║██║   ██║╚════██║██╔══██║██╔═██╗ ██╔══██║
   ██║  ██║╚██████╔╝███████║██║  ██║██║  ██╗██║  ██║
   ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
-
-      * \ _ /
-       @( )@          A console-first AI field terminal.
-      */\|/\*         Signal steady. No wrong way.
-     (@)|  /\
-      \ | /(_)
-       _|_/_
-      [_____]
 ```
 
-An AI-powered appliance shell for cyberdecks and Raspberry Pis.
-Type anything — it goes straight to the agent.
-Use it enough and the plant blooms. Neglect it and it wilts.
+A terminal-first AI workspace for your laptop, Raspberry Pi, or cyberdeck.
+Type normally to talk to an agent that can use tools and work on files.
+The Python TUI is the app; the optional React/Electron host adds a small
+**Menu**, not a second chat interface.
 
+An alien plant grows as you use the terminal and wilts when you leave it.
 There is no wrong way.
 
----
+## Start here
+
+| I want to... | Go to |
+| --- | --- |
+| Try Hosaka without building it | [Docker install](#install-in-one-line) |
+| Run the current source on my machine | [Source install](#install-from-source-macos--linux) |
+| Configure a provider or local model | [Model setup](#set-up-a-model-and-api-key) |
+| Set up a dedicated Raspberry Pi | [Appliance setup](#raspberry-pi-appliance) |
+| Build an application for Hosaka | [Extensions](#extensions) and the [extension agent guide](docs/extensions/AGENT_GUIDE.md) |
+| Change Hosaka core as a coding agent | [AGENTS.md](AGENTS.md), then [development](#development-and-agent-navigation) |
+| Diagnose an existing installation | [Paths and diagnostics](#paths-and-diagnostics) |
+
+This README describes the source in this checkout. Docker `:latest` is the
+last successfully verified `main` image, not necessarily the newest commit.
+Check the [image workflow](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/actions/workflows/image.yml)
+before assuming a pushed feature is available to Docker users.
 
 ## Install in one line
 
-**mac / linux**
+Requires [Docker](https://www.docker.com/products/docker-desktop/) installed
+and running. This installs a Docker-backed CLI, **not native Pi services or
+fullscreen boot**.
+
+**macOS / Linux**
 
 ```bash
 curl -fsSL https://install.hosaka.xyz | sh
 ```
 
-**windows (PowerShell)**
+**Windows PowerShell**
 
 ```powershell
 iwr https://install.hosaka.xyz/windows | iex
 ```
 
-Then:
+Then, in a terminal:
 
 ```bash
-hosaka up          # start the local node (web UI on http://127.0.0.1:8421)
-hosaka tui         # drop into the console TUI
-hosaka open        # open the web UI in your browser
-hosaka link HOST   # route this client at a remote hosaka on your tailnet
-hosaka help        # see everything
+hosaka configure llm --provider openai --model gpt-4.1
+hosaka tui
 ```
 
-Requires [Docker](https://www.docker.com/products/docker-desktop).
-See [`install/`](./install/) for the installer internals.
+Setup prompts privately for the API key. Choose a model available to your
+account; see [model setup](#set-up-a-model-and-api-key) for other providers.
+`hosaka tui` attaches to a running local container or starts a disposable one
+with the same persistent state. A continuously running node is optional:
 
-This installs the Docker client, not the Raspberry Pi's native services or
-fullscreen boot setup. It downloads the image before reporting success and
-refuses to replace an existing non-Docker Hosaka installation. On an existing
-Hosaka appliance, use its `hosaka update` instead.
+```bash
+hosaka up       # start the local web backend on http://127.0.0.1:8421
+hosaka open     # open the local web UI in a browser
+hosaka status
+hosaka down
+```
 
-Successful container builds from `main` are smoke-tested before becoming
-`:latest`. Local edits reach Docker users only after they are committed,
-pushed, and the [image workflow](./.github/workflows/image.yml) succeeds.
+Use `hosaka tui` for the container's interactive terminal. Publishing a web
+port does not relax the native browser PTY's loopback-only access policy.
+
+Installers download the image before reporting success and refuse to replace
+an existing non-Docker Hosaka installation. Use the existing installation's
+update path instead. See [installer details](install/README.md) for locations,
+Windows behavior, overrides, and launcher updates.
+
+### Container workspaces
+
+The default private workspace persists at `~/.hosaka/workspace`. To share an
+existing host project, stop the node before changing mounts:
+
+```bash
+hosaka down
+hosaka workspace ~/your-project                # read-only at /workspace
+hosaka tui
+```
+
+Use `hosaka workspace ~/your-project --read-write` to explicitly permit edits,
+or `hosaka workspace clear` to return to the private writable workspace.
+Only the selected folder is shared; symlinks do not expose outside host paths.
+Agent identity, memory, and sessions use a separate writable runtime workspace.
+
+**Read-only sharing prevents project edits, not network access or writes to
+private container state. Docker is not a complete security sandbox.** Do not
+mount your entire home or the Docker socket for an untrusted agent.
+
+`hosaka link HOST` routes browser/status commands to another node, not the
+native TUI. For a remote terminal, SSH to that machine and run `hosaka tui`.
+Use `hosaka unlink` to return the Docker client to its local node.
 
 ## Install from source (macOS / Linux)
 
-Requires Python 3.10+, Git, and internet access. Use your normal account, not
-`sudo`; this does not change boot services or install a desktop session.
+Requires Python 3.10+, Git, and internet access. Run as your normal user,
+**not sudo**:
 
 ```bash
 git clone https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka.git
 cd Hosaka
 bash install.sh
-# Open a new terminal, or source the shell startup file printed by the installer.
+```
+
+Open a new terminal, or source the shell startup file printed by the installer:
+
+```bash
 hosaka configure llm --provider openai --model gpt-4.1
 cd ~/your-project
 hosaka tui
 ```
 
-[`install.sh`](./install.sh) installs Python dependencies in a repo-local
-virtualenv, installs PicoClaw if missing, seeds Hosaka's agent runtime, and
-adds a launcher to `~/.local/bin` and your Bash/Zsh PATH. Keep the checkout:
-the launcher uses it directly. `HOSAKA_PREFIX` overrides the installation
-prefix. `bash install.sh --gui` additionally installs/builds the frontend and
-Electron dependencies for the TUI + Menu host (Node.js/npm required); these are
-not required for a bare terminal. `hosaka update` fast-forwards a clean checkout and refreshes
-dependencies; commit or stash your edits first.
-An older PicoClaw is upgraded to a config-v3-compatible release (0.3.1+).
+The [source installer](install.sh) creates a repo-local Python environment,
+installs or upgrades PicoClaw to a config-v3-compatible release (0.3.1+),
+seeds Hosaka's agent runtime, and adds a launcher under `~/.local/bin`.
+Keep the checkout: the launcher uses it directly. `HOSAKA_PREFIX` changes the
+launcher prefix.
 
-**Source installs run with your host user's permissions.** The caller's
-current directory becomes the TUI agent workspace. Use Docker instead if you
-want tools and shell commands separated from the host.
+For the graphical TUI + Menu host, install Node.js/npm and use
+`bash install.sh --gui`, then `hosaka gui`. Bare-terminal installs need neither
+Node nor a desktop session. This user-level setup does not configure boot or
+system services.
 
-### Native replication foundation (development branch)
-
-The Python TUI is canonical, and the small **Menu** button stays. On the deck,
-React/Electron host that same TUI rather than a separate desktop/chat UI.
-An appliance's `hosaka` opens the terminal + Menu host in a graphical session;
-SSH and non-graphical shells use the bare TUI. Source installs without `--gui`
-remain bare-TUI by default; source installs with `--gui` open the host.
-Extensions, RetroArch games, and external Flatpak applications remain separate:
-
-- **Extensions:** independent packages and data outside core; authoring,
-  explicitly approved trusted-local execution and declarative Menu views are
-  available. OS-protected execution remains a separate milestone.
-- **Games:** preserve `hosaka play twisted metal`, `hosaka play tekken`,
-  `hosaka play spyro`, and existing RetroArch launch/stop behavior.
-- **Applications:** Foliate and optional VS Code launch integration remain
-  separate from extensions; Flatpak manages their installation and updates.
-
-Native setup initializes private data directories and a versioned, nonsecret
-`~/.hosaka/installation.json` record. Inspect without loading provider secrets:
-
-```bash
-hosaka paths --json
-hosaka doctor --offline --json
-hosaka doctor --offline --strict  # warnings also produce a nonzero exit
-```
-
-The TUI exposes `/paths`, `/paths --json`, and `/doctor --offline`.
-`HOSAKA_OPERATOR` selects an existing account; under sudo its account home is
-used rather than root's home. No `/home/operator` existence-based guessing is
-used by the new resolver. Run initialization as the selected operator.
-
-### Extensions: authoring and trusted-local execution
-
-Source/appliance/Docker setup initializes registration metadata and seeds a
-validated standalone reference, disabled and without grants. Existing extension
-source, data, enablement and grants are preserved. Start authoring with:
-
-```sh
-hosaka extensions init
-hosaka extensions list --json
-hosaka extensions create my-extension --path /absolute/path/to/my-extension
-hosaka extensions validate /absolute/path/to/my-extension
-hosaka extensions info my-extension --json
-hosaka extensions doctor --json
-```
-
-The TUI exposes the same commands after `/extensions`. The canonical manifest is
-`extension.yaml`; the older unimplemented `plugin.yaml` proposal is superseded.
-See the [agent guide](docs/extensions/AGENT_GUIDE.md) and
-[specification](docs/extensions/SPECIFICATION.md).
-
-After inspecting a package, an unprivileged owner can explicitly approve its
-current code digest, grant its data capability, and enable it:
-
-```sh
-hosaka extensions trust reference-extension --trusted-local --allow-storage
-hosaka extensions enable reference-extension
-hosaka extensions run reference-extension echo --params '{"message":"Hello"}'
-```
-
-Enabled packages appear dynamically under **Menu → Extensions**. The host renders
-validated forms/results/tables without extension-authored React or per-package
-routes. The CLI/TUI and generic authenticated API use the same bounded worker.
-Closing the menu does not restart the canonical terminal.
-
-**Trusted-local is NOT an OS sandbox.** Approved Python retains your user
-privileges, including possible access to user-readable files and network APIs.
-Its process environment is sanitized, but backing credential files are not
-hidden. Root/public execution is refused. New installs never approve or enable
-packages. Code edits require reapproval; enablement and storage grants are
-separate. Normal root-run Docker/appliance web services cannot execute extensions:
-run the backend as the configured unprivileged operator, not through an implicit
-root fallback.
-
-`extensions revoke ID` revokes approval/grants; `extensions safe-mode on` blocks
-and cancels all extension execution. Disable/removal/revocation cancel active
-jobs. `remove` retains source/data. Persistent values live in `extension-data/ID`;
-bounded metadata-only logs in `logs/extensions/ID.jsonl`.
-OS isolation, dependency environments, `extensions test`, dedicated agent tools
-and archive upgrades remain pending. Existing reference copies are preserved;
-new scaffolds use reference version 1.1.0.
-
-`HOSAKA_DATA_DIR` overrides the new native path foundation (absolute or `~/...`).
-It does not yet migrate legacy credential, PicoClaw, log, or state consumers.
-The reported secrets/provider locations remain architectural targets, not proof
-that provider ownership has been consolidated. Extension registration is active.
-For appliance use, supply the same custom-root environment to setup and runtime;
-automatic machine-wide propagation is still pending. Source setup remembers an
-explicit data-root override in its launcher.
-
-Before any provider/runtime migration, inspect the current split layout:
-
-```bash
-hosaka migrate --dry-run
-hosaka migrate --dry-run --json
-```
-
-The TUI exposes `/migrate --dry-run [--json]` using the same inventory.
-The report separates effective **current-process** paths from proposed canonical
-destinations, inventories saved profiles and PicoClaw workspace/session locations,
-and shows credential presence/sources and candidate conflicts without key values.
-It does not import credentials, create directories, bootstrap an agent, change
-permissions/environment, or contact a provider. Applying a migration is unsupported.
-Exit codes are 0 for a completed inventory, 2 for differing credential candidates
-requiring review, and 1 for invalid/unreadable configuration or missing parsers.
-Permission/ownership warnings remain visible in the report.
-
-Environment files and stored profile references are inspected, not hydrated.
-If a TUI/service has already hydrated its environment, the original source of
-those environment values is unknown; the report explicitly labels this context.
-Candidate differences within a provider/model are migration review items, not
-proof of a failed provider request. Existing standalone `~/.picoclaw` models,
-memories, sessions and skills remain untouched. Strict sidecar inspection uses
-PyYAML, now included in the native requirements.
-
-Docker clients inspect **container storage**, not the host's native PicoClaw
-runtime. On a stopped node they bypass initialization and mount existing runtime
-directories read-only; missing bind-mount directories produce a Docker error,
-not an automatic installation. Stopped-node inventory has no network and cannot
-pull an image; the image must already exist locally.
-On a running node the same read-only inventory
-executes inside that container without bootstrapping.
-
-`HOSAKA_PSX_ROMS` remains the highest-priority ROM override. Otherwise
-`HOSAKA_GAMES_DIR/roms/psx` or nonsecret `config.json` path settings can select
-content. Without an explicit selection, initialization records an existing
-library in place; populated legacy libraries take precedence over empty legacy
-folders. Fresh layouts default to `~/Games/Hosaka/roms/psx`. Nothing relocates or
-copies ROMs, BIOS, or saves.
-
-Boot/update work preserves the terminal + Menu host and saved display/session
-choices. It does not restore the retired desktop/arcade frontend, import
-credentials, or establish clean-device/reboot qualification.
-See the [architecture brief](docs/hosaka_market_preparation_brief.md) and #31.
+**Source agents run with your host user's permissions.** The calling directory
+is the TUI's project workspace, not an isolation boundary.
 
 ## Set up a model and API key
 
-The same commands work for source and Docker-client installs:
+These commands work with source and Docker-client installations:
 
 ```bash
 hosaka configure llm --provider openai --model gpt-4.1
@@ -236,503 +147,154 @@ hosaka configure llm --provider openai-compatible --model YOUR_MODEL \
   --api-base https://your-provider.example/v1
 ```
 
-Choose a model ID available to your provider account. Setup prompts for the
-key without echoing it; do not put keys in shell arguments or commit them.
-It creates a private PicoClaw profile and selects it for subsequent TUI
-sessions. Restart `hosaka tui`, then use `/llm` to test a request. Setup itself
-does not contact the provider or prove that a key/model is valid. Requests
-sent afterwards go to the selected provider and can incur charges.
+Run **one** setup command for the provider/model you want. It prompts for the
+key without echoing it and selects a private PicoClaw profile. Do not put keys
+in shell arguments, source files, or issue reports. Profiles are private files,
+not encrypted storage; protect your account and backups.
 
-For a local OpenAI-compatible server, add `--no-key`. Inside Docker,
-`localhost` is the container, not the host: Docker Desktop commonly exposes
+For a local OpenAI-compatible server, use `--no-key` if it needs no credentials.
+Inside Docker, `localhost` means the container; Docker Desktop commonly exposes
 host services at `http://host.docker.internal:11434/v1`.
-`hosaka picoclaw onboard` exposes PicoClaw's fuller provider setup on the
-Docker client; source users can run `picoclaw onboard` directly.
-`hosaka secrets set NAME` manages additional credentials. Source profiles
-live under `~/.hosaka`; Docker profiles live in its persistent runtime
-mount. These files are not encrypted; protect your user account and backups.
-The older `hosaka secrets check` checks the appliance's required-key list,
-not whether this newly selected provider is usable.
 
-## Container workspaces
+Restart `hosaka tui`, then use `/llm` to test a request. Setup does not contact
+the provider or prove key/model access. Agent requests go to the selected
+provider and may incur charges.
 
-On Docker installs, `hosaka tui` runs directly inside a container. It attaches
-to the local node if running, otherwise starts a disposable container with
-the same persistent state, provider configuration, and workspace mounts.
+In the TUI, `/select llm` lists choices; `/select llm <number>` selects from
+the last displayed list. `/help` and `/commands` show the active command map.
+Console AI uses **PicoClaw's agent harness and tools**, not a direct-completion
+fallback. A gateway process is not required for console chat.
+See [PicoClaw backend notes](docs/picoclaw_cli_backend.md) for session behavior,
+request overlays, and advanced configuration.
 
-```bash
-hosaka down                       # required before changing mounts
-hosaka workspace ~/your-project   # shared at /workspace, read-only
-hosaka tui
-hosaka workspace ~/your-project --read-write  # explicitly allow edits
-hosaka workspace clear            # return to private writable workspace
-```
+## The TUI, Menu, and applications
 
-The default private workspace persists at `~/.hosaka/workspace`. Only the
-chosen folder is bind-mounted; symlinks to host paths outside that folder do
-not grant access. Place needed files inside the folder or choose their
-common parent intentionally. Read-only sharing prevents edits to shared
-files, not network activity or writes to the container's private state.
-Docker isolation is not a complete security sandbox; never share your
-entire home or Docker socket with an untrusted agent.
+- **Terminal:** normal text goes to the agent. Use `/help` for commands and
+  `/plant` to check your plant. The graphical host embeds this same Python TUI.
+- **Menu:** device controls, games, flash overlay, and enabled extensions.
+  Linux networking uses NetworkManager; Bluetooth uses BlueZ. Unsupported host
+  operations report errors rather than simulated devices.
+- **Extensions:** independent application packages with host-rendered views;
+  see [below](#extensions). Opening or closing one preserves the terminal.
+- **Games:** a separate native PS1 launcher using RetroArch. Use
+  `hosaka play list psx`, `hosaka play spyro`, and `hosaka play stop`, or `/play`
+  in the TUI. Ambiguous names return matches rather than guessing.
+- **External applications:** `hosaka launch` lists configured Flatpak-backed
+  targets. These are not extensions and are managed separately.
 
-PicoClaw keeps identity, memory, and session files in its separate writable
-private runtime workspace. The agent is told to use `/workspace` for your
-project files; this separation lets conversation storage work even when the
-shared project is read-only.
+Games require a graphical session, RetroArch, a compatible PS1 core, and your
+own local games/BIOS. Nothing downloads or bundles ROMs or BIOS. Existing RetroPie
+configuration is reused; `HOSAKA_PSX_ROMS` and `HOSAKA_PSX_CORE` provide explicit
+overrides. Game libraries are not relocated during initialization.
 
-`hosaka link HOST` links browser/status commands, not a native terminal.
-For a remote native TUI use SSH and run `hosaka tui` on that machine.
-After updating an older Docker installation, re-run the one-line installer
-to refresh the launcher as well as the image, then `hosaka down` / `hosaka up`
-so new mounts apply. Existing state is kept.
+The independent desktop/arcade, app-store/webview bridges, and browser voice UI
+are [archived](archive/desktop-frontend/), not alternate supported routes.
+The optional [native voice backend](docs/voice.md) is separate from console chat.
 
----
+## Extensions
 
-## Boot Dev Container
-
-```bash
-cd Hosaka
-./docker/dev.sh up
-```
-
-## Boot Docker Instance
+Build ordinary applications **outside this core checkout**. Start with the
+[agent guide](docs/extensions/AGENT_GUIDE.md), [implemented v1 specification](docs/extensions/SPECIFICATION.md),
+[security boundary](docs/extensions/SECURITY.md), and
+[reference package](examples/extensions/reference-extension/).
+The canonical manifest is `extension.yaml`.
 
 ```bash
-./docker/dev.sh up
+hosaka extensions list --json
+hosaka extensions create my-extension --path /absolute/path/to/my-extension
+hosaka extensions validate /absolute/path/to/my-extension
+hosaka extensions info my-extension --json
+hosaka extensions doctor --json
 ```
 
-## TUI, Menu, and boot display
+Installers seed a validated reference package, disabled and without grants.
+Discovery and validation do not import package code, run its tests, or install
+dependencies. Existing package source, data, approvals, and enablement survive
+initialization.
 
-For console-agent integration details, see the
-[PicoClaw backend notes](docs/picoclaw_cli_backend.md).
-
-The deck interface is the real Python TUI plus a small Menu button. The
-React/Electron host, local PTY bridge, and touchscreen menu are maintained
-parts of the architecture; only the old independent desktop/arcade is retired.
-RetroArch and Foliate can still use the same underlying graphical session.
+After inspecting the source, the **owner** can approve the current digest,
+grant storage, and separately enable the package:
 
 ```bash
-hosaka              # TUI + Menu on the graphical appliance; bare TUI over SSH
-hosaka gui          # explicitly open the TUI + Menu host
-hosaka tui          # explicitly open a bare terminal
-hosaka display gui  # TUI + Menu at graphical login (fresh-deck default)
-hosaka display tui  # bare-TUI launcher at graphical login
-hosaka display show # saved boot display choice
+hosaka extensions trust my-extension --trusted-local --allow-storage
+hosaka extensions enable my-extension
+hosaka extensions run my-extension echo --params '{"message":"Hello"}'
 ```
 
-Fresh graphical appliances default to `HOSAKA_DISPLAY_MODE=gui`, which means
-the TUI + Menu, not the retired desktop. Existing saved `gui`/`tui` choices
-survive reinstall/update; an update no longer forces a one-time GUI migration.
-The saved X session (`/var/lib/hosaka/x-session`) selects LXQt or Openbox;
-both launch the same terminal-host supervisor. Existing session choices are
-not overwritten. New installations select LXQt when installed, otherwise Openbox.
-Setup/update refresh the session dispatcher, backing up an existing `.xinitrc`
-once as `.xinitrc.pre-hosaka` before replacing it.
-
-The Electron launcher never installs dependencies or deletes a live profile
-during boot. Missing/incomplete Electron or a failed bounded backend health
-check is an actionable startup error. Install/update stages provision dependencies.
-The supervisor yields to an active kiosk service on each restart and pauses
-in device/build mode rather than opening competing terminal windows.
-
-The GUI's `/ws/tui` endpoint only accepts loopback clients and loopback browser
-origins, and is disabled in public mode (`HOSAKA_PUBLIC_MODE=1`) or with
-`HOSAKA_TUI_ENABLED=0`. The old web desktop is retired, including `/?desktop=1`;
-remote/public hosts cannot expose the native terminal. Use the local screen or
-`hosaka tui` over SSH.
-
-### Hosted terminal
-
-The `terminal.hosaka.xyz` wrapper selects `VITE_HOSAKA_TUI_URL`, a dedicated
-access-code-gated Fly gateway. It runs the real Python TUI in a disposable
-Machine per session, not the native appliance's `/ws/tui` endpoint. Sessions
-last at most 10 minutes, allow up to 30 capped model requests, and discard
-their workspace on disconnect. Three sessions can run concurrently.
-Provider/deployment credentials stay in the gateway; workers receive only
-their own expiring model-proxy token. Workers run unprivileged, cannot reach
-private networks or metadata endpoints, and have no deck hardware access.
-The hosted menu omits device settings and the live operator API viewer.
-
-The `hosaka-field-terminal` repository owns that hosted build, copying this
-repo's frontend at build time. The `cyber_deck` marketing site embeds it.
-Native GUI builds leave the hosted URL unset and continue using `/ws/tui`.
-Do not loosen the local-only PTY policy to make a hosted terminal work.
-`VITE_HOSAKA_DEMO=1` remains an optional, separate browser-only simulation;
-it is no longer the selected public experience.
-
-Wi-Fi uses the existing NetworkManager API on Linux. Bluetooth uses BlueZ to
-scan, pair, trust, and connect devices without a PIN; PIN/passkey pairing and
-macOS network/Bluetooth changes currently use system settings. Unsupported
-hosts show an explicit error rather than simulated devices.
-
-**Games** lists only the installed PlayStation 1 catalog using
-Hosaka's native launcher, launches an exact title through RetroArch,
-and provides **Stop game**. It does not offer Pong/Snake or guess ROM folders.
-The device-specific `~/bin/play` and `rp-run` scripts are no longer required.
-Missing libraries, cores, and failed
-launches are shown as errors, never as a fake successful launch. RetroArch
-can take focus over Hosaka; closing it reveals the terminal window again.
-Super+H also brings Hosaka back.
-
-**Flash** has an optional text field (blank means **BUSTED**) and **Show flash**.
-It uses the same overlay as `/flash` without restarting or typing into the TUI.
-
-The Linux installer installs RetroArch by default (`INSTALL_RETROARCH=0` to
-skip). It does not bundle games, emulator cores, or BIOS files.
-
-### Native PlayStation launcher
-
-In the Hosaka terminal:
-
-```text
-/play                         list the installed PS1 library
-/play spyro                   fuzzy-match and launch a title
-/play Crash Bandicoot (USA)    use an exact title
-/play stop                    stop the emulator launched by Hosaka
-```
-
-In a normal shell, use `hosaka play` with the same arguments, or
-`python -m hosaka.play`. Add `--json` for a machine-readable result. Ambiguous
-names return matching titles rather than guessing or waiting for keyboard
-input. The terminal, Games menu, and agent all use this implementation.
-
-On RetroPie, Hosaka automatically uses `~/RetroPie/roms/psx` and the PS1
-command in `/opt/retropie/configs/psx/emulators.cfg`, including the existing
-core and RetroArch configuration. Commands are parsed as arguments, not
-executed through a shell. On other Linux/macOS installations, configure:
-
-```bash
-export HOSAKA_PSX_ROMS="$HOME/Games/psx"
-export HOSAKA_PSX_CORE="/path/to/pcsx_rearmed_libretro.so"
-export HOSAKA_RETROARCH="/path/to/retroarch"          # optional if on PATH
-export HOSAKA_RETROARCH_CONFIG="/path/to/config.cfg" # optional
-hosaka play list psx
-```
-
-Use the appropriate installed libretro core for your OS/architecture. A
-graphical session, compatible RetroArch/core, and any BIOS required by that
-core must already exist. ROMs/BIOS are local files; Hosaka does not download
-or bundle them. The native launcher currently supports PS1 only.
-
-Hosaka records its emulator PID and process identity, stops only that
-verified process, and refuses to interrupt a RetroArch game launched outside
-Hosaka. Logs and launch state live under `~/.local/state/hosaka/`.
-`HOSAKA_PLAY=/path/to/custom-launcher` remains an explicit compatibility
-override for a launcher supporting the existing `--json` protocol.
-The old standalone `play` command is left untouched; use `hosaka play` or
-`/play` for the ecosystem-owned launcher.
-
-## Electron host
-
-The **Electron kiosk host** at [`kiosk/`](./kiosk/) wraps the terminal GUI
-in a native Chromium window. The retired desktop, arcade, app-store/webview
-bridges, browser voice UI, and associated frontend code are preserved under
-[`archive/desktop-frontend/`](./archive/desktop-frontend/) outside the active build.
-Shared Python terminal, LLM, voice, and application-launch tools are retained.
-
-```bash
-cd kiosk
-npm install      # first time only
-npm run dev      # vite + electron together, HMR, windowed
-```
-
-On the edge device, `hosaka-kiosk.service` runs the same Electron host
-fullscreen at boot, pointed at the local FastAPI on `127.0.0.1:8421`.
-See [`kiosk/README.md`](./kiosk/README.md) for details.
-
-### Local repo dev without Docker
-
-If you're working from this checkout, you can now start the app locally
-without Docker and without waiting for any hosted deploy loop:
-
-```bash
-./scripts/install-local-cli.sh
-```
-
-That installs a repo-local `hosaka` command into `~/.local/bin` by default,
-which avoids old or relocated virtualenv path issues. If needed, it can still
-fall back to an active environment `bin/` directory.
-
-If you want to replace `/usr/local/bin/hosaka` system-wide instead:
-
-```bash
-./scripts/install-local-cli.sh --global
-```
-
-If an older `hosaka` is already on your machine, run `hash -r` after install,
-or open a fresh shell, so your shell stops caching the old command path.
-
-```bash
-hosaka dev
-```
-
-That starts the canonical local Hosaka host: Vite plus the Electron kiosk
-wrapper on `http://localhost:5173`.
-
-If that port is already busy, plain `hosaka dev` now just reuses the existing
-session. If you want a clean restart instead:
-
-```bash
-hosaka dev -fresh
-```
-
-- `hosaka dev` reuses a session only when both backend and frontend answer HTTP.
-  An occupied port on a suspended or stalled process is reported explicitly;
-  use `hosaka dev -fresh` to restart the pair.
-- `hosaka gui` opens the terminal-first GUI, not the legacy desktop test route.
-- `hosaka dev -fresh` stops the current listener on that port, then relaunches Hosaka.
-
-If you ever want to cleanly stop the local dev host and window without changing
-ports:
-
-```bash
-hosaka down
-```
-
-If you specifically want browser-only fallback mode:
-
-```bash
-hosaka dev --web
-```
-
-Use that only for quick UI debugging when the kiosk wrapper is getting in the
-way. Electron-first is now the default dev path.
-
-### App framework direction
-
-Hosaka defaults to the terminal-plus-menu GUI on new cyberdecks. The desktop
-frontend is archived, not an opt-in route. Host applications remain available
-through `hosaka launch` and the Linux desktop rather than a second Hosaka shell.
-Older app-framework documents describe the retired UI, not the current menu.
-
----
-
-## Documentation
-
-Full reference site (auto-built from this commit on every push to `main`):
-
-**→ https://barkbarkbarkbarkbarkbarkbark.github.io/Hosaka/**
-
-What lives there:
-
-- **API reference** — the live `/api/v1/*` OpenAPI spec, rendered via Swagger UI.
-- **`hosakactl`** — the single-file laptop client that talks to that API.
-- **Modes** — what `console` / `device` actually do under the hood.
-- **Wifi setup** — every way to add a network (kiosk button, `/device` page,
-  `hosakactl wifi add`, TTY hotkey).
-- **Claims audit** — what the codebase actually does vs. what older docs claim.
-
-Build it locally:
-
-```bash
-pip install -r docs/requirements.txt
-python scripts/dump_openapi.py docs/openapi.json
-mkdocs serve              # http://127.0.0.1:8000
-```
-
-Implementation notes for the next phase live here too:
-
-- [`docs/local_bridge_gateway.md`](./docs/local_bridge_gateway.md) — local bridge,
-  managed Fly gateway, required keys, and Docker initialization checks.
-- [`docs/doctor.md`](./docs/doctor.md) — the new `hosaka doctor` diagnostic
-  surface, designed to evolve cleanly into an MCP-friendly health/report tool.
-- [`docs/http_surface.md`](./docs/http_surface.md) — the allowlisted outbound
-  HTTP GET/POST surface that ships with the Hosaka console.
-
-## Agent Contract
-
-Hosaka now ships its agent behavior as repo-owned canon instead of relying on
-hand-edited files in `~/.picoclaw`.
-
-Canonical source files:
-
-- `identity/AGENT.md` - Hosaka's identity, communication style, task/skill role
-- `identity/SOUL.md` - deeper lore / tone
-- `identity/USER.md` - operator-facing defaults
-- `manager/charter.yaml` - task policy, scoring, prioritization, daily loop
-- `manager/bootstrap_tasks.md` - runtime task template
-- `skills/index.yaml` - built-in Hosaka skill catalog
-- `skills/hosaka-task-manager/SKILL.md` - task-system workflow
-- `skills/hosaka-skill-lifecycle/SKILL.md` - skill search / install / authoring workflow
-
-These are materialized into the PicoClaw runtime with:
-
-```bash
-python scripts/bootstrap_picoclaw_runtime.py --home "$HOME"
-```
-
-That generator writes:
-
-- `~/.picoclaw/workspace/AGENT.md`
-- `~/.picoclaw/workspace/SOUL.md`
-- `~/.picoclaw/workspace/USER.md`
-- `~/.picoclaw/workspace/manager/charter.yaml`
-- `~/.picoclaw/workspace/memory/TASKS.md`
-- `~/.picoclaw/workspace/skills/catalog/index.yaml`
-- `~/.picoclaw/workspace/skills/hosaka-task-manager/SKILL.md`
-- `~/.picoclaw/workspace/skills/hosaka-skill-lifecycle/SKILL.md`
-
-Because the generator runs from repo-owned sources, Hosaka's identity,
-task-management role, and built-in skill behavior survive appliance installs,
-Docker image builds, and future deployments.
-
-## Remote configuration from your laptop
-
-After `install_hosaka_lean.sh` runs on the Pi it generates
-`/etc/hosaka/api-token` (group-readable by the operator). Drop the
-single-file client on your laptop:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/main/scripts/hosakactl \
-  -o hosakactl
-sudo install -m 0755 hosakactl /usr/local/bin/hosakactl
-
-hosakactl link http://hosaka.local:8421       # prompts for token
-hosakactl status                              # full snapshot
-hosakactl mode device --persist -y            # SSH-friendly
-hosakactl wifi add "Cafe Free WiFi"           # prompts for password
-hosakactl test                                # smoke-test all endpoints
-```
-
-Stdlib only, no install. Works on Mac, Linux, and the Pi itself.
-
----
-
-## Install
-
-### 1. Install Picoclaw
-
-```bash
-cd /tmp
-curl -L https://github.com/sipeed/picoclaw/releases/download/v0.2.4/picoclaw_Linux_arm64.tar.gz \
-  -o picoclaw.tar.gz
-tar -xzf picoclaw.tar.gz && chmod +x picoclaw && sudo mv picoclaw /usr/local/bin/
-picoclaw onboard
-```
-
-Then generate Hosaka's runtime contract into the PicoClaw workspace:
-
-```bash
-python scripts/bootstrap_picoclaw_runtime.py --home "$HOME"
-```
-
-### 2. Configure your LLM backend
-
-The console uses PicoClaw's agent harness. In the TUI, run `/select llm` to
-list available provider/model choices, then `/select llm <number>`.
-For an OpenAI key, use `hosaka secrets set OPENAI_API_KEY` in a real shell,
-or configure PicoClaw's credentials. The current GUI has no gear/settings
-drawer for LLM setup.
-
-- **Environment variables** (native appliance / advanced):
-  ```bash
-  export OPENAI_API_KEY=ollama
-  export OPENAI_MODEL=qwen2.5:0.5b
-  export OPENAI_BASE_URL=http://100.78.174.79:11434/v1
-  ```
-
-Docker-client users can place environment settings in `~/.hosaka/env` before
-running `hosaka up`; the launcher passes this file to the container. Native
-source users can export them in their shell. A configured model and working
-PicoClaw binary are required; console errors do not fall back to a fake reply.
-
-For the Jetson-hosted Ollama path, smoke test the OpenAI-compatible API with:
-
-```bash
-curl --silent --show-error --max-time 10 http://100.78.174.79:11434/v1/models
-curl --silent --show-error --max-time 30 http://100.78.174.79:11434/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model":"qwen2.5:0.5b","messages":[{"role":"user","content":"Reply with exactly: Jetson chat API works."}],"stream":false}'
-```
-
-> **Privacy**: the API key is stored on-device only. It is never sent
-> to Hosaka's servers, never logged, and never included in chat context.
-
-### 3. Clone and run
-
-```bash
-git clone https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka.git
-cd Hosaka
-python -m venv .hosakavenv && source .hosakavenv/bin/activate
-pip install -r requirements-hosaka.txt
-python scripts/bootstrap_picoclaw_runtime.py --home "$HOME"
-picoclaw gateway &
-python -m hosaka
-```
-
-### 4. Appliance install (Raspberry Pi)
+These execution examples require an unprivileged local runtime. Enabled
+packages appear in **Menu → Extensions** when the web backend also runs as the
+configured unprivileged operator. Root-run Docker/appliance backends cannot
+execute them; do not bypass that restriction.
+
+**Trusted-local is not an OS sandbox.** Approved Python retains your user's
+file, network, and process privileges, including access to readable credential
+files. Sanitized worker environments do not hide those files. Root/public
+execution is refused. New code needs reapproval; no installer or web API
+silently approves, grants permissions, or enables a package.
+
+Implemented capabilities include bounded workers, schema-validated actions,
+declarative forms/tables/navigation/lookups, and text persistence. Optional
+managed data directories, network grants, background actions, and binary
+upload/download controls have separate opt-in permissions; see
+[persistent and background capabilities](docs/extensions/PERSISTENCE.md).
+Application schemas, migrations, authentication, and sync remain package-owned.
+No per-package frontend route or core edit is needed.
+
+Use `hosaka extensions disable ID` or `hosaka extensions revoke ID` to stop
+execution; `hosaka extensions safe-mode on` blocks and cancels all extension
+jobs. `remove ID` unregisters a package but retains its source and data.
+The same commands are available after `/extensions` in the TUI.
+
+**Not implemented:** OS-enforced confinement, per-package dependency environments,
+dedicated PicoClaw extension tools, `extensions test`, or archive upgrades and
+rollback. Trusted-local tests are not clean-device or protected-runtime
+qualification. Use the implemented specification, not the full
+[roadmap](docs/extension_plan.md), as the current API contract.
+
+## Raspberry Pi appliance
+
+Native setup is a **system-changing path for a dedicated Linux device**, not
+the laptop/Docker installer. From a checkout, with a compatible PicoClaw on PATH:
 
 ```bash
 ./scripts/setup_hosaka.sh
 ```
 
-Requires PicoClaw to be installed first (see step 1). Runs `picoclaw onboard` if needed,
-regenerates Hosaka's PicoClaw runtime files from repo-owned canon, enables
-systemd services, and starts onboarding.
-
-After install you'll have a `hosaka` command on the path — see "Operator CLI"
-below for the build/kiosk mode toggle and one-shot deploys.
-
----
-
-## Operator CLI
-
-Once installed, the Pi exposes a `hosaka` command for day-to-day operations:
+Read the [setup script](scripts/setup_hosaka.sh) and
+[native installer](scripts/install_hosaka.sh) before running them. They provision
+the runtime and system services; graphical mode requires a working display
+session. Boot choices are `kiosk`, `headless`, or `console`. A graphical appliance
+defaults to **TUI + Menu**, preserving saved display/session choices on updates:
 
 ```bash
-hosaka status                  # what's running, RAM/CPU snapshot, current mode
-hosaka mode build [--persist]  # stop kiosk, free RAM/CPU for SSH workflows
-hosaka mode kiosk [--persist]  # restore the touchscreen kiosk
-hosaka build [--check]         # cd frontend && npm run build (--check runs tsc gate)
-hosaka deploy [--check]        # build + rsync into /opt + restart webserver
-hosaka update                 # pull GitHub + build + deploy in an independent Pi job
-hosaka update logs            # follow progress (Ctrl-C only stops the log viewer)
-hosaka update status          # last job result: UPDATE COMPLETE / UPDATE FAILED
-hosaka logs [web|pico|<unit>]  # tail journalctl
-hosaka reboot                  # safe sync + reboot
-hosaka issue <verb>            # GitHub-backed dev tracking (see docs/issue-tracking.md)
+hosaka tui           # bare terminal, including over SSH
+hosaka gui           # graphical TUI + Menu
+hosaka display show
+hosaka display gui   # graphical-login preference
+hosaka display tui   # opt into a bare-TUI launcher
 ```
 
-### Why "build mode"?
-
-The Pi 3B has **906 MiB RAM**. With Chromium kiosk + uvicorn + picoclaw +
-the Cursor remote server all loaded, there is no headroom left for
-`npm run build` and the OOM killer takes the build (or, worse, the SSH
-session). `hosaka mode build` shuts down the kiosk and the picoclaw gateway
-to free ~700 MiB before you build. `--persist` writes a marker to
-`/boot/firmware/hosaka-build-mode` so the Pi stays in build mode across
-reboots until you flip back with `hosaka mode kiosk --persist`.
+Use `hosaka mode device --persist` for an SSH/build-oriented device, and
+`hosaka mode console --persist` to restore the graphical host.
+See [modes](docs/modes.md), [Wi-Fi](docs/wifi.md),
+[remote operator client](docs/client.md), and [kiosk setup](kiosk/README.md).
 
 ### One-command Raspberry Pi updates
 
 ```bash
 hosaka update
+hosaka update logs
+hosaka update status
 ```
 
-On a systemd Pi this starts a separate root-owned, journaled job, so closing
-the terminal or losing SSH does not cancel deployment. Git and npm run as the
-operator, not root. The job pauses the kiosk/web/agent/voice services, keeps the
-desktop and SSH up, limits build memory to 650 MB, pulls the current branch
-from `origin` with `--ff-only`, executes the freshly pulled deployment code,
-rebuilds assets, refreshes Python requirements when changed, and updates the
-installed CLI/kiosk launchers and graphical autostart files. It restores
-services and the screen on success or failure without restarting the graphical
-login or tty1, verifies web-server health,
-and checks that the served frontend build stamp matches the deployed commit.
-Failures appear in `hosaka update status`; no successful deployment is claimed
-after a failed build. A sudo password may be requested when starting the job.
+On a systemd appliance, updates run as an independent journaled job. They
+fast-forward the clean checkout, build/deploy, restore services and the selected
+display mode, and verify backend health and the served frontend stamp.
+Disconnecting SSH does not cancel the job; check status for the actual outcome.
+Updates refuse local changes, including untracked files.
 
-Every deployment preserves explicit `hosaka display tui|gui` choices; only a
-missing preference receives the **TUI + Menu** default. An intentionally selected
-device/build mode is preserved without restarting the kiosk. A normal graphical
-update also checks that the Electron host process returns; a matching frontend
-stamp alone does not establish successful screen restoration.
-Use `hosaka mode console` to return to the graphical screen.
-The `/update` TUI command uses this same workflow and reports that a job was
-started, not that a background deployment already finished.
-
-**One-time bootstrap from an older installed CLI:**
+For an older installed CLI that lacks this update worker, bootstrap once from
+your actual clean checkout:
 
 ```bash
 cd ~/Hosaka
@@ -740,390 +302,85 @@ git pull --ff-only origin main
 bash scripts/hosaka update
 ```
 
-After that, the installed `hosaka update` is sufficient. The bootstrap is
-necessary because the older CLI continues executing its old deployment
-functions after pulling newer scripts. The checkout must be clean, including
-untracked files; updates stop rather than overwriting local work. Only changes
-committed and pushed to GitHub can reach the Pi.
+**Update commands differ by installation:** Docker `hosaka update` refreshes
+the image (re-run its installer to refresh the launcher); source
+`hosaka update` fast-forwards the checkout and re-runs its installer; appliance
+`hosaka update` builds and deploys system services. Do not replace an appliance
+CLI with the Docker installer.
 
-`hosaka update local` deploys the working tree without pulling. `--check`
-adds the TypeScript gate; `--branch BRANCH` selects another branch.
-`--foreground` is available for a stable local shell, but does not provide
-disconnect protection or the worker's automatic pause/restore sequence.
-
-### Why is the build so much lighter now?
-
-The recent terminal-only build transforms about **50 modules instead of 237**
-and ships roughly **half a megabyte** of JS/CSS before compression; exact
-counts change with features. The 3.7 MB Automerge bundle,
-arcade, old panels, webview/app-store bridges, and browser audio dependencies
-are no longer part of the build. This is an asset-size measurement, not a
-claim about peak build RAM on every Pi.
-
-`npm run build` remains Vite-only; `npm run build:check` adds the TypeScript
-gate. Sourcemaps stay off by default (`HOSAKA_SOURCEMAP=1` to re-enable).
-
----
-
-## Docker (no Pi required)
+## Paths and diagnostics
 
 ```bash
-./docker/dev.sh               # start services
-./docker/dev.sh tui            # full interactive terminal
-./docker/dev.sh test           # run tests
-./docker/dev.sh stop           # shut down
+hosaka paths --json
+hosaka doctor --offline --json
+hosaka doctor --offline --strict
+hosaka migrate --dry-run --json
 ```
 
-The Docker build copies `identity/`, `manager/`, and `skills/` into the image
-and runs `scripts/bootstrap_picoclaw_runtime.py --home /root --seed-config`,
-so the desktop/client container ships the same Hosaka identity, manager
-charter, task template, and built-in skill catalog as the appliance.
+Use resolved paths, not guessed operator homes. `HOSAKA_DATA_DIR` overrides the
+native data root; `HOSAKA_OPERATOR` selects an existing account. The versioned
+`installation.json` record is nonsecret. Extensions keep replaceable code
+separate from `extension-data/ID` and bounded metadata logs.
 
----
+The new path layout **does not consolidate every legacy credential, PicoClaw,
+log, or state location**. Migration is read-only inventory, not an apply command:
+it reports sources/conflicts without exposing key values or moving files.
+Do not infer completed provider migration from the paths report.
+Docker diagnostics inspect container storage, not host PicoClaw configuration.
+See [doctor](docs/doctor.md) for online profiles and structured reports.
 
-## What you get
+## Development and agent navigation
 
-```
-hosaka:/home/operator > /commands
+Read [AGENTS.md](AGENTS.md) first. For nontrivial core work, follow
+[issue tracking](docs/issue-tracking.md), reuse existing helpers, and run focused
+tests. Do not automatically approve extensions, migrate credentials, deploy,
+or commit on the operator's behalf.
 
-  ── Chat & AI ──
-    /chat              Interactive AI session
-    /ask <text>        One-shot question
-
-  ── System ──
-    /status            Uptime, IP, model, services
-    /doctor            Diagnose config
-    /restart all       Restart services
-    /update            Pull + redeploy
-
-  ── Network ──
-    /net               IP, Wi-Fi, Tailscale
-    /ping /dns /scan   Network tools
-
-  ── Tools ──
-    /draw <subject>    AI-generated ASCII art
-    /plant             Check on your alien plant
-    /orb               The orb sees you
-    /code              Drop to shell
-
-  ── Reference ──
-    /help              Quick start
-    /lore              ...
-    /about             System info
-```
-
-Everything else you type goes to the AI agent. Prefix `!` for shell commands.
-
----
-
-## The plant
-
-An alien organism lives in your terminal. It grows when you use Hosaka
-and wilts when you don't.
-
-```
-  dead        wilted       dry        stable      growing      bloom       colony
-
-              ,            \ |         _         \ _ /       * \ _ /     *@* _ *@*
-              |\            \|        ( )        -( )-        @( )@      \@(*)@/ *
-   .          | )            |        \|/       / \|         */\|/\*    */\\|//\@*
-   |          |/             |         |       (_) |/\      (@)|  /\    (@)|  /\(@
-   |         _|_           __|__     __|__         |/        \ | /(_)    *\|*/(_)*
-  .|.       [___]         [_____]   [_____]      __|__        _|_/_      __|_/__|_
- [___]                                          [_____]      [_____]    [___][__]
-```
-
-State persists to `~/.hosaka/plant.json`. Every command feeds it.
-Hours of inactivity drain it. Reach colony state and it records a birth.
-
-
----
-
-## Legacy browser voice architecture (archived UI)
-
-The following browser voice notes describe the archived desktop, not the
-current terminal-first GUI or hosted terminal. That UI had a voice tab,
-orb, transcript drawer, and camera controls. Voice backends and the optional
-native daemon are separate from the console's PicoClaw chat path; their
-presence does not mean those browser controls are still available.
-
-### Two-lane architecture
-
-Voice runs two lanes simultaneously:
-
-| Lane | Path | What it does |
-|------|------|-------------|
-| **Realtime** | Browser WebRTC → OpenAI Realtime API | Instant voice-to-voice. The model's "conscience" — personality, small talk, quick answers. |
-| **Agent** | Browser → Whisper STT → PicoClaw → reply | Real machine work: shell, git, file ops, repo inspection. Runs in the background. Hosaka acknowledges immediately, chimes when the result lands. |
-
-Switch between lanes with the **local agent / openai realtime** toggle
-in the drawer. Public deployments stay locked to the Realtime demo lane;
-local builds expose both.
-
-### Interaction
-
-- **Agent lane (hold to talk):** hold the orb → speak → release.
-  The UI immediately echoes "heard you. working on it." while PicoClaw
-  works. A two-tone chime signals completion and the reply appears.
-- **Realtime lane (tap to toggle):** tap the orb once to open the
-  WebRTC session; tap again to close. The model speaks back through
-  your browser's audio output.
-
-### Tools the Realtime session can call
-
-| Tool | What it does |
-|------|-------------|
-| `todo_add` | Appends to `~/.hosaka/voice_todos.jsonl`, mirrored into the Todo panel |
-| `set_mode` | Switches console/device mode |
-| `get_status` | Host · uptime · free RAM · CPU temperature |
-| `see` | Grabs a camera frame, runs vision, speaks the caption |
-| `ask_agent` | Hands the prompt to PicoClaw for real agentic tool use |
-
-When you say "run `ls -la`" or "what's the biggest file in my home
-directory", the Realtime model calls `ask_agent` which routes to
-PicoClaw — the same code path as the Agent lane.
-
-### Audio format
-
-The browser records `audio/webm;codecs=opus`. Hosaka strips the codec
-parameter before sending to OpenAI Whisper, which only accepts bare
-MIME types. The filename extension is inferred from the content-type so
-Whisper can sniff the container format.
-
-### Env knobs
-
-| Variable | Default | Note |
-|---|---|---|
-| `OPENAI_API_KEY` | — | Reused from the LLM config; never sent to the browser |
-| `HOSAKA_VOICE_MODEL` | `gpt-realtime` | Realtime model SKU |
-| `HOSAKA_VOICE_VOICE` | `marin` | Realtime voice preset |
-| `HOSAKA_VOICE_TRANSCRIBE_MODEL` | `whisper-1` | STT model for the Agent lane |
-| `HOSAKA_VOICE_CAMERA` | `/dev/video0` | V4L2 device for the `see()` tool |
-| `HOSAKA_VOICE_VISION_MODEL` | `gpt-4o-mini` | Vision model for `see()` |
-| `HOSAKA_PUBLIC_MODE` | unset | `1` locks the voice panel to Realtime demo only |
-| `HOSAKA_API_TARGET` | `http://127.0.0.1:8421` | Vite-dev proxy target for `/api` and `/ws` |
-
-Minimum local `.env` for Realtime → PicoClaw control:
-
-```dotenv
-OPENAI_API_KEY="sk-..."
-OPENAI_MODEL="gpt-4o-mini"
-HOSAKA_VOICE_MODEL="gpt-realtime"
-HOSAKA_VOICE_VOICE="marin"
-PICOCLAW_SESSION="hosaka:main"
-```
-
-`HOSAKA_VOICE_MODEL`, `HOSAKA_VOICE_VOICE`, and `PICOCLAW_SESSION` may be
-omitted if the defaults above are acceptable. `OPENAI_API_KEY` is the only
-hard requirement for Realtime token minting.
-
-### Small-screen / kiosk layout
-
-At ≤ 720 px the orb expands to fill the panel (≈ 72 vw). The transcript,
-mode selector, and camera controls live in a slide-up drawer triggered
-by the **▲ transcript** button at the bottom of the orb stage. This is
-the intended layout for a 5-inch HDMI display running the Electron kiosk.
-
-## Optional native voice daemon
+For local GUI development after `bash install.sh --gui`:
 
 ```bash
-hosaka voice                      # foreground mic/speaker daemon
-sudo systemctl enable --now hosaka-voice   # or as a systemd unit
+hosaka dev          # backend + Vite + Electron; reuses a responsive session
+hosaka dev --web    # browser-only host for UI debugging
+hosaka down         # stop the local dev session
 ```
 
-The daemon uses the same tool surface as the browser panel, including
-`ask_agent` → PicoClaw. Wake word default is `hey_jarvis` (bundled
-openwakeword model); custom `hey hosaka` requires training — see
-[openwakeword docs](https://github.com/dscripka/openWakeWord#training-new-models).
+`hosaka dev -fresh` explicitly restarts the local backend/frontend pair and can
+disconnect an active TUI. For an existing manually provisioned checkout,
+[install-local-cli.sh](scripts/install-local-cli.sh) installs only the launcher;
+it is not a replacement for dependency setup.
 
-### Install voice deps
+| Surface | Source / contract |
+| --- | --- |
+| Canonical terminal and command dispatch | [hosaka/main_console.py](hosaka/main_console.py) |
+| Native/source CLI; Docker client | [scripts/hosaka](scripts/hosaka), [install/](install/) |
+| Provider setup and agent routing | [llm_setup.py](hosaka/llm_setup.py), [PicoClaw adapter](hosaka/llm/picoclaw_adapter.py) |
+| Native paths and migration inventory | [paths.py](hosaka/paths.py), [migration.py](hosaka/migration.py) |
+| TUI + Menu host and native PTY | [frontend/src/](frontend/src/), [kiosk/](kiosk/), [tui_ws.py](hosaka/web/tui_ws.py) |
+| Extension runtime, API, and views | [hosaka/extensions/](hosaka/extensions/), [extensions_api.py](hosaka/web/extensions_api.py), [extension renderer](frontend/src/extensions/) |
+| Runtime identity, task policy, and skills | [identity/](identity/), [manager/](manager/), [skills/](skills/), [runtime generator](scripts/bootstrap_picoclaw_runtime.py) |
+| Feature metadata and generated references | [feature catalog](docs/hosaka.features.yaml), [agent context](docs/agent_context.json), [OpenAPI](docs/openapi.json) |
+| Focused validation | [tests/](tests/), [extension test guide](docs/extensions/TESTING.md), [native host tests](kiosk/tests/) |
 
-```bash
-./scripts/install_voice_deps.sh   # portaudio, alsa, v4l, ffmpeg, sounddevice, …
-export OPENAI_API_KEY=sk-…
-```
+The feature catalog owns core feature metadata. Regenerate its derived docs
+with `PY=.hosakavenv/bin/python bash scripts/gen_docs.sh` (substitute `.venv`
+if that is your checkout's environment); do not hand-edit generated files.
+See the [API reference](docs/api.md) and [user manual](docs/manual/index.md).
+The [published documentation](https://barkbarkbarkbarkbarkbarkbark.github.io/Hosaka/)
+can lag source; check the [docs workflow](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/actions/workflows/docs.yml).
 
-### Architecture notes (future self)
+### Hosted terminal is a separate deployment
 
-The natural next step is feeding PicoClaw's `spoken` reply into the
-Realtime session's audio output so the agent lane can *talk back*
-without a second round-trip to the Realtime API. The structured
-`{ spoken, thought, did_work }` payload from `run_agent_voice_turn()`
-is already designed for this. See [`docs/voice.md`](./docs/voice.md)
-for full status, known gaps, and roadmap.
+The [hosted wrapper](https://github.com/BarkBarkBarkBarkBarkBarkBark/hosaka-field-terminal)
+owns [terminal.hosaka.xyz](https://terminal.hosaka.xyz), copying this repository's
+frontend at build time. The
+[marketing site](https://github.com/BarkBarkBarkBarkBarkBarkBark/cyber_deck)
+embeds it; neither is a second canonical terminal implementation.
 
+The hosted design runs the real TUI behind an access-code gate in disposable
+per-session Machines with bounded model access and no persistent workspace or
+deck hardware. Its release/deployment does not automatically follow this repo.
 
-
-## Configuration
-
-### LLM backend
-
-Use the TUI's `/select llm` menu, native CLI configuration, or environment
-variables. The retired settings drawer and first-keystroke setup prompt are
-not part of the current terminal/menu interface.
-
-| Variable | Default | Description |
-|---|---|---|
-| `OPENAI_API_KEY` | unset | Required for OpenAI; placeholder accepted by Ollama |
-| `OPENAI_MODEL` | `gpt-4.1` | Main model for an unconfigured install |
-| `OPENAI_BASE_URL` | `https://api.openai.com` | OpenAI endpoint; can be changed for Ollama, LM Studio, etc. |
-
-Persisted config lives in `/var/lib/hosaka/llm.json` (or
-`~/.hosaka/llm.json` when no system state directory exists) and is applied on startup.
-PATCH `/api/llm-key` applies it to the running process without restart.
-
-Fresh source and appliance installs default to **OpenAI GPT-4.1**. Supply
-`OPENAI_API_KEY` when running the appliance installer, or enter it once at
-the console's hidden first-run prompt. Credentials are stored privately,
-never in Git. A missing key does not prevent the appliance UI from starting.
-The appliance installer and `hosaka deploy` prepare root and operator agent
-workspaces and make the shared LLM settings operator-owned with mode `0600`.
-Console and SSH `hosaka chat` / `hosaka message` requests use those same saved
-provider settings through the PicoClaw console adapter. Explicit PicoClaw
-model aliases remain supported.
-
-`/select llm <number>` saves the provider/model for future sessions, including
-GUI refreshes. Every TUI startup reloads that choice over stale inherited
-backend settings. Choice `0` is OpenAI GPT-4.1. Existing saved choices are
-preserved; `HOSAKA_LOCAL_FIRST=1` explicitly opts into the Ollama defaults
-instead of GPT-4.1 when no configuration has been saved.
-
-Updates do not replace an existing model selection. Native web-search tools
-are disabled in Hosaka's temporary PicoClaw request configuration because
-`web_search_preview` is not accepted by Chat Completions. Normal agent web
-tools remain available; the request overlay does not modify the original
-PicoClaw configuration.
-
-Hosaka can persist a live local Ollama selection by probing the configured
-hosts' `/api/tags` endpoints:
-
-```bash
-curl -X POST http://localhost:8421/api/ollama/discover
-```
-
-It probes `127.0.0.1` and `100.78.174.79` by default, preserving the current
-model when available. Set `HOSAKA_OLLAMA_DISCOVERY_URLS` to a comma-separated
-list of known LAN/Tailscale Ollama URLs; Hosaka only probes those hosts and
-does not scan a network. The persisted discovery configuration is refreshed on
-each web-server start, so it can move to a reachable local server offline.
-
-### PlayStation runtime
-
-The appliance installer installs RetroArch, but does not bundle games, BIOS
-files, or emulator cores. Once a PS1 core is installed, the launcher discovers
-PCSX-ReARMed, SwanStation, or Beetle PSX in the operator's RetroArch core
-directory or standard system libretro directories. Existing RetroPie emulator
-configuration and explicit `HOSAKA_PSX_CORE` overrides take precedence.
-An invalid explicit core path is reported instead of silently replaced.
-`HOSAKA_PSX_ROMS` overrides ROM discovery; otherwise the launcher checks
-`~/RetroPie/roms/psx`, `~/Games/PlayStation`, and `~/Games/psx`.
-
-Updates archive obsolete launcher-state files only when the recorded process
-has exited. They never signal an unverified legacy process. Use `/play stop`
-to stop a game launched by the current launcher.
-
-### Offline Ollama protocol
-
-When Wi-Fi has no internet but your Ollama machine and Hosaka are on the same
-router or hotspot, type exactly this:
-
-```bash
-hosaka scan llm
-```
-
-It scans the active private `/24` LAN for Ollama's port `11434`, then prints
-every responding server and its installed models. To connect to the first one
-and keep it through reboots, type:
-
-```bash
-hosaka scan llm --use
-```
-
-In the Hosaka console, `/scan` lists nearby network devices, `/scan llm` finds
-model servers, and `/scan llm use` saves the first result. No internet, cloud
-account, or remembered IP address is needed.
-
-To see the model currently selected by Hosaka:
-
-```bash
-hosaka llm
-```
-
-`hosaka llm list` means the same thing.
-
-In the terminal, `/help` includes a numbered provider/model selector:
-
-```text
-/select llm
-0 openai gpt-4.1
-1 openai gpt-4.1-mini
-2 openai gpt-4o-mini
-3 ollama qwen3:4b — http://127.0.0.1:11434/v1
-
-/select llm 0
-```
-
-The OpenAI entries start with this small fixed list and include additional
-models from saved OpenAI profiles. The fixed entries are not a guarantee of
-API-account access. Ollama entries come from saved selections and installed
-models reported by known servers; the Qwen entry above is an example, not a
-bundled model. Unavailable saved Ollama choices are labelled, and cannot be
-selected until their server and model are available.
-
-Run `/select llm` before choosing a number. Numbers refer to the last displayed
-list and remain stable until you list again. Selection switches the running
-console immediately and saves the provider, endpoint, and model for future
-starts. Saved non-Ollama OpenAI-compatible profiles are also listed without
-being treated as Ollama servers. OpenAI uses its saved key or `OPENAI_API_KEY`
-from the environment, Hosaka secrets store, or Picoclaw configuration/security
-file; if none exists, run `hosaka secrets set OPENAI_API_KEY`
-from a real shell. Keys are never printed by the menu.
-
-The menu only checks saved endpoints and `HOSAKA_OLLAMA_DISCOVERY_URLS`, with
-a one-second probe per host; it does not scan the LAN. Use `/scan llm` to
-discover other hosts. Before an Ollama completion, Hosaka checks that the
-selected server reports the selected model via `/api/tags`. If the server
-is absent or the model is missing, it reports the problem without sending
-a chat request. This is a runtime guard, not a Python `assert` that could be
-disabled with optimization.
-
-To switch back to OpenAI (using its saved profile and key):
-
-```bash
-hosaka llm openai
-```
-
-To return to local Ollama later:
-
-```bash
-hosaka llm ollama --use
-```
-
-`hosaka llm scan` is the same command as `hosaka scan llm`; add `--use` to
-save the first working server.
-
-### System settings
-
-Configure these through the host/container environment. The existing
-authenticated configuration API is a separate surface; there is no System
-settings drawer in the current GUI, and not every environment variable is
-editable through PATCH `/api/config`.
-
-| Variable | Default | Description |
-|---|---|---|
-| `HOSAKA_STATE_PATH` | `~/.hosaka/state.json` | Persistent state |
-| `HOSAKA_BOOT_MODE` | `console` | `console` (Python tty shell), `headless` / `web` (API+SPA only), `kiosk` (same + Electron fullscreen; use `./scripts/switch_boot_mode.sh`) |
-| `HOSAKA_SOURCEMAP` | unset | Set to `1` to emit sourcemaps from `vite build` (off by default to halve the build's RAM peak on the Pi) |
-| `HOSAKA_WEB_PORT` | `8421` | LAN setup web server port |
-| `PICOCLAW_SESSION` | `hosaka:main` | Agent session key |
-| `PICOCLAW_MODEL` | *(default)* | Override model |
-| `HOSAKA_PUBLIC_MODE` | unset | Server-side public-mode access boundary. Disables the native PTY and restricts operator configuration/device APIs; `/api/health` reports `settings_enabled: false`. Local Docker installs normally leave it unset. This is distinct from the static frontend's `VITE_HOSAKA_DEMO=1` build flag. Do not remove or bypass it to expose a terminal publicly. |
-
----
-
-## Requirements
-
-- Python 3.10+
-- Picoclaw v0.2+
-- systemd (for appliance boot)
-- No desktop environment needed for the plain TUI/headless server; the GUI needs a graphical session
+**Keep the native `/ws/tui` loopback-only and disabled in public mode.**
+Hosted builds select a separate `VITE_HOSAKA_TUI_URL` gateway; never loosen the
+native PTY policy to serve a public terminal. Hosted isolation and credential
+boundaries belong to the wrapper, not a shared host shell.

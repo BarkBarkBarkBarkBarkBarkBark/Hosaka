@@ -320,6 +320,8 @@ def run(
             raise InvocationError("not_authorized", "Background execution requires its declared action and explicit grant.")
         with _slots(state, identifier, background):
             data = _directory(manager, f"extension-data/{identifier}")
+            if data.resolve().is_relative_to(package.root.resolve()) or package.root.resolve().is_relative_to(data.resolve()):
+                raise InvocationError("unsafe_path", "Extension source and persistent data must be separate directories.")
             active = state / f"{identifier}.{invocation}.active"
             marker = state / f"{identifier}.{invocation}.cancel"
             fd = os.open(active, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
