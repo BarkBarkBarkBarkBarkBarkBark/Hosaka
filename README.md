@@ -112,6 +112,9 @@ Requires Python 3.10+, Git, and internet access. Run as your normal user,
 git clone https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka.git
 cd Hosaka
 bash install.sh
+export PATH="$HOME/.local/bin:$PATH"
+hosaka doctor --offline
+hosaka tui
 ```
 
 Open a new terminal, or source the shell startup file printed by the installer:
