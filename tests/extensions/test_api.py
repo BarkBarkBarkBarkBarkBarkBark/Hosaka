@@ -106,6 +106,57 @@ def test_api_does_not_expose_trust_or_enablement_mutations(api):
     assert client.post("/api/v1/extensions/reference-extension/enable", json={}).status_code == 404
 
 
+def test_local_import_stays_disabled_and_untrusted(api, tmp_path):
+    app, instance = api
+    source = tmp_path / "source"
+    instance.create("import-example", source)
+    instance.remove("import-example")
+    with instance.transaction() as registry:
+        del registry.extensions["import-example"]
+    client = local(app)
+    response = client.post("/api/v1/extensions/install", json={"source": str(source)},
+                           headers={"origin": "http://localhost:5173"})
+    assert response.status_code == 201
+    installed = response.json()
+    assert installed["path"] == str(instance.packages / "import-example")
+    assert installed["approved_digest"] is None and not installed["enabled"]
+    assert installed["grants"] == []
+    assert not any(entry["id"] == "import-example" for entry in client.get("/api/v1/extensions").json()["extensions"])
+    duplicate = client.post("/api/v1/extensions/install", json={"source": str(source)},
+                            headers={"origin": "http://localhost:5173"})
+    assert duplicate.status_code == 409
+
+
+@pytest.mark.parametrize("origin", [None, "https://evil.example", "null"])
+def test_import_rejects_nonlocal_or_missing_origin(api, monkeypatch, origin):
+    app, instance = api
+    monkeypatch.setattr(instance, "install", lambda source: pytest.fail("Unexpected import"))
+    headers = {} if origin is None else {"origin": origin}
+    assert local(app).post("/api/v1/extensions/install", json={"source": "/tmp/source"}, headers=headers).status_code == 403
+
+
+def test_import_rejects_remote_even_with_auth_and_public_mode(api, monkeypatch):
+    app, instance = api
+    monkeypatch.setattr(instance, "install", lambda source: pytest.fail("Unexpected import"))
+    monkeypatch.setattr(api_v1, "_load_token", lambda: "test-token")
+    remote = TestClient(app, base_url="http://deck.example", client=("192.168.1.10", 1234))
+    assert remote.post("/api/v1/extensions/install", json={"source": "/tmp/source"}, headers={
+        "authorization": "Bearer test-token", "origin": "http://deck.example",
+    }).status_code == 403
+    monkeypatch.setenv("HOSAKA_PUBLIC_MODE", "1")
+    assert local(app).post("/api/v1/extensions/install", json={"source": "/tmp/source"},
+                           headers={"origin": "http://localhost:5173"}).status_code == 403
+
+
+def test_import_body_is_bounded_and_cannot_grant_trust(api):
+    app, _ = api
+    client = local(app)
+    headers = {"origin": "http://localhost:5173"}
+    assert client.post("/api/v1/extensions/install", content="x" * 8193, headers=headers).status_code == 413
+    for body in ({"source": "/tmp/source", "enabled": True}, {"source": "x" * 2049}, {"source": 123}):
+        assert client.post("/api/v1/extensions/install", json=body, headers=headers).status_code == 422
+
+
 def test_cancel_endpoint_cancels_a_real_invocation(api):
     if os.geteuid() == 0:
         pytest.skip("Root execution is intentionally refused.")

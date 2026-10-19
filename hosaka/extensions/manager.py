@@ -7,10 +7,12 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, ValidationError, field_validator
 import yaml
@@ -281,6 +283,60 @@ class Manager:
         with self.transaction() as registry:
             self._register(registry, package)
         return self.info(package.manifest.id)
+
+    def install(self, source: str) -> dict:
+        if os.geteuid() == 0:
+            raise ExtensionError("Import extensions as the unprivileged operator, not root.")
+        source = source.strip()
+        if not source or len(source) > 2048 or any(ord(character) < 32 for character in source):
+            raise ExtensionError("Use a local package directory or an HTTPS Git repository URL.")
+        remote = "://" in source
+        if remote:
+            url = urlsplit(source)
+            if url.scheme != "https" or not url.hostname or url.username is not None or url.password is not None or url.query or url.fragment:
+                raise ExtensionError("Git imports require an HTTPS repository URL without credentials, query or fragment.")
+            if not shutil.which("git"):
+                raise ExtensionError("Git is required to import a repository; install it in the backend's host environment.")
+        with self.transaction() as registry:
+            with tempfile.TemporaryDirectory(prefix=".extension-import-", dir=self.packages) as temporary:
+                if remote:
+                    template = Path(temporary) / "template"
+                    template.mkdir()
+                    home = Path(temporary) / "home"
+                    home.mkdir()
+                    path = Path(temporary) / "checkout"
+                    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+                    env.update(GIT_TERMINAL_PROMPT="0", GIT_CONFIG_NOSYSTEM="1",
+                               GIT_CONFIG_GLOBAL=os.devnull, GIT_LFS_SKIP_SMUDGE="1",
+                               HOME=str(home), XDG_CONFIG_HOME=str(home / ".config"))
+                    try:
+                        subprocess.run([
+                            "git", "-c", f"core.hooksPath={os.devnull}",
+                            "-c", "protocol.allow=never", "-c", "protocol.https.allow=always",
+                            "-c", "credential.helper=", "clone", "--depth", "1", "--single-branch",
+                            "--no-tags", "--no-recurse-submodules", f"--template={template}",
+                            "--", source, str(path),
+                        ], check=True, timeout=60, env=env, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    except subprocess.TimeoutExpired as exc:
+                        raise ExtensionError("Git import exceeded its 60-second time limit.") from exc
+                    except (OSError, subprocess.CalledProcessError) as exc:
+                        raise ExtensionError("Git import failed; use an accessible public HTTPS repository or import a local checkout.") from exc
+                else:
+                    path = Path(source).expanduser().resolve()
+                    self._outside_core(path)
+                package = validate_package(path)
+                identifier = package.manifest.id
+                if identifier in registry.extensions:
+                    raise ExtensionError(f"Extension ID is already registered: {identifier}")
+                destination = self.packages / identifier
+                self._copy(package.root, destination, identifier)
+                try:
+                    self._register(registry, validate_package(destination))
+                except (OSError, ExtensionError, ValueError):
+                    shutil.rmtree(destination)
+                    raise
+        return self.info(identifier)
 
     def info(self, identifier: str) -> dict:
         validate_id(identifier)

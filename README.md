@@ -253,6 +253,33 @@ Discovery and validation do not import package code, run its tests, or install
 dependencies. Existing package source, data, approvals, and enablement survive
 initialization.
 
+In **Menu → Extensions**, paste a public HTTPS Git repository URL or a local
+package directory, then choose **Import extension**. Hosaka validates and copies
+the source into `hosaka paths --json` → `paths.extensions/ID` (normally
+`~/.hosaka/extensions/ID`), using the manifest ID rather than the repository name.
+The backend must run locally as your unprivileged operator. Imported packages
+remain **disabled and untrusted**, with no grants or code execution.
+
+The same import is available from the CLI:
+
+```bash
+hosaka extensions install https://github.com/OWNER/EXTENSION.git
+hosaka extensions install /absolute/path/to/my-extension
+```
+
+Git imports need Git on the backend, accept public HTTPS repository URLs only,
+and time out after 60 seconds. URLs with credentials, query strings or fragments
+are rejected. No host Git credentials/configuration, hooks, submodules or package
+install scripts are used. The repository root must contain `extension.yaml`.
+Imported source is a snapshot without `.git` history or automatic updates;
+existing IDs, folders and data are never overwritten.
+
+To keep developing directly from an existing checkout instead of copying it:
+
+```bash
+hosaka extensions link /absolute/path/to/my-extension
+```
+
 After inspecting the source, the **owner** can approve the current digest,
 grant storage, and separately enable the package:
 

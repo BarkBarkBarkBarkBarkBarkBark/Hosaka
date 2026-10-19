@@ -32,6 +32,14 @@ referenced files are confined to the package, unknown schema/UI fields fail,
 remote schema references are rejected, and metadata writes are atomic under a
 process lock. Packages are disabled by default and receive no grants.
 
+The import API additionally requires a loopback client and loopback browser
+origin, even for authenticated remote operators. It cannot approve or enable
+packages. Git imports accept HTTPS without embedded credentials and use isolated
+HOME/configuration, no credential helpers/hooks/submodules and a 60-second
+timeout. Imports copy validated source snapshots, never overwrite existing
+packages/data, and do not install dependencies or execute package code. These
+checks are not an OS sandbox or a Git download disk/network quota.
+
 These checks protect the **metadata workflow**. They are not an OS sandbox:
 
 - No OS-contained extension runner exists yet.

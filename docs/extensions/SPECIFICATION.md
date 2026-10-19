@@ -43,6 +43,30 @@ special files; source digest excludes `.git`, `.venv`, `__pycache__` and
 `.pytest_cache`. Registration source is bounded to 4096 files/32 MiB;
 individual manifest/UI/schema documents to 256 KiB.
 
+## Source import
+
+`hosaka extensions install SOURCE` accepts a local package directory or a public
+HTTPS Git repository URL. The local Menu Extensions panel exposes the same
+operation through `POST /api/v1/extensions/install`, with a JSON `source` string
+of at most 2048 characters and an 8 KiB request-body limit. Browser import requires
+a loopback client and loopback origin, existing write authorization and a
+non-public backend. Root import is refused.
+
+Source is staged and validated without importing package code, installing
+dependencies or running package tests. Git is invoked without a shell, with a
+60-second timeout, shallow single-branch fetch, isolated HOME/configuration,
+disabled hooks/credential helpers and no submodules. Only HTTPS transport is
+allowed; URL credentials, queries and fragments are rejected. Private repositories
+must be checked out separately and imported by local path. Clone downloads have
+no separate disk/network quota; the validated source retains the normal package
+file-count/size limits.
+
+The manifest ID selects `paths.extensions/ID`. Existing registrations and
+destinations are refused, not upgraded or replaced. Imported snapshots omit Git
+metadata and start disabled, without approval or grants. Source directories and
+extension data are untouched. `extensions link PATH` still registers an external
+working copy in place for development. No automatic update/rollback is provided.
+
 ## Action schemas
 
 JSON Schema draft 2020-12 objects are validated using `jsonschema`.

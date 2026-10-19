@@ -127,6 +127,119 @@ def test_link_and_lifecycle_preserve_package_and_data(manager, tmp_path):
     assert not manager.info("example-extension")["enabled"]
 
 
+def test_install_local_copies_source_without_execution_or_approval(manager, tmp_path):
+    source = package(tmp_path)
+    (source / "main.py").write_text("raise RuntimeError('never execute during import')\n")
+    (source / ".git").mkdir()
+    (source / ".git/config").write_text("private checkout configuration")
+    installed = manager.install(str(source))
+    destination = manager.packages / "example-extension"
+    assert installed["path"] == str(destination)
+    assert installed["registered"] and not installed["enabled"]
+    assert not installed["execution_available"]
+    assert installed["approved_digest"] is None and installed["grants"] == []
+    assert (destination / "main.py").read_text() == (source / "main.py").read_text()
+    assert not (destination / ".git").exists()
+    assert not Path(installed["data_path"]).exists()
+    assert source.exists()
+
+
+def test_install_preserves_existing_source_registration_and_data(manager, tmp_path):
+    source = package(tmp_path)
+    installed = manager.install(str(source))
+    data = Path(installed["data_path"])
+    data.mkdir()
+    (data / "owner.txt").write_text("keep this")
+    before = snapshot(manager.root)
+    with pytest.raises(ExtensionError, match="already registered"):
+        manager.install(str(source))
+    assert snapshot(manager.root) == before
+
+
+def test_install_refuses_existing_unregistered_destination(manager, tmp_path):
+    source = package(tmp_path)
+    destination = manager.packages / "example-extension"
+    destination.mkdir(parents=True)
+    (destination / "owner.txt").write_text("keep this")
+    with pytest.raises(ExtensionError, match="overwrite"):
+        manager.install(str(source))
+    assert (destination / "owner.txt").read_text() == "keep this"
+
+
+@pytest.mark.parametrize("source", [
+    "", "--upload-pack=evil", "http://example.com/repo.git", "file:///tmp/repo",
+    "ssh://git@example.com/repo", "https://user:secret@example.com/repo",
+    "https://example.com/repo?token=secret", "https://example.com/repo#branch",
+    "https://example.com/repo\nmalicious", "https://example.com/" + "x" * 2048,
+])
+def test_install_rejects_unsafe_or_missing_sources(manager, source, monkeypatch):
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("Unexpected Git execution"))
+    with pytest.raises((ExtensionError, OSError, ValueError)):
+        manager.install(source)
+    assert not manager.registry().extensions
+
+
+def test_install_git_uses_guarded_clone_and_manifest_identity(manager, tmp_path, monkeypatch):
+    source = package(tmp_path)
+    calls = []
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.sshCommand")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "never execute")
+    monkeypatch.setattr(shutil, "which", lambda command: "/usr/bin/git")
+
+    def clone(command, **kwargs):
+        calls.append((command, kwargs))
+        shutil.copytree(source, command[-1])
+
+    monkeypatch.setattr(subprocess, "run", clone)
+    installed = manager.install("https://github.com/example/different-repo-name.git")
+    assert installed["id"] == "example-extension"
+    assert not installed["enabled"] and installed["approved_digest"] is None
+    command, options = calls[0]
+    assert "protocol.allow=never" in command and "protocol.https.allow=always" in command
+    assert "--no-recurse-submodules" in command and "--depth" in command
+    assert command[-3] == "--"
+    assert options["timeout"] == 60 and options["check"]
+    assert options["env"]["GIT_CONFIG_GLOBAL"] == os.devnull
+    assert options["env"]["GIT_TERMINAL_PROMPT"] == "0"
+    assert options["env"]["HOME"] != os.environ["HOME"]
+    assert "GIT_CONFIG_COUNT" not in options["env"]
+    assert not list(manager.packages.glob(".extension-import-*"))
+
+
+@pytest.mark.parametrize("failure", [
+    subprocess.TimeoutExpired("git", 60), subprocess.CalledProcessError(1, "git"),
+])
+def test_install_git_failure_cleans_staging(manager, monkeypatch, failure):
+    monkeypatch.setattr(shutil, "which", lambda command: "/usr/bin/git")
+
+    def clone(*args, **kwargs):
+        raise failure
+
+    monkeypatch.setattr(subprocess, "run", clone)
+    with pytest.raises(ExtensionError, match="Git import"):
+        manager.install("https://example.com/repo.git")
+    assert not list(manager.packages.iterdir())
+    assert not manager.registry().extensions
+
+
+def test_install_invalid_package_cleans_staging(manager, tmp_path):
+    source = package(tmp_path)
+    (source / "extension.yaml").write_text("invalid: [")
+    with pytest.raises(ExtensionError):
+        manager.install(str(source))
+    assert not list(manager.packages.iterdir())
+    assert not manager.registry().extensions
+
+
+def test_install_cli_registers_managed_copy(manager, tmp_path, capsys):
+    source = package(tmp_path)
+    assert main(["install", str(source), "--json"]) == 0
+    installed = json.loads(capsys.readouterr().out)
+    assert installed["path"] == str(manager.packages / "example-extension")
+    assert not installed["enabled"] and not installed["grants"]
+
+
 def test_remove_managed_reference_survives_rerun(manager):
     manager.init()
     manager.remove("reference-extension")
