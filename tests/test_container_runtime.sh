@@ -51,13 +51,13 @@ PY
 cli extensions create qualification-demo --json >"$temp/qualification-package.json"
 cli shell <<'SH'
 set -e
-printf 'owner-edited package\n' >"$HOSAKA_DATA_DIR/extensions/qualification-demo/owner.txt"
 /opt/hosaka-field-terminal/.venv/bin/python - <<'PY'
 import hashlib
 from pathlib import Path
 from hosaka.paths import offline_report, resolve_paths
 
 paths = resolve_paths()
+(paths.root / "extensions/qualification-demo/owner.txt").write_text("owner-edited package\n")
 assert all(directory.is_dir() for directory in paths.directories().values())
 assert not paths.root.is_relative_to(Path("/opt/hosaka-field-terminal"))
 assert (paths.root / "extensions/qualification-demo/owner.txt").read_text() == "owner-edited package\n"

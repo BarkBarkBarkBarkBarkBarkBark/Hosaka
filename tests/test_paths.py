@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 import pwd
@@ -225,6 +226,26 @@ def test_no_implicit_install_mode_conversion(native_home, tmp_path):
     with pytest.raises(ValueError, match="another installation mode"):
         paths.initialize(resolved, mode="appliance", repo=tmp_path, runtime=tmp_path,
                          launcher=tmp_path / "launcher", python=Path(sys.executable))
+
+
+def test_container_owner_fixture_works_without_data_directory_env(native_home):
+    resolved = paths.resolve_paths()
+    owner = resolved.root / "extensions/qualification-demo/owner.txt"
+    owner.parent.mkdir(parents=True)
+    script = ROOT / "tests/test_container_runtime.sh"
+    block = script.read_text().split("/opt/hosaka-field-terminal/.venv/bin/python - <<'PY'\n", 1)[1].split("\nPY", 1)[0]
+    setup = []
+    for statement in ast.parse(block).body:
+        setup.append(statement)
+        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
+            call = statement.value
+            if isinstance(call.func, ast.Attribute) and call.func.attr == "write_text" and "owner.txt" in ast.unparse(call):
+                break
+    else:
+        pytest.fail("Container fixture must write the owner edit through resolved Python paths.")
+    assert "HOSAKA_DATA_DIR" not in os.environ
+    exec(compile(ast.Module(body=setup, type_ignores=[]), str(script), "exec"), {})
+    assert owner.read_text() == "owner-edited package\n"
 
 
 def test_container_initialization_creates_layout_and_records_docker_mode(native_home, tmp_path):
