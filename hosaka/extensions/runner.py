@@ -55,6 +55,10 @@ def approval_reason(package: Package, registration: Registration | None, *, safe
         return "Package source changed; inspect it and explicitly approve its new digest."
     if package.manifest.permissions.filesystem == "data-only" and "storage:self" not in registration.grants:
         return "storage:self has not been granted; trust with --allow-storage after inspection."
+    if package.manifest.permissions.filesystem == "data-directory" and (
+        "storage:directory" not in registration.grants or "storage:self" not in registration.grants
+    ):
+        return "Managed storage requires --allow-storage and --allow-managed-data after inspection."
     return None
 
 
@@ -67,10 +71,11 @@ def _directory(manager: Manager, relative: str) -> Path:
 
 
 @contextmanager
-def _slots(state: Path, identifier: str) -> Generator[None, None, None]:
+def _slots(state: Path, identifier: str, background: bool = False) -> Generator[None, None, None]:
     handles = []
     try:
-        for name in (f"{identifier}.lock",):
+        names = (f"{identifier}.background.lock", "background-host.lock") if background else (f"{identifier}.lock",)
+        for name in names:
             path = state / name
             fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
             handle = os.fdopen(fd, "a")
@@ -125,7 +130,8 @@ def cancel(manager: Manager, identifier: str, invocation: str) -> None:
     os.close(fd)
 
 
-def _still_allowed(manager: Manager, identifier: str, approved_digest: str, storage: bool) -> None:
+def _still_allowed(manager: Manager, identifier: str, approved_digest: str, storage: bool,
+                   managed: bool = False, network: bool = False, background: bool = False) -> None:
     registry = manager.registry()
     entry = registry.extensions.get(identifier)
     if (
@@ -134,6 +140,9 @@ def _still_allowed(manager: Manager, identifier: str, approved_digest: str, stor
         or entry is None or not entry.enabled or entry.removed
         or entry.approved_digest != approved_digest or entry.execution_mode != "trusted-local"
         or (storage and "storage:self" not in entry.grants)
+        or (managed and "storage:directory" not in entry.grants)
+        or (network and "network:self" not in entry.grants)
+        or (background and "background:self" not in entry.grants)
     ):
         raise InvocationError("cancelled", "Invocation cancelled by disable, removal, approval/grant revocation or safe mode.")
 
@@ -144,7 +153,8 @@ def _process(request: dict, package: Package, manager: Manager, marker: Path, ca
         raise InvocationError("invalid_input", "Invocation request exceeds 32 KiB.")
     if (cancellation is not None and cancellation.is_set()) or marker.exists():
         raise InvocationError("cancelled", "Invocation cancelled by its caller.")
-    _still_allowed(manager, request["extension_id"], request["approved_digest"], request["storage"])
+    capabilities = {name: request.get(name, False) for name in ("managed", "network", "background")}
+    _still_allowed(manager, request["extension_id"], request["approved_digest"], request["storage"], **capabilities)
     with tempfile.TemporaryDirectory(prefix="hosaka-extension-home-") as home:
         environment = {
             "HOME": home, "TMPDIR": home, "PATH": "/usr/bin:/bin",
@@ -174,7 +184,7 @@ def _process(request: dict, package: Package, manager: Manager, marker: Path, ca
                         raise InvocationError("timeout", "Extension exceeded its wall-time limit.")
                     if (cancellation is not None and cancellation.is_set()) or marker.exists():
                         raise InvocationError("cancelled", "Invocation cancelled by its caller.")
-                    _still_allowed(manager, request["extension_id"], request["approved_digest"], request["storage"])
+                    _still_allowed(manager, request["extension_id"], request["approved_digest"], request["storage"], **capabilities)
                     if proc.poll() is not None:
                         _kill_group(proc)
                     for key, _ in selector.select(0.05):
@@ -266,6 +276,7 @@ def run(
     manager: Manager, identifier: str, action: str, params: dict[str, Any], *,
     invocation_id: str | None = None, cancellation: threading.Event | None = None,
     expected_digest: str | None = None,
+    background: bool = False,
 ) -> dict:
     from hosaka.extensions.manager import digest
 
@@ -302,7 +313,12 @@ def run(
         schema = package.manifest.actions[action]
         _validate_instance(params, read_document(package_file(package.root, schema.input_schema), json_only=True), "input")
         state = _directory(manager, "state/extension-jobs")
-        with _slots(state, identifier):
+        if background and (
+            package.manifest.background is None or package.manifest.background.action != action
+            or "background:self" not in entry.grants
+        ):
+            raise InvocationError("not_authorized", "Background execution requires its declared action and explicit grant.")
+        with _slots(state, identifier, background):
             data = _directory(manager, f"extension-data/{identifier}")
             active = state / f"{identifier}.{invocation}.active"
             marker = state / f"{identifier}.{invocation}.cancel"
@@ -320,12 +336,17 @@ def run(
                         "approved_digest": entry.approved_digest, "action": action, "params": params,
                         "package": str(snapshot), "entrypoint": package.manifest.entrypoint.file,
                         "callable": package.manifest.entrypoint.callable,
-                        "data_root": str(data), "storage": "storage:self" in entry.grants and package.manifest.permissions.filesystem == "data-only",
+                        "data_root": str(data), "storage": "storage:self" in entry.grants and package.manifest.permissions.filesystem != "none",
+                        "managed": "storage:directory" in entry.grants and package.manifest.permissions.filesystem == "data-directory",
+                        "network": "network:self" in entry.grants and package.manifest.permissions.network,
+                        "background": background,
+                        "max_file_bytes": package.manifest.limits.max_file_bytes,
                         "timeout_seconds": package.manifest.limits.timeout_seconds,
                     }
                     invoked = True
                     response = _process(request, package, manager, marker, cancellation)
-                    _still_allowed(manager, identifier, entry.approved_digest, request["storage"])
+                    _still_allowed(manager, identifier, entry.approved_digest, request["storage"],
+                                   request["managed"], request["network"], background)
                     if response["error"] is not None:
                         error = response["error"]
                         if not isinstance(error, dict) or error.get("code") != "extension_exception":

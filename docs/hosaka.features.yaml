@@ -85,7 +85,11 @@ features:
     category: "workflow"
     description: >
       Discover enabled packages dynamically and render validated host-owned
-      controls, results, errors and tables without extension HTML or core edits.
+      controls, results, errors and tables in full-window apps without extension
+      HTML or per-package core edits. Validated navigation and collapsed details
+      keep secondary tools behind an app menu while preserving input drafts.
+      Lookup inputs search approved actions with human-readable details and
+      select identities inline. Explicit read-only page loads populate tables.
     owner: "core"
     status: "experimental"
     commands: []
@@ -97,9 +101,33 @@ features:
       - "public/cross-site requests and unauthenticated LAN clients are rejected"
       - "disabled/removed packages disappear; unapproved packages render read-only"
       - "unknown UI or executable bindings are rejected before rendering"
-    tests: ["tests/extensions/test_api.py", "tests/test_terminal_gui.py"]
+    tests: ["tests/extensions/test_authoring.py", "tests/extensions/test_api.py", "tests/test_terminal_gui.py"]
     baller_command: "hosaka extensions enable reference-extension"
     why_you_care: "A second extension needs no per-package React, routes or frontend rebuild."
+
+  - id: "extensions.persistence"
+    name: "managed extension persistence and background actions"
+    category: "workflow"
+    description: >
+      Explicitly granted per-extension data directories, optional network checks,
+      bounded authenticated binary files and supervised background actions.
+      Database schemas, replication and secrets remain extension-owned.
+      Existing v1 defaults and trusted-local non-sandbox semantics are unchanged.
+    owner: "core"
+    status: "experimental"
+    commands:
+      - "/extensions trust <id> --trusted-local --allow-storage --allow-managed-data --allow-network --allow-background"
+    entrypoints:
+      - { type: "http", method: "POST", path: "/api/v1/extensions/{identifier}/files" }
+      - { type: "http", method: "GET", path: "/api/v1/extensions/{identifier}/files/{name}" }
+    permissions: ["storage:directory", "network:self", "background:self"]
+    failure_modes:
+      - "missing managed grant, stale approval, root/public or safe mode refuses access"
+      - "uploads exceeding size/time bounds fail explicitly"
+      - "background failures are logged; revoked jobs are cancelled"
+    tests: ["tests/extensions/test_capabilities.py", "tests/extensions/test_execution.py", "tests/extensions/test_api.py"]
+    baller_command: "hosaka extensions trust my-extension --trusted-local --allow-storage --allow-managed-data"
+    why_you_care: "Persistent applications own their databases and optional synchronization without embedding application code in core."
 
   - id: "obs.events"
     name: "event store"

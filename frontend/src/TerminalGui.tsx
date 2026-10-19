@@ -234,6 +234,7 @@ export function TerminalGui() {
   const [welcome, setWelcome] = useState({ orb: 0, lore: 0 });
   const [loreSlug, setLoreSlug] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const [extensionName, setExtensionName] = useState<string | null>(null);
   const button = useRef<HTMLButtonElement>(null);
   const drawer = useRef<HTMLElement>(null);
 
@@ -247,11 +248,19 @@ export function TerminalGui() {
     drawer.current?.querySelector<HTMLButtonElement>("button")?.focus();
     const key = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (event.target instanceof HTMLElement && event.target.matches('[role="combobox"][aria-autocomplete="list"][aria-expanded="true"]')) return;
         event.preventDefault();
         event.stopImmediatePropagation();
-        close();
+        const navigation = drawer.current?.querySelector<HTMLDetailsElement>("details[data-extension-navigation][open]");
+        if (navigation) {
+          navigation.open = false;
+          navigation.querySelector("summary")?.focus();
+        } else close();
       } else if (event.key === "Tab" && drawer.current) {
-        const focusable = Array.from(drawer.current.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href]"));
+        const focusable = Array.from(drawer.current.querySelectorAll<HTMLElement>(
+          "button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href], summary",
+        )).filter((element) => element.getClientRects().length > 0
+          && !element.closest("details:not([open]) > :not(summary)"));
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
         if (event.shiftKey && document.activeElement === first) {
@@ -265,7 +274,9 @@ export function TerminalGui() {
     };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
-  }, [menu]);
+  }, [menu, extensionName]);
+
+  const extensionOpen = page === "extensions" && extensionName !== null;
 
   return (
     <main className="terminal-gui">
@@ -289,9 +300,11 @@ export function TerminalGui() {
       {menu && (
         <>
           <button className="deck-scrim" aria-label={t("close")} onClick={close} tabIndex={-1} />
-          <aside className={`deck-menu${page === "games" ? " deck-menu-games" : ""}`} id="deck-menu" role="dialog" aria-modal="true" aria-label={t("menu")} ref={drawer}>
-            <header><strong>{t("menu")}</strong><button onClick={close}>{t("close")}</button></header>
-            {!browserDemo && !hostedTerminal && <nav aria-label={t("menu")}>
+          <aside className={`deck-menu${page === "games" ? " deck-menu-games" : ""}${extensionOpen ? " deck-menu-app" : ""}`}
+            id="deck-menu" role="dialog" aria-modal="true" aria-label={extensionName ?? t("menu")} ref={drawer}>
+            <header><strong>{extensionName ?? t("menu")}</strong>
+              <button onClick={close}>{t(extensionOpen ? "extensionsBackToHosaka" : "close")}</button></header>
+            {!browserDemo && !hostedTerminal && !extensionOpen && <nav aria-label={t("menu")}>
               {(["games", "wifi", "bluetooth", "flash", "extensions"] as const).map((item) => (
                 <button key={item} aria-pressed={page === item} onClick={() => setPage(page === item ? null : item)}>{t(item)}</button>
               ))}
@@ -338,7 +351,7 @@ export function TerminalGui() {
               {page === "flash" && <FlashMenu onShow={(text) => { setMenu(false); setFlash(text); }} />}
               {page === "lore" && <LoreMenu initialSlug={loreSlug} />}
               {page === "api" && <ApiHelp />}
-              {page === "extensions" && <ExtensionMenu />}
+              {page === "extensions" && <ExtensionMenu onAppChange={setExtensionName} />}
             </div>}
           </aside>
         </>

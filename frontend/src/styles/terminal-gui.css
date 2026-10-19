@@ -72,6 +72,12 @@ html, body, #root { height: 100%; margin: 0; background: #0b0d10; color-scheme: 
   border-left: 1px solid #343c46;
 }
 .deck-menu-games { width: min(800px, 100%); }
+.deck-menu-app { inset: 0; width: 100%; z-index: 20; border: 0; }
+.deck-menu-app > header { padding: 12px clamp(12px, 3vw, 40px); border-bottom: 1px solid #343c46; }
+.deck-menu-app > header strong { min-width: 0; overflow-wrap: anywhere; }
+.deck-menu-app > header button { flex-shrink: 0; }
+.deck-menu-app .deck-menu-content { padding: 16px clamp(12px, 3vw, 40px) 40px; }
+.deck-menu-app .deck-extensions { max-width: 1120px; margin: 0 auto; }
 .deck-menu > header { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; padding: 8px 12px; gap: 8px; }
 .deck-menu > nav { display: flex; flex-shrink: 0; gap: 6px; padding: 0 12px 8px; }
 .deck-menu > nav { flex-wrap: wrap; }
@@ -155,6 +161,29 @@ html, body, #root { height: 100%; margin: 0; background: #0b0d10; color-scheme: 
 .deck-settings select { width: 100%; min-height: 44px; padding: 8px; background: #0b0d10; color: inherit; border: 1px solid #343c46; }
 .deck-extension-stack { display: flex; flex-direction: column; gap: 12px; }
 .deck-extension-stack h2 { font-size: 16px; }
+.deck-extension-navigation > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.deck-extension-navigation > header h2 { font-size: 20px; margin: 0; }
+.deck-extension-navigation > header > details { position: relative; flex-shrink: 0; }
+.deck-extension-navigation summary, .deck-extension-details summary { cursor: pointer; min-height: 44px; padding: 12px; }
+.deck-extension-navigation summary:focus-visible, .deck-extension-details summary:focus-visible { outline: 2px solid #ffbf46; outline-offset: 2px; }
+.deck-extension-navigation > header summary { border: 1px solid #343c46; background: #151a20; }
+.deck-extension-navigation nav { position: absolute; right: 0; top: calc(100% + 8px); z-index: 2; width: min(300px, calc(100vw - 48px)); max-height: 65dvh; overflow: auto; display: flex; flex-direction: column; gap: 6px; padding: 8px; background: #151a20; border: 1px solid #343c46; box-shadow: 0 12px 28px #0008; }
+.deck-extension-navigation nav button { text-align: left; }
+.deck-extension-navigation nav button[aria-current="page"] { border-color: #ffbf46; color: #ffbf46; }
+.deck-extension-page { min-width: 0; outline: none; }
+.deck-menu-app .deck-extension-stack > label { max-width: 720px; }
+.deck-menu-app .deck-extension-stack > button { align-self: flex-start; }
+.deck-extension-details { border: 1px solid #252c34; }
+.deck-extension-details > .deck-extension-stack, .deck-extension-details > p { padding: 12px; margin: 0; }
+.deck-extension-details.deck-hint { margin-bottom: 16px; }
+.deck-extension-lookup { position: relative; max-width: 720px; }
+.deck-extension-suggestions { position: absolute; top: 100%; left: 0; right: 0; z-index: 3; max-height: 320px; overflow: auto; background: #151a20; border: 1px solid #343c46; box-shadow: 0 12px 28px #0008; }
+.deck-extension-suggestions ul { list-style: none; padding: 0; margin: 0; }
+.deck-extension-suggestions li { cursor: pointer; min-height: 44px; padding: 12px; overflow-wrap: anywhere; }
+.deck-extension-suggestions li[aria-selected="true"], .deck-extension-suggestions li:hover { background: #27313c; }
+.deck-extension-suggestions small { display: block; color: #9ba6b0; }
+.deck-extension-suggestions p { padding: 12px; margin: 0; }
+.deck-extension-result:empty { display: none; }
 .deck-extension-result { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .deck-extension-table { overflow: auto; }
 .deck-extension-table table { width: 100%; border-collapse: collapse; }

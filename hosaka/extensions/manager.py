@@ -29,7 +29,7 @@ class Registration(StrictModel):
     digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     enabled: bool = False
     removed: bool = False
-    grants: list[Literal["storage:self"]] = Field(default_factory=list)
+    grants: list[Literal["storage:self", "storage:directory", "network:self", "background:self"]] = Field(default_factory=list)
     execution_mode: Literal["trusted-local"] | None = None
     approved_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
@@ -324,17 +324,29 @@ class Manager:
             entry.enabled = False
         return {"id": identifier, "removed": True, "code_retained": True, "data_retained": True}
 
-    def trust(self, identifier: str, *, allow_storage: bool = False) -> dict:
+    def trust(self, identifier: str, *, allow_storage: bool = False, allow_managed_data: bool = False,
+              allow_network: bool = False, allow_background: bool = False) -> dict:
         if os.geteuid() == 0:
             raise ExtensionError("Trusted-local approval refuses root; use the unprivileged operator.")
         info = self.info(identifier)
         package = validate_package(Path(info["path"]))
+        if allow_managed_data and package.manifest.permissions.filesystem != "data-directory":
+            raise ExtensionError("Package does not request managed data-directory access.")
+        if allow_network and not package.manifest.permissions.network:
+            raise ExtensionError("Package does not request network access.")
+        if allow_background and package.manifest.background is None:
+            raise ExtensionError("Package does not declare a background action.")
         with self.transaction() as registry:
             self._register(registry, package)
             entry = registry.extensions[identifier]
             entry.execution_mode = "trusted-local"
             entry.approved_digest = digest(package.root)
-            entry.grants = ["storage:self"] if allow_storage else []
+            entry.grants = [
+                name for name, granted in (
+                    ("storage:self", allow_storage), ("storage:directory", allow_managed_data),
+                    ("network:self", allow_network), ("background:self", allow_background),
+                ) if granted
+            ]
         return {
             **self.info(identifier),
             "warning": "Approved code runs with your user privileges. This is NOT an OS sandbox. Enablement remains separate.",

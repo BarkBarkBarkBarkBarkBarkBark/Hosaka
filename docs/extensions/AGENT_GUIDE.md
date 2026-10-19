@@ -49,6 +49,24 @@ reference, not a symlink, copy, import, install script or dependency installatio
    requested permissions. Unknown fields/permissions are errors.
 2. Edit `ui.yaml` using only the validated components and bindings. The native
    Menu renderer handles state, action binding and validated results dynamically.
+   For an app with several tools, use root `Navigation` pages: keep the primary
+   workflow first, place tables/settings in labeled subpanels, and use `Details`
+   for secondary controls. Inputs initialize across all pages and persist while
+   navigating; results clear on panel changes. Every hidden control still counts
+   toward validation bounds. These components need an updated host.
+   Use `LookupInput` for inline read-only search and identity selection rather
+   than making users copy UUIDs between panels. Its text and selection IDs are
+   separate bindings; free-text creation belongs in the extension's transactional
+   submit action, not in the renderer or lookup action.
+   Persistent database/file applications may explicitly request the generic
+   [managed data and background capabilities](PERSISTENCE.md). Keep all schema,
+   migration, authentication and replication code in the independent package.
+   `FileInput` stages bounded binary uploads; `Files` links only private managed
+   objects, never root configuration or arbitrary filesystem paths.
+   Give lookup options human-readable `description_field` details rather than
+   making people distinguish UUIDs. Opaque selected values may carry an expected
+   revision checked by the extension; they are not public authorization tokens.
+   A page's explicit read-only `load` action can populate a table on entry.
    Arbitrary HTML, CSS, JavaScript and expressions are not accepted.
 3. Implement `run(action, params, context)` without importing Hosaka internals.
    The reference actions demonstrate echo, local persistence and a structured

@@ -16,10 +16,33 @@ MAX_DATA_BYTES = 65536
 
 
 class Context:
-    def __init__(self, root: Path, storage: bool):
+    def __init__(self, root: Path, storage: bool, managed: bool = False, network: bool = False):
         self.root = root
         self.storage = storage
+        self.managed = managed
+        self.network = network
         self.events: list[dict] = []
+
+    def data_path(self, relative: str) -> str:
+        if not self.managed:
+            raise PermissionError("storage:directory was not granted")
+        path = Path(relative)
+        if not relative or path.is_absolute() or "\\" in relative or any(part in {"", ".", ".."} for part in relative.split("/")):
+            raise ValueError("Use a relative managed data path")
+        target = self.root / path
+        if not target.resolve().is_relative_to(self.root.resolve()):
+            raise PermissionError("Managed path escapes this extension")
+        current = target
+        while current != self.root:
+            if current.is_symlink():
+                raise PermissionError("Managed paths must not contain symlinks")
+            current = current.parent
+        target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        return str(target)
+
+    def require_network(self) -> None:
+        if not self.network:
+            raise PermissionError("network:self was not granted")
 
     def target(self, name: str) -> Path:
         if not self.storage:
@@ -84,13 +107,14 @@ def main() -> int:
     try:
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
         resource.setrlimit(resource.RLIMIT_CPU, (request["timeout_seconds"] + 1, request["timeout_seconds"] + 2))
-        resource.setrlimit(resource.RLIMIT_FSIZE, (2 * 1024 * 1024, 2 * 1024 * 1024))
+        maximum = request.get("max_file_bytes", 2097152)
+        resource.setrlimit(resource.RLIMIT_FSIZE, (maximum, maximum))
         soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
         resource.setrlimit(resource.RLIMIT_NOFILE, (min(64, soft), hard))
         if sys.platform.startswith("linux"):
             resource.setrlimit(resource.RLIMIT_AS, (256 * 1024 * 1024, 256 * 1024 * 1024))
         package = Path(request["package"])
-        context = Context(Path(request["data_root"]), request["storage"])
+        context = Context(Path(request["data_root"]), request["storage"], request.get("managed", False), request.get("network", False))
         sys.path.insert(0, str(package))
         spec = importlib.util.spec_from_file_location("hosaka_extension_entry", package / request["entrypoint"])
         if spec is None or spec.loader is None:

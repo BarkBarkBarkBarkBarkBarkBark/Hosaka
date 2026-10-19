@@ -4,18 +4,21 @@ from __future__ import annotations
 import asyncio
 import os
 import threading
+import re
+import tempfile
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
-from uuid import UUID
+from urllib.parse import urlsplit, unquote
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from hosaka.extensions.manager import Manager, digest
 from hosaka.extensions.manifest import ExtensionError, package_file, read_document, validate_id, validate_package
-from hosaka.extensions.runner import InvocationError, cancel, run
+from hosaka.extensions.runner import InvocationError, cancel, run, _directory, _slots
+from hosaka.extensions.worker import Context
 from hosaka.web.api_v1 import require_write
 
 
@@ -66,6 +69,81 @@ def _info(instance: Manager, identifier: str) -> dict:
         return instance.info(_id(identifier))
     except (OSError, ExtensionError, ValueError) as exc:
         raise HTTPException(409, "Extension is unavailable; run extensions doctor.") from exc
+
+
+def file_context(instance: Manager, identifier: str, expected: str | None = None) -> Context:
+    info = _info(instance, identifier)
+    if not info["execution_available"] or "storage:directory" not in info["grants"]:
+        raise HTTPException(403, "File access requires an approved enabled package and managed data grant.")
+    package = validate_package(Path(info["path"]))
+    if package.manifest.permissions.filesystem != "data-directory" or (expected and digest(package.root) != expected):
+        raise HTTPException(409, "File capability or source digest changed.")
+    root = instance.root / "extension-data" / identifier
+    if root.is_symlink() or not root.resolve().is_relative_to(instance.root.resolve()):
+        raise HTTPException(409, "Managed data directory is unsafe.")
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return Context(root, True, managed=True)
+
+
+@router.post("/{identifier}/files", openapi_extra={"requestBody": {"required": True, "content": {
+    "application/octet-stream": {"schema": {"type": "string", "format": "binary", "maxLength": 10485760}},
+}}})
+async def upload_file(
+    identifier: str, request: Request, instance: Manager = Depends(manager),
+    expected: str = Header(default="", alias="X-Extension-Digest"),
+    original_name: str = Header(default="", alias="X-Extension-Filename"),
+) -> dict:
+    if not re.fullmatch(r"[a-f0-9]{64}", expected):
+        raise HTTPException(422, "Use the current source digest.")
+    context = file_context(instance, identifier, expected)
+    name = unquote(original_name)
+    if not name or len(name) > 255 or Path(name).name != name or "\\" in name or any(ord(c) < 32 for c in name):
+        raise HTTPException(422, "Use a plain original filename.")
+    token = uuid4().hex
+    target = Path(context.data_path("uploads/" + token))
+    if len(list(target.parent.iterdir())) >= 128:
+        raise HTTPException(409, "Unattached upload limit reached; import or explicitly remove staged files.")
+    fd, temporary = tempfile.mkstemp(prefix=".upload-", dir=target.parent)
+    total = 0
+    try:
+        async def consume(stream):
+            nonlocal total
+            async for chunk in request.stream():
+                total += len(chunk)
+                if total > 10485760:
+                    raise HTTPException(413, "Evidence uploads are limited to 10 MiB.")
+                stream.write(chunk)
+        with os.fdopen(fd, "wb") as stream, _slots(_directory(instance, "state/extension-jobs"), identifier):
+            await asyncio.wait_for(consume(stream), timeout=30)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if total == 0:
+            raise HTTPException(422, "Empty uploads are not accepted.")
+        file_context(instance, identifier, expected)
+        os.replace(temporary, target)
+    except asyncio.TimeoutError:
+        raise HTTPException(408, "Upload exceeded its 30-second time limit.") from None
+    except InvocationError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    return {"id": token, "filename": name, "size_bytes": total}
+
+
+@router.get("/{identifier}/files/{name}")
+def download_file(identifier: str, name: str, instance: Manager = Depends(manager)) -> FileResponse:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,199}", name):
+        raise HTTPException(422, "Invalid object name.")
+    context = file_context(instance, identifier)
+    try:
+        path = Path(context.data_path("files/" + name))
+    except (PermissionError, ValueError):
+        raise HTTPException(403, "Object path is unsafe.") from None
+    if not path.is_file():
+        raise HTTPException(404, "Object not available locally; check attachment synchronization.")
+    return FileResponse(path, media_type="application/octet-stream", filename=name,
+                        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
 
 
 @router.get("")

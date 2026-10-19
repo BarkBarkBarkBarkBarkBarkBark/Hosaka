@@ -184,7 +184,7 @@ def test_bootstrap_diagnoses_unrelated_invalid_package_without_blocking_core(man
     lambda m: m["entrypoint"].update(file="../outside.py"),
     lambda m: m["entrypoint"].update(file="/tmp/absolute.py"),
     lambda m: m["entrypoint"].update(callable="os.system"),
-    lambda m: m["permissions"].update(network=True),
+    lambda m: m["permissions"].update(network="yes"),
     lambda m: m["permissions"].update(subprocess=True),
     lambda m: m["permissions"].update(filesystem="home"),
     lambda m: m["limits"].update(timeout_seconds=0),
@@ -257,6 +257,71 @@ def test_recursive_or_oversized_ui_is_rejected():
     stack["children"].append(stack)
     with pytest.raises(ExtensionError, match="nesting"):
         validate_view({"version": 1, "view": stack}, {"echo"})
+
+
+def test_navigation_and_closed_details_validate_all_pages_and_bindings():
+    view = {"version": 1, "view": {"type": "Navigation", "pages": [
+        {"label": "Main", "view": {"type": "Button", "label": "Run", "action": "echo",
+                                 "params": {"message": "params.hidden_message"}}},
+        {"label": "Tools", "view": {"type": "Details", "label": "Advanced", "children": [
+            {"type": "TextInput", "id": "hidden_message", "label": "Message", "default": "kept"},
+        ]}},
+    ]}}
+    validate_view(view, {"echo"})
+    view["view"]["pages"][1]["view"]["children"][0]["id"] = "changed"
+    with pytest.raises(ExtensionError, match="unknown input"):
+        validate_view(view, {"echo"})
+
+
+@pytest.mark.parametrize("node", [
+    {"type": "Navigation", "pages": []},
+    {"type": "Navigation", "pages": [{"label": "A", "view": {"type": "Text", "text": "ok"}, "url": "https://example.test"}]},
+    {"type": "Navigation", "pages": [{"label": "", "view": {"type": "Text", "text": "ok"}}]},
+    {"type": "Navigation", "pages": [{"label": "Same", "view": {"type": "Text", "text": "ok"}}] * 2},
+    {"type": "Navigation", "pages": [{"label": "A", "view": {"type": "Text", "text": "ok"}}] * 13},
+    {"type": "Stack", "children": [{"type": "Navigation", "pages": [{"label": "A", "view": {"type": "Text", "text": "ok"}}]}]},
+    {"type": "Details", "label": "More", "children": []},
+    {"type": "Details", "label": "More", "children": [{"type": "Text", "text": "ok"}], "open": True},
+])
+def test_invalid_navigation_and_details_fail_closed(node):
+    with pytest.raises(ExtensionError):
+        validate_view({"version": 1, "view": node}, {"echo"})
+
+
+def test_lookup_validates_selection_id_and_query_fields_without_executing():
+    node = {"type": "LookupInput", "id": "name", "selection_id": "person", "label": "Name",
+            "action": "find", "query_param": "query", "label_field": "display_name",
+            "value_field": "id", "max_length": 100}
+    validate_view({"version": 1, "view": node}, {"find"})
+    for field, value in (
+        ("selection_id", "name"), ("selection_id", "bad.id"), ("action", "missing"),
+        ("query_param", "query.name"), ("label_field", "expression()"), ("value_field", "a/b"),
+        ("max_length", True), ("max_length", 0), ("max_length", 2049),
+        ("params", None), ("params", {"query": "params.name"}), ("description_field", "unsafe.path"),
+    ):
+        with pytest.raises(ExtensionError):
+            validate_view({"version": 1, "view": {**node, field: value}}, {"find"})
+    with pytest.raises(ExtensionError, match="unique"):
+        validate_view({"version": 1, "view": {"type": "Stack", "children": [
+            node, {"type": "TextInput", "id": "person", "label": "Collision"},
+        ]}}, {"find"})
+
+
+def test_page_load_and_lookup_context_bindings_are_validated():
+    lookup = {"type": "LookupInput", "id": "name", "selection_id": "selection", "label": "Find",
+              "action": "find", "query_param": "query", "label_field": "name", "value_field": "value",
+              "description_field": "detail", "max_length": 100, "params": {"status": "params.status"}}
+    page = {"label": "Records", "load": {"action": "find", "params": {"status": "params.status"}},
+            "view": {"type": "Stack", "children": [
+                lookup, {"type": "Select", "id": "status", "label": "Status", "options": ["open", "all"]},
+            ]}}
+    validate_view({"version": 1, "view": {"type": "Navigation", "pages": [page]}}, {"find"})
+    for load in (
+        {"action": "missing", "params": {}}, {"action": "find", "params": {"query": "params.unknown"}},
+        {"action": "find", "params": {}, "url": "https://example.test"}, {"action": "find", "params": []},
+    ):
+        with pytest.raises(ExtensionError):
+            validate_view({"version": 1, "view": {"type": "Navigation", "pages": [{**page, "load": load}]}}, {"find"})
 
 
 def test_symlinked_managed_directory_cannot_redirect_bootstrap(manager, tmp_path):

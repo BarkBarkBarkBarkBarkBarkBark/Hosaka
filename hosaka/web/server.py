@@ -392,7 +392,13 @@ async def lifespan(app: FastAPI):  # noqa: ANN001
             save(discovered)
             apply_to_env(discovered)
             log.info("Using discovered Ollama server at %s", discovered["base_url"])
-    yield
+    from hosaka.extensions.scheduler import Scheduler
+    scheduler = Scheduler()
+    scheduler.start()
+    try:
+        yield
+    finally:
+        await asyncio.to_thread(scheduler.close)
     log.info("Hosaka web server stopping.")
 
 

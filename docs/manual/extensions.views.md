@@ -17,7 +17,7 @@ A second extension needs no per-package React, routes or frontend rebuild.
 
 ## what it does
 
-Discover enabled packages dynamically and render validated host-owned controls, results, errors and tables without extension HTML or core edits.
+Discover enabled packages dynamically and render validated host-owned controls, results, errors and tables in full-window apps without extension HTML or per-package core edits. Validated navigation and collapsed details keep secondary tools behind an app menu while preserving input drafts. Lookup inputs search approved actions with human-readable details and select identities inline. Explicit read-only page loads populate tables.
 
 ## entrypoints
 

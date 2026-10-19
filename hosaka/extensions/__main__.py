@@ -24,6 +24,9 @@ def main(argv: list[str] | None = None) -> int:
     command.add_argument("id")
     command.add_argument("--trusted-local", action="store_true", required=True, help="Approve current source to run with your user privileges; NOT sandboxed")
     command.add_argument("--allow-storage", action="store_true", help="Grant only this extension's data capability")
+    command.add_argument("--allow-managed-data", action="store_true", help="Grant this extension's persistent directory (SQLite/files)")
+    command.add_argument("--allow-network", action="store_true", help="Grant requested network access")
+    command.add_argument("--allow-background", action="store_true", help="Grant the declared periodic background action")
     command.add_argument("--json", action="store_true")
     command = commands.add_parser("run")
     command.add_argument("id")
@@ -76,7 +79,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "remove":
             result = manager.remove(args.id)
         elif args.command == "trust":
-            result = manager.trust(args.id, allow_storage=args.allow_storage)
+            result = manager.trust(args.id, allow_storage=args.allow_storage, allow_managed_data=args.allow_managed_data,
+                                   allow_network=args.allow_network, allow_background=args.allow_background)
         elif args.command == "revoke":
             result = manager.revoke(args.id)
         elif args.command == "safe-mode":

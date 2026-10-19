@@ -1306,6 +1306,145 @@
         ]
       }
     },
+    "/api/v1/extensions/{identifier}/files": {
+      "post": {
+        "tags": [
+          "extensions",
+          "managed extension persistence and background actions"
+        ],
+        "summary": "Upload File",
+        "operationId": "upload_file_api_v1_extensions__identifier__files_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          },
+          {
+            "name": "X-Extension-Digest",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Extension-Digest"
+            }
+          },
+          {
+            "name": "X-Extension-Filename",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Extension-Filename"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Upload File Api V1 Extensions  Identifier  Files Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "maxLength": 10485760
+              }
+            }
+          }
+        },
+        "x-feature-id": "extensions.persistence"
+      }
+    },
+    "/api/v1/extensions/{identifier}/files/{name}": {
+      "get": {
+        "tags": [
+          "extensions",
+          "managed extension persistence and background actions"
+        ],
+        "summary": "Download File",
+        "operationId": "download_file_api_v1_extensions__identifier__files__name__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-feature-id": "extensions.persistence"
+      }
+    },
     "/api/v1/extensions": {
       "get": {
         "tags": [
@@ -5072,8 +5211,12 @@
       "description": "Run explicitly digest-approved code in bounded workers with schema checks, narrow data/log context, safe mode and cancellation. NOT an OS sandbox; approved Python retains user privileges. Root/public execution is refused."
     },
     {
+      "name": "managed extension persistence and background actions",
+      "description": "Explicitly granted per-extension data directories, optional network checks, bounded authenticated binary files and supervised background actions. Database schemas, replication and secrets remain extension-owned. Existing v1 defaults and trusted-local non-sandbox semantics are unchanged."
+    },
+    {
       "name": "declarative extension Menu views",
-      "description": "Discover enabled packages dynamically and render validated host-owned controls, results, errors and tables without extension HTML or core edits."
+      "description": "Discover enabled packages dynamically and render validated host-owned controls, results, errors and tables in full-window apps without extension HTML or per-package core edits. Validated navigation and collapsed details keep secondary tools behind an app menu while preserving input drafts. Lookup inputs search approved actions with human-readable details and select identities inline. Explicit read-only page loads populate tables."
     },
     {
       "name": "user manual",

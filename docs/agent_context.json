@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "generated_at_utc": "2026-10-18T16:53:34Z",
+  "generated_at_utc": "2026-10-19T02:28:18Z",
   "single_source_of_truth": "Hosaka/docs/hosaka.features.yaml",
   "human_seed": "Hosaka/docs/AGENT_CONTEXT.md",
   "plan": "Hosaka/docs/increased_observability.yaml",
@@ -25,12 +25,13 @@
     ]
   },
   "catalog_summary": {
-    "total_features": 11,
+    "total_features": 12,
     "by_status": {
       "experimental": [
         "extensions.authoring",
         "extensions.execution",
         "extensions.views",
+        "extensions.persistence",
         "obs.canary"
       ],
       "stable": [
@@ -50,6 +51,7 @@
         "extensions.authoring",
         "extensions.execution",
         "extensions.views",
+        "extensions.persistence",
         "manual"
       ],
       "observability": [
@@ -109,6 +111,16 @@
       "method": "POST",
       "path": "/api/v1/extensions/{identifier}/cancel/{invocation_id}",
       "feature_id": "extensions.execution"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/extensions/{identifier}/files",
+      "feature_id": "extensions.persistence"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/extensions/{identifier}/files/{name}",
+      "feature_id": "extensions.persistence"
     },
     {
       "method": "GET",

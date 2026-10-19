@@ -54,8 +54,8 @@ class UI(StrictModel):
 
 
 class Permissions(StrictModel):
-    network: Literal[False]
-    filesystem: Literal["data-only", "none"]
+    network: bool
+    filesystem: Literal["data-only", "data-directory", "none"]
     subprocess: Literal[False]
 
     @field_validator("network", "subprocess", mode="before")
@@ -81,6 +81,12 @@ class Action(StrictModel):
 class Limits(StrictModel):
     timeout_seconds: int = Field(ge=1, le=60)
     max_output_bytes: int = Field(ge=1024, le=1048576)
+    max_file_bytes: int = Field(default=2097152, ge=2097152, le=1073741824)
+
+
+class Background(StrictModel):
+    action: str
+    interval_seconds: int = Field(ge=15, le=86400)
 
 
 class Manifest(StrictModel):
@@ -98,6 +104,7 @@ class Manifest(StrictModel):
     menu: Menu
     actions: dict[str, Action] = Field(min_length=1, max_length=32)
     limits: Limits
+    background: Background | None = None
 
     @field_validator("schema_version", mode="before")
     @classmethod
@@ -213,10 +220,15 @@ def validate_schema(document: object) -> None:
 
 UI_FIELDS = {
     "Stack": {"type", "children"},
+    "Navigation": {"type", "pages"},
+    "Details": {"type", "label", "children"},
     "Heading": {"type", "text"},
     "Text": {"type", "text"},
     "Button": {"type", "label", "action", "params"},
     "TextInput": {"type", "id", "label", "default"},
+    "FileInput": {"type", "id", "filename_id", "label"},
+    "Files": {"type", "bind"},
+    "LookupInput": {"type", "id", "selection_id", "label", "action", "query_param", "label_field", "value_field", "description_field", "max_length", "params"},
     "NumberInput": {"type", "id", "label", "default"},
     "Select": {"type", "id", "label", "options", "default"},
     "Checkbox": {"type", "id", "label", "default"},
@@ -235,6 +247,17 @@ def validate_view(document: object, actions: set[str]) -> None:
     ids: set[str] = set()
     bindings: list[str] = []
     count = 0
+
+    def parameters(value: object) -> None:
+        if not isinstance(value, dict) or len(value) > 32:
+            raise ExtensionError("Action params must map bounded property names to input bindings.")
+        for name, binding in value.items():
+            if (
+                not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", name)
+                or not isinstance(binding, str) or not re.fullmatch(r"params\.[a-z][a-z0-9_]{0,63}", binding)
+            ):
+                raise ExtensionError("Action params use only params.<input_id> bindings.")
+            bindings.append(binding)
 
     def visit(component: object, depth: int = 0) -> None:
         nonlocal count
@@ -256,27 +279,63 @@ def validate_view(document: object, actions: set[str]) -> None:
             if not isinstance(identifier, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", identifier) or identifier in ids:
                 raise ExtensionError("UI input IDs must be unique lowercase identifiers.")
             ids.add(identifier)
-        if kind == "Stack":
+        if kind == "LookupInput":
+            selection_id = component.get("selection_id")
+            if not isinstance(selection_id, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", selection_id) or selection_id in ids:
+                raise ExtensionError("Lookup selection IDs must be unique lowercase identifiers.")
+            ids.add(selection_id)
+            for field in ("query_param", "label_field", "value_field"):
+                value = component.get(field)
+                if not isinstance(value, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", value):
+                    raise ExtensionError("Lookup fields must be plain property identifiers.")
+            if "description_field" in component and (
+                not isinstance(component["description_field"], str)
+                or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", component["description_field"])
+            ):
+                raise ExtensionError("Lookup description_field must be a plain property identifier.")
+            context = component.get("params", {})
+            if isinstance(context, dict) and component.get("query_param") in context:
+                raise ExtensionError("Lookup query_param cannot also be a context parameter.")
+            maximum = component.get("max_length")
+            if type(maximum) is not int or not 1 <= maximum <= 2048:
+                raise ExtensionError("Lookup max_length must be an integer from 1 to 2048.")
+        if kind == "FileInput":
+            filename_id = component.get("filename_id")
+            if not isinstance(filename_id, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", filename_id) or filename_id in ids:
+                raise ExtensionError("File filename IDs must be globally unique identifiers.")
+            ids.add(filename_id)
+        if kind == "Navigation":
+            pages = component.get("pages")
+            if depth != 0 or not isinstance(pages, list) or not 1 <= len(pages) <= 12:
+                raise ExtensionError("Navigation is root-only and requires 1-12 pages.")
+            labels: set[str] = set()
+            for page in pages:
+                if not isinstance(page, dict) or not {"label", "view"} <= set(page) or set(page) - {"label", "view", "load"}:
+                    raise ExtensionError("Navigation pages require label/view and optional load.")
+                label = page["label"]
+                if not isinstance(label, str) or not label.strip() or len(label) > 80 or label in labels:
+                    raise ExtensionError("Navigation page labels must be unique bounded nonempty strings.")
+                labels.add(label)
+                if "load" in page:
+                    load = page["load"]
+                    if not isinstance(load, dict) or set(load) != {"action", "params"}:
+                        raise ExtensionError("Page load requires only action and params.")
+                    if not isinstance(load["action"], str) or load["action"] not in actions:
+                        raise ExtensionError("Page load refers to an undeclared action.")
+                    parameters(load["params"])
+                visit(page["view"], depth + 1)
+        if kind in {"Stack", "Details"}:
             children = component.get("children")
             if not isinstance(children, list) or not children:
-                raise ExtensionError("Stack requires nonempty children.")
+                raise ExtensionError(f"{kind} requires nonempty children.")
             for child in children:
                 visit(child, depth + 1)
-        if kind == "Button":
+        if kind in {"Button", "LookupInput"}:
             action = component.get("action")
             if not isinstance(action, str) or action not in actions:
-                raise ExtensionError("UI button refers to an undeclared action.")
+                raise ExtensionError("UI control refers to an undeclared action.")
             if "params" in component:
-                parameters = component["params"]
-                if not isinstance(parameters, dict) or len(parameters) > 32:
-                    raise ExtensionError("Button params must map bounded property names to input bindings.")
-                for name, binding in parameters.items():
-                    if (
-                        not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", name)
-                        or not isinstance(binding, str) or not re.fullmatch(r"params\.[a-z][a-z0-9_]{0,63}", binding)
-                    ):
-                        raise ExtensionError("Button params use only params.<input_id> bindings.")
-                    bindings.append(binding)
+                parameters(component["params"])
         if kind == "Select":
             options = component.get("options")
             if not isinstance(options, list) or not 1 <= len(options) <= 100 or any(
@@ -334,4 +393,6 @@ def validate_package(root: Path) -> Package:
             validate_schema(read_document(package_file(root, name), json_only=True))
     view = read_document(package_file(root, manifest.ui.file))
     validate_view(view, set(manifest.actions))
+    if manifest.background is not None and manifest.background.action not in manifest.actions:
+        raise ExtensionError("Background action must be declared.")
     return Package(root, manifest, view)
