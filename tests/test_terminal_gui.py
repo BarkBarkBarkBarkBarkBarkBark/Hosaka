@@ -16,6 +16,14 @@ from hosaka.web import bluetooth_api, tui_ws
 from hosaka.web.api_v1 import require_auth, require_write
 
 
+def test_uvicorn_has_websocket_transport():
+    from uvicorn import Config
+
+    config = Config(FastAPI())
+    config.load()
+    assert config.ws_protocol_class is not None
+
+
 def test_menu_orbs_match_terminal_frames():
     from hosaka.tui.style import _ORB_FRAMES
 
