@@ -13,7 +13,7 @@ unimplemented proposal and is not a compatibility alias.
 are rejected. IDs/action names are non-reserved lowercase kebab-case, at most
 64 characters. Package versions use `major.minor.patch`.
 
-See the complete [reference manifest](../../examples/extensions/reference-extension/extension.yaml).
+See the complete [reference manifest](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/examples/extensions/reference-extension/extension.yaml).
 Required fields: `schema_version`, `id`, `name`, `version`, `description`,
 `requires`, `type: view`, `category`, `entrypoint`, `actions`, `ui`,
 `permissions`, `menu`, `limits`. Unknown fields and duplicate YAML keys fail.

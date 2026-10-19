@@ -7,9 +7,9 @@ machines, and breaks the migration into small implementation steps.
 
 ## What shipped in this pass
 
-- A canonical command spec in [docs/hosaka_ui_commands.yaml](docs/hosaka_ui_commands.yaml)
-- A renderer-side dispatcher in [frontend/src/ui/hosakaUi.ts](frontend/src/ui/hosakaUi.ts)
-- Shell refactors in [frontend/src/shell/HosakaShell.ts](frontend/src/shell/HosakaShell.ts)
+- A canonical command spec in [docs/hosaka_ui_commands.yaml](hosaka_ui_commands.yaml)
+- A renderer-side dispatcher in [archived hosakaUi.ts](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/archive/desktop-frontend/src/ui/hosakaUi.ts)
+- Shell refactors in [archived HosakaShell.ts](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/archive/desktop-frontend/src/shell/HosakaShell.ts)
   so existing slash commands reuse the new command layer instead of
   duplicating `CustomEvent` dispatch logic
 - A global bridge at `window.hosakaUI` for renderer-local automation and future
@@ -63,7 +63,7 @@ That requires a stable control surface behind the UI.
 **Current state**
 
 - The shell has slash commands, but many of them directly dispatch raw
-  `CustomEvent`s from [frontend/src/shell/HosakaShell.ts](frontend/src/shell/HosakaShell.ts).
+  `CustomEvent`s from [archived HosakaShell.ts](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/archive/desktop-frontend/src/shell/HosakaShell.ts).
 - Commands are partially de-duplicated, but aliases like `/reddit` and `/discord`
   are still implemented as custom branches.
 
@@ -112,7 +112,7 @@ That requires a stable control surface behind the UI.
 
 **Atomized steps**
 
-1. Add [frontend/src/ui/hosakaUi.ts](frontend/src/ui/hosakaUi.ts)
+1. Add [hosakaUi.ts (now archived)](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/archive/desktop-frontend/src/ui/hosakaUi.ts)
 2. Expose `executeHosakaUiCommand()`
 3. Keep `CustomEvent` dispatch as a compatibility layer inside that module
 4. Move shell code to call the dispatcher

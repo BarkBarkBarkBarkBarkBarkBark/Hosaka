@@ -21,7 +21,7 @@ The contract is short:
 - GitHub already runs the API, search, notifications, and access control.
   We do not need to host another tracker yet.
 
-The wrapper lives at [`hosaka/issues/`](../hosaka/issues/) and exposes a
+The wrapper lives at [`hosaka/issues/`](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/tree/main/hosaka/issues/) and exposes a
 small CLI: `hosaka issue ...`. Behind it is a pluggable
 `IssueBackend` ABC so we can swap in `git-bug`, Taskwarrior, or Forgejo's
 `tea` later without changing operator muscle memory.
@@ -152,7 +152,7 @@ still lands.
 
 ## Future backends
 
-The `IssueBackend` ABC in [`hosaka/issues/backend.py`](../hosaka/issues/backend.py)
+The `IssueBackend` ABC in [`hosaka/issues/backend.py`](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/hosaka/issues/backend.py)
 exists so we can layer in alternatives without changing the CLI:
 
 - **`git-bug`** — distributed/offline-first tracker embedded in the

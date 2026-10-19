@@ -49,9 +49,9 @@ for name in ("extensions", "extension-data", "state", "logs", "games/roms/psx"):
     assert (host / "runtime" / name).is_dir(), name
 PY
 cli extensions create qualification-demo --json >"$temp/qualification-package.json"
-printf 'owner-edited package\n' >"$HOSAKA_HOME/runtime/extensions/qualification-demo/owner.txt"
 cli shell <<'SH'
 set -e
+printf 'owner-edited package\n' >"$HOSAKA_DATA_DIR/extensions/qualification-demo/owner.txt"
 /opt/hosaka-field-terminal/.venv/bin/python - <<'PY'
 import hashlib
 from pathlib import Path
@@ -126,32 +126,32 @@ assert json.loads(Path(sys.argv[1]).read_text())["dry_run"] is True
 PY
 cli down
 TEST_NODE_ID=""
-python3 - "$HOSAKA_HOME" "$temp/inventory-before.json" <<'PY'
+snapshot_runtime() {
+docker run --rm -i --read-only --network none \
+    --mount "type=bind,src=$HOSAKA_HOME,dst=/client-state,readonly" \
+    --entrypoint /opt/hosaka-field-terminal/.venv/bin/python \
+    "$HOSAKA_IMAGE" -B - <<'PY'
 import json
 import stat
-import sys
 from pathlib import Path
 
-root = Path(sys.argv[1])
+root = Path("/client-state")
 snapshot = {
     str(path.relative_to(root)): [stat.S_IMODE(path.stat().st_mode), path.read_bytes().hex() if path.is_file() else None]
     for path in [root, *root.rglob("*")]
 }
-Path(sys.argv[2]).write_text(json.dumps(snapshot))
+print(json.dumps(snapshot))
 PY
+}
+snapshot_runtime >"$temp/inventory-before.json"
 cli migrate --dry-run --json >"$temp/inventory.json"
-python3 - "$HOSAKA_HOME" "$temp/inventory-before.json" "$temp/inventory.json" <<'PY'
+snapshot_runtime >"$temp/inventory-after.json"
+python3 - "$temp/inventory-before.json" "$temp/inventory-after.json" "$temp/inventory.json" <<'PY'
 import json
-import stat
 import sys
 from pathlib import Path
 
-root = Path(sys.argv[1])
-snapshot = {
-    str(path.relative_to(root)): [stat.S_IMODE(path.stat().st_mode), path.read_bytes().hex() if path.is_file() else None]
-    for path in [root, *root.rglob("*")]
-}
-assert snapshot == json.loads(Path(sys.argv[2]).read_text())
+assert json.loads(Path(sys.argv[1]).read_text()) == json.loads(Path(sys.argv[2]).read_text())
 report = json.loads(Path(sys.argv[3]).read_text())
 assert report["dry_run"] is True and report["apply_supported"] is False
 assert report["effective"]["picoclaw_config"] == "/root/.picoclaw/config.json"

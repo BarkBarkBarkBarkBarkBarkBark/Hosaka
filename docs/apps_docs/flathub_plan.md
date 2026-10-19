@@ -78,7 +78,7 @@ discover  →  preview  →  stage  →  install  →  launch  →  inspect
 ## the manifest contract
 
 Every staged or hand-authored manifest must satisfy
-[manifest.schema.yaml](../../hosaka-apps/manifest.schema.yaml). Notable
+[manifest.schema.yaml](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/hosaka-apps/manifest.schema.yaml). Notable
 invariants:
 
 - `flatpak_id` matches the appstream id from Flathub.
