@@ -11,8 +11,8 @@
 
 A terminal-first AI workspace for your laptop, Raspberry Pi, or cyberdeck.
 Type normally to talk to an agent that can use tools and work on files.
-The Python TUI is the app; the optional React/Electron host adds a small
-**Menu**, not a second chat interface.
+The default source setup opens a React/Electron host with the Python TUI and
+a small **Menu**, not a second chat interface. Bare-terminal use is optional.
 
 An alien plant grows as you use the terminal and wilts when you leave it.
 There is no wrong way.
@@ -105,21 +105,41 @@ Use `hosaka unlink` to return the Docker client to its local node.
 
 ## Install from source (macOS / Linux)
 
-Requires Python 3.10+, Git, and internet access. Run as your normal user,
-**not sudo**:
+Requires Python 3.10+, Node.js 20+ with npm (22 LTS recommended), Git, internet
+access, and a graphical desktop. Run in your **host terminal**, as your normal
+user, **not sudo**. If VS Code is installed through Flatpak, use your desktop's
+Terminal app or first run `flatpak-spawn --host bash`.
+
+On **Rocky Linux / RHEL 9**, install prerequisites in the host terminal:
+
+```bash
+sudo dnf install git python3.12 python3.12-pip
+sudo dnf module install nodejs:22/common
+```
+
+Then install and start the graphical dev host:
 
 ```bash
 git clone https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka.git
 cd Hosaka
 bash install.sh
+export PATH="$HOME/.local/bin:$PATH"
+hosaka doctor --offline
+hosaka dev
 ```
 
-Open a new terminal, or source the shell startup file printed by the installer:
+`hosaka dev` starts the local backend, Vite dev server, and Electron window.
+Use `hosaka dev --web` for the browser-only host at `http://localhost:5173`;
+keep the address on `localhost` or `127.0.0.1` for the embedded terminal.
+`hosaka down` stops the local dev session. `hosaka up` is a Docker-client
+command, not a source-install command.
+
+For future sessions, open a new terminal or source the shell startup file
+printed by the installer. Configure a different provider only when needed:
 
 ```bash
 hosaka configure llm --provider openai --model gpt-4.1
-cd ~/your-project
-hosaka tui
+hosaka dev
 ```
 
 The [source installer](install.sh) creates a repo-local Python environment,
@@ -128,10 +148,31 @@ seeds Hosaka's agent runtime, and adds a launcher under `~/.local/bin`.
 Keep the checkout: the launcher uses it directly. `HOSAKA_PREFIX` changes the
 launcher prefix.
 
-For the graphical TUI + Menu host, install Node.js/npm and use
-`bash install.sh --gui`, then `hosaka gui`. Bare-terminal installs need neither
-Node nor a desktop session. This user-level setup does not configure boot or
-system services.
+The installer discovers a supported Python, including versioned executables
+such as `python3.12` when the system `python3` is too old. Set
+`PYTHON=/path/to/python bash install.sh` to select one explicitly. Incompatible
+repo-local Python environments are preserved under a `.python-backup.*` suffix
+before replacement; parent-directory environments are left untouched. Backend
+dependencies include the WebSocket transport required by the embedded TUI.
+
+GUI dependencies are installed by default; `bash install.sh --gui` remains an
+alias. `hosaka gui` also opens the graphical host. For a terminal-only install
+without Node.js or a desktop session:
+
+```bash
+bash install.sh --tui
+export PATH="$HOME/.local/bin:$PATH"
+cd ~/your-project
+hosaka tui
+```
+
+This user-level setup does not configure boot or system services.
+
+If the GUI reports **TUI connection unavailable** after upgrading an older
+installation, rerun `bash install.sh` to install the WebSocket dependency, then
+run `hosaka down` and `hosaka dev`. If it still fails, inspect
+`logs/dev/backend.log`. The native terminal remains disabled for remote origins
+and public-mode backends; do not bypass those restrictions.
 
 **Source agents run with your host user's permissions.** The calling directory
 is the TUI's project workspace, not an isolation boundary.
@@ -211,6 +252,33 @@ Installers seed a validated reference package, disabled and without grants.
 Discovery and validation do not import package code, run its tests, or install
 dependencies. Existing package source, data, approvals, and enablement survive
 initialization.
+
+In **Menu → Extensions**, paste a public HTTPS Git repository URL or a local
+package directory, then choose **Import extension**. Hosaka validates and copies
+the source into `hosaka paths --json` → `paths.extensions/ID` (normally
+`~/.hosaka/extensions/ID`), using the manifest ID rather than the repository name.
+The backend must run locally as your unprivileged operator. Imported packages
+remain **disabled and untrusted**, with no grants or code execution.
+
+The same import is available from the CLI:
+
+```bash
+hosaka extensions install https://github.com/OWNER/EXTENSION.git
+hosaka extensions install /absolute/path/to/my-extension
+```
+
+Git imports need Git on the backend, accept public HTTPS repository URLs only,
+and time out after 60 seconds. URLs with credentials, query strings or fragments
+are rejected. No host Git credentials/configuration, hooks, submodules or package
+install scripts are used. The repository root must contain `extension.yaml`.
+Imported source is a snapshot without `.git` history or automatic updates;
+existing IDs, folders and data are never overwritten.
+
+To keep developing directly from an existing checkout instead of copying it:
+
+```bash
+hosaka extensions link /absolute/path/to/my-extension
+```
 
 After inspecting the source, the **owner** can approve the current digest,
 grant storage, and separately enable the package:
@@ -343,7 +411,7 @@ Read [AGENTS.md](AGENTS.md) first. For nontrivial core work, follow
 tests. Do not automatically approve extensions, migrate credentials, deploy,
 or commit on the operator's behalf.
 
-For local GUI development after `bash install.sh --gui`:
+The default source install is also the local GUI development setup:
 
 ```bash
 hosaka dev          # backend + Vite + Electron; reuses a responsive session

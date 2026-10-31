@@ -163,6 +163,41 @@ def catalog(instance: Manager = Depends(manager)) -> dict:
     }
 
 
+class InstallationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    source: str = Field(min_length=1, max_length=2048)
+
+
+async def installation_body(request: Request) -> InstallationRequest:
+    loopback = {"127.0.0.1", "::1", "localhost"}
+    origin = urlsplit(request.headers.get("origin", ""))
+    if request.client is None or request.client.host not in loopback or origin.hostname not in loopback:
+        raise HTTPException(403, "Extension import requires a local host and loopback browser origin.")
+    length = request.headers.get("content-length")
+    if length and (not length.isdecimal() or int(length) > 8192):
+        raise HTTPException(413, "Extension import requests are limited to 8 KiB.")
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > 8192:
+            raise HTTPException(413, "Extension import requests are limited to 8 KiB.")
+    try:
+        return InstallationRequest.model_validate_json(raw)
+    except (ValidationError, ValueError) as exc:
+        raise HTTPException(422, "Provide a local source directory or HTTPS Git repository URL.") from exc
+
+
+@router.post("/install", status_code=201, openapi_extra={"requestBody": {"required": True, "content": {
+    "application/json": {"schema": InstallationRequest.model_json_schema()},
+}}})
+def install(body: InstallationRequest = Depends(installation_body), instance: Manager = Depends(manager)) -> dict:
+    try:
+        info = instance.install(body.source)
+    except (OSError, ExtensionError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {key: info[key] for key in ("id", "name", "version", "path", "enabled", "approved_digest", "grants")}
+
+
 @router.get("/{identifier}/view")
 def view(identifier: str, instance: Manager = Depends(manager)) -> dict:
     info = _info(instance, identifier)

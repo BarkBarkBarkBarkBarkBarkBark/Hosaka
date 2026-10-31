@@ -17,7 +17,7 @@ Start an independent package without modifying core or exposing provider secrets
 
 ## what it does
 
-Scaffold, validate and discover independent extension.yaml packages and declarative views; manage private registration and owner lifecycle metadata. Authoring never executes package code; execution requires separate approval.
+Scaffold, validate and discover independent extension.yaml packages and declarative views; manage private registration and owner lifecycle metadata. Import local directories or public HTTPS Git source into managed extensions through the local Menu or CLI, disabled and unapproved without overwrites. Authoring never executes package code; execution requires separate approval.
 
 ## commands
 
@@ -26,6 +26,7 @@ Scaffold, validate and discover independent extension.yaml packages and declarat
 - `/extensions create <id>`
 - `/extensions validate <id-or-path>`
 - `/extensions link <path>`
+- `/extensions install <path-or-https-url>`
 - `/extensions info <id>`
 - `/extensions enable <id>`
 - `/extensions disable <id>`
@@ -35,6 +36,7 @@ Scaffold, validate and discover independent extension.yaml packages and declarat
 ## entrypoints
 
 - script: `hosaka/extensions/__main__.py`
+- `POST /api/v1/extensions/install`
 
 ## what success looks like / what failure looks like
 

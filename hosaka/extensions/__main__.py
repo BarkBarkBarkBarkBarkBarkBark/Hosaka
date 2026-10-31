@@ -47,6 +47,9 @@ def main(argv: list[str] | None = None) -> int:
     command = commands.add_parser("link")
     command.add_argument("path", type=Path)
     command.add_argument("--json", action="store_true")
+    command = commands.add_parser("install", help="Copy a local package or public HTTPS Git repository into managed extensions")
+    command.add_argument("source", help="Local package directory or HTTPS Git repository URL")
+    command.add_argument("--json", action="store_true")
     command = commands.add_parser("validate")
     command.add_argument("target", help="Installed ID or existing package directory")
     command.add_argument("--json", action="store_true")
@@ -68,6 +71,8 @@ def main(argv: list[str] | None = None) -> int:
             result = manager.create(args.id, args.path)
         elif args.command == "link":
             result = manager.link(args.path)
+        elif args.command == "install":
+            result = manager.install(args.source)
         elif args.command == "validate":
             path = Path(args.target).expanduser()
             if not path.is_dir():

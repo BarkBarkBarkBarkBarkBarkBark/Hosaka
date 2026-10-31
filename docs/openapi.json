@@ -1475,6 +1475,59 @@
         "x-feature-id": "extensions.views"
       }
     },
+    "/api/v1/extensions/install": {
+      "post": {
+        "tags": [
+          "extensions",
+          "extension authoring foundation"
+        ],
+        "summary": "Install",
+        "operationId": "install_api_v1_extensions_install_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "minLength": 1,
+                    "title": "Source"
+                  }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "source"
+                ],
+                "title": "InstallationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Install Api V1 Extensions Install Post"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "x-feature-id": "extensions.authoring"
+      }
+    },
     "/api/v1/extensions/{identifier}/view": {
       "get": {
         "tags": [
@@ -5204,7 +5257,7 @@
     },
     {
       "name": "extension authoring foundation",
-      "description": "Scaffold, validate and discover independent extension.yaml packages and declarative views; manage private registration and owner lifecycle metadata. Authoring never executes package code; execution requires separate approval."
+      "description": "Scaffold, validate and discover independent extension.yaml packages and declarative views; manage private registration and owner lifecycle metadata. Import local directories or public HTTPS Git source into managed extensions through the local Menu or CLI, disabled and unapproved without overwrites. Authoring never executes package code; execution requires separate approval."
     },
     {
       "name": "trusted-local extension execution",

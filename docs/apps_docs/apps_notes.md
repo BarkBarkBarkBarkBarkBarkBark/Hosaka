@@ -5,23 +5,23 @@ source of truth; this file follows it.
 
 ## what ships today
 
-- Registry: [hosaka-apps/registry.yaml](../../hosaka-apps/registry.yaml)
-- Schema (maintainer reference): [hosaka-apps/manifest.schema.yaml](../../hosaka-apps/manifest.schema.yaml)
-- Manifests: [spotify.yaml](../../hosaka-apps/apps/spotify.yaml),
-  [foliate.yaml](../../hosaka-apps/apps/foliate.yaml),
-  [discord.yaml](../../hosaka-apps/apps/discord.yaml),
-  [kcc.yaml](../../hosaka-apps/apps/kcc.yaml)
-- Frontend loader: [frontend/src/apps/hosakaApps.ts](../../frontend/src/apps/hosakaApps.ts)
+- Registry: [hosaka-apps/registry.yaml](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/hosaka-apps/registry.yaml)
+- Schema (maintainer reference): [hosaka-apps/manifest.schema.yaml](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/hosaka-apps/manifest.schema.yaml)
+- Manifests: [spotify.yaml](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/hosaka-apps/apps/spotify.yaml),
+  [foliate.yaml](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/hosaka-apps/apps/foliate.yaml),
+  [discord.yaml](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/hosaka-apps/apps/discord.yaml),
+  [kcc.yaml](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/hosaka-apps/apps/kcc.yaml)
+- Frontend loader: [archived hosakaApps.ts](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/archive/desktop-frontend/src/apps/hosakaApps.ts)
   with build-time `import.meta.glob` seed plus a runtime
   `refreshHosakaApps()` override fed by the host.
-- Frontend host bridge: [frontend/src/apps/flatpakBackend.ts](../../frontend/src/apps/flatpakBackend.ts) — wraps
+- Frontend host bridge: [archived flatpakBackend.ts](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/archive/desktop-frontend/src/apps/flatpakBackend.ts) — wraps
   Electron IPC and falls back to the HTTP API.
-- Electron host: [kiosk/main.js](../../kiosk/main.js) and
-  [kiosk/preload.js](../../kiosk/preload.js).
-- HTTP fallback: [hosaka/web/api_v1.py](../../hosaka/web/api_v1.py) under
+- Electron host: [kiosk/main.js](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/kiosk/main.js) and
+  [kiosk/preload.js](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/kiosk/preload.js).
+- HTTP fallback: [hosaka/web/api_v1.py](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/hosaka/web/api_v1.py) under
   `/api/v1/apps/*` (mock by default, real shell-out behind `HOSAKA_APPS_HTTP=real`).
-- Panels: [AppStorePanel.tsx](../../frontend/src/panels/AppStorePanel.tsx) (Flathub
-  catalog + stage), [MusicPanel.tsx](../../frontend/src/panels/MusicPanel.tsx) (radio + library populator).
+- Panels: [archived AppStorePanel.tsx](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/archive/desktop-frontend/src/panels/AppStorePanel.tsx) (Flathub
+  catalog + stage), [archived MusicPanel.tsx](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/archive/desktop-frontend/src/panels/MusicPanel.tsx) (radio + library populator).
 - Shell commands: `/apps`, `/app <id>`, `/install <id>`, `/launch <id>`,
   `/search <query>`, `/store`, `/listen`, `/library populate <genre>`.
 
@@ -41,7 +41,7 @@ darwin/win32 (will fail loudly).
 
 ## IPC surface (Electron host)
 
-Exposed by [kiosk/preload.js](../../kiosk/preload.js) on `window.hosakaAppHost`:
+Exposed by [kiosk/preload.js](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/kiosk/preload.js) on `window.hosakaAppHost`:
 
 | method                  | purpose                                              |
 | ----------------------- | ---------------------------------------------------- |

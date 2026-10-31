@@ -11,7 +11,7 @@ read this before you touch anything.
 
 ## current architecture and extension work
 
-Start with the repository [agent entrypoint](../AGENTS.md) and
+Start with the repository [agent entrypoint](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/AGENTS.md) and
 [extension agent guide](extensions/AGENT_GUIDE.md). The Python TUI + small Menu
 host is canonical. Authoring is committed at `0baf7a99` (#32); #33 adds bounded,
 explicitly approved trusted-local execution and generic declarative Menu views.

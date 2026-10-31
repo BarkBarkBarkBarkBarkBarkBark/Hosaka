@@ -160,6 +160,12 @@ html, body, #root { height: 100%; margin: 0; background: #0b0d10; color-scheme: 
 .deck-settings .deck-checkbox { flex-direction: row; align-items: center; }
 .deck-settings select { width: 100%; min-height: 44px; padding: 8px; background: #0b0d10; color: inherit; border: 1px solid #343c46; }
 .deck-extension-stack { display: flex; flex-direction: column; gap: 12px; }
+.deck-extension-import { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+.deck-extension-import-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.deck-extension-import-controls input { flex: 1 1 240px; min-width: 0; width: 100%; box-sizing: border-box; min-height: 44px; background: #0b0d10; border: 1px solid #343c46; border-radius: 1px; color: inherit; padding: 8px; font: inherit; }
+.deck-extension-import-controls button { flex: 0 0 auto; min-height: 44px; }
+.deck-extension-import-result { min-width: 0; overflow-wrap: anywhere; }
+.deck-extension-import-result p { margin: 8px 0; }
 .deck-extension-stack h2 { font-size: 16px; }
 .deck-extension-navigation > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .deck-extension-navigation > header h2 { font-size: 20px; margin: 0; }

@@ -462,6 +462,10 @@ export function ExtensionMenu({ onAppChange }: { onAppChange: (name: string | nu
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [source, setSource] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [installed, setInstalled] = useState<{ id: string; name: string; path: string } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     let pending = false;
@@ -485,10 +489,38 @@ export function ExtensionMenu({ onAppChange }: { onAppChange: (name: string | nu
     onAppChange(entry?.name ?? null);
     return () => onAppChange(null);
   }, [entry?.name, onAppChange]);
+  async function importSource(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (importing || !source.trim()) return;
+    setImporting(true); setImportError(""); setInstalled(null);
+    try {
+      const result = await request<{ id: string; name: string; path: string }>("/install", { source: source.trim() });
+      setInstalled(result); setSource("");
+    } catch (err: unknown) {
+      setImportError(err instanceof Error ? err.message : String(err));
+    } finally { setImporting(false); }
+  }
   return <div className="deck-extensions">
     {error && <p role="alert" className="deck-error">{text(error)}</p>}
     {catalog?.safe_mode && <p role="status">{t("extensionsSafeMode")}</p>}
     {Boolean(catalog?.invalid_package_count) && <p role="alert">{t("extensionsInvalid")}</p>}
+    {!entry && <form className="deck-extension-import" aria-busy={importing} onSubmit={(event) => void importSource(event)}>
+      <label htmlFor="extension-source">{t("extensionsSource")}</label>
+      <div className="deck-extension-import-controls">
+        <input id="extension-source" type="text" value={source} maxLength={2048} autoComplete="off"
+          spellCheck={false} placeholder="https://github.com/owner/extension" disabled={importing}
+          onChange={(event) => { setSource(event.target.value); setImportError(""); setInstalled(null); }} />
+        <button type="submit" disabled={importing || !catalog || !source.trim()}>
+          {t(importing ? "extensionsImporting" : "extensionsImport")}
+        </button>
+      </div>
+      {importError && <p role="alert" className="deck-error">{text(importError)}</p>}
+      {installed && <div role="status" className="deck-extension-import-result">
+        <strong>{text(installed.name)} ({text(installed.id)})</strong>
+        <p>{t("extensionsImported")}</p>
+        <code>{text(installed.path)}</code>
+      </div>}
+    </form>}
     {catalog?.extensions.length === 0 && <p>{t("extensionsEmpty")}</p>}
     {!catalog && !error && <p role="status">{t("working")}</p>}
     {!entry && <ul className="deck-device-list" aria-label={t("extensions")}>

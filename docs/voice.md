@@ -217,12 +217,12 @@ the structured json prompt helps, but the real policy boundary between “say so
 
 the key files for this system are:
 
-- [frontend/src/panels/VoicePanel.tsx](../frontend/src/panels/VoicePanel.tsx)
-- [frontend/src/styles/app.css](../frontend/src/styles/app.css)
-- [hosaka/web/voice_api.py](../hosaka/web/voice_api.py)
-- [hosaka/voice/tools.py](../hosaka/voice/tools.py)
-- [hosaka/llm/openai_adapter.py](../hosaka/llm/openai_adapter.py)
-- [hosaka/identity.py](../hosaka/identity.py)
+- [Archived VoicePanel.tsx](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/archive/desktop-frontend/src/panels/VoicePanel.tsx)
+- [Archived app.css](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/archive/desktop-frontend/src/styles/app.css)
+- [hosaka/web/voice_api.py](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/hosaka/web/voice_api.py)
+- [hosaka/voice/tools.py](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/hosaka/voice/tools.py)
+- [hosaka/llm/openai_adapter.py](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/hosaka/llm/openai_adapter.py)
+- [hosaka/identity.py](https://github.com/BarkBarkBarkBarkBarkBarkBark/Hosaka/blob/main/hosaka/identity.py)
 
 signal steady.
 

@@ -27,6 +27,8 @@ features:
     description: >
       Scaffold, validate and discover independent extension.yaml packages and
       declarative views; manage private registration and owner lifecycle metadata.
+      Import local directories or public HTTPS Git source into managed extensions
+      through the local Menu or CLI, disabled and unapproved without overwrites.
       Authoring never executes package code; execution requires separate approval.
     owner: "core"
     status: "experimental"
@@ -36,6 +38,7 @@ features:
       - "/extensions create <id>"
       - "/extensions validate <id-or-path>"
       - "/extensions link <path>"
+      - "/extensions install <path-or-https-url>"
       - "/extensions info <id>"
       - "/extensions enable <id>"
       - "/extensions disable <id>"
@@ -43,6 +46,7 @@ features:
       - "/extensions doctor"
     entrypoints:
       - { type: "script", path: "hosaka/extensions/__main__.py" }
+      - { type: "http", method: "POST", path: "/api/v1/extensions/install" }
     permissions: ["read:extensions", "write:extensions-metadata"]
     failure_modes:
       - "invalid manifests or duplicate IDs are diagnosed without hiding unrelated valid packages"
