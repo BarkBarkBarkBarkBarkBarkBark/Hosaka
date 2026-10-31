@@ -284,13 +284,16 @@ class Manager:
             self._register(registry, package)
         return self.info(package.manifest.id)
 
-    def install(self, source: str) -> dict:
+    def install(self, source: str, subdir: str | None = None) -> dict:
         if os.geteuid() == 0:
             raise ExtensionError("Import extensions as the unprivileged operator, not root.")
         source = source.strip()
         if not source or len(source) > 2048 or any(ord(character) < 32 for character in source):
             raise ExtensionError("Use a local package directory or an HTTPS Git repository URL.")
         remote = "://" in source
+        relative = self._relative_git_subdirectory(subdir) if subdir is not None else None
+        if relative is not None and not remote:
+            raise ExtensionError("A subdirectory applies only to an HTTPS Git repository import.")
         if remote:
             url = urlsplit(source)
             if url.scheme != "https" or not url.hostname or url.username is not None or url.password is not None or url.query or url.fragment:
@@ -322,6 +325,8 @@ class Manager:
                         raise ExtensionError("Git import exceeded its 60-second time limit.") from exc
                     except (OSError, subprocess.CalledProcessError) as exc:
                         raise ExtensionError("Git import failed; use an accessible public HTTPS repository or import a local checkout.") from exc
+                    if relative is not None:
+                        path = self._contained_clone_directory(path, relative)
                 else:
                     path = Path(source).expanduser().resolve()
                     self._outside_core(path)
@@ -337,6 +342,24 @@ class Manager:
                     shutil.rmtree(destination)
                     raise
         return self.info(identifier)
+
+    def _relative_git_subdirectory(self, subdir: str) -> Path:
+        # pathlib drops "." components, so inspect the raw path before joining it.
+        parts = subdir.split("/")
+        if (
+            not subdir or len(subdir) > 200 or "\\" in subdir
+            or any(ord(character) < 32 for character in subdir)
+            or any(part in {"", ".", ".."} for part in parts)
+        ):
+            raise ExtensionError("Git subdirectory must be a relative path inside the cloned repository.")
+        return Path(*parts)
+
+    def _contained_clone_directory(self, clone: Path, relative: Path) -> Path:
+        selected = (clone / relative).resolve()
+        root = clone.resolve()
+        if selected == root or not selected.is_dir() or not selected.is_relative_to(root):
+            raise ExtensionError("Git subdirectory must stay inside the cloned repository.")
+        return selected
 
     def info(self, identifier: str) -> dict:
         validate_id(identifier)
