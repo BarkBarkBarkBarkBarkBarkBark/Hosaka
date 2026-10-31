@@ -46,7 +46,12 @@ individual manifest/UI/schema documents to 256 KiB.
 ## Source import
 
 `hosaka extensions install SOURCE` accepts a local package directory or a public
-HTTPS Git repository URL. The local Menu Extensions panel exposes the same
+HTTPS Git repository URL. `hosaka extensions install URL --subdir RELATIVE`
+selects a package directory inside the clone. The relative path cannot be
+absolute, empty, or contain `..`, `.`, or backslashes, and its resolved location
+must stay inside the cloned repository. Only that directory is validated and
+copied. `--subdir` does not apply to a local package path. The local Menu
+Extensions panel exposes the same
 operation through `POST /api/v1/extensions/install`, with a JSON `source` string
 of at most 2048 characters and an 8 KiB request-body limit. Browser import requires
 a loopback client and loopback origin, existing write authorization and a
@@ -61,8 +66,11 @@ must be checked out separately and imported by local path. Clone downloads have
 no separate disk/network quota; the validated source retains the normal package
 file-count/size limits.
 
-The manifest ID selects `paths.extensions/ID`. Existing registrations and
-destinations are refused, not upgraded or replaced. Imported snapshots omit Git
+The manifest ID selects `paths.extensions/ID`. For example,
+`virgo_zone.git --subdir hosaka-extension` installs manifest ID `virgo-zone`
+and leaves the rest of that repository, including its web server, uninstalled.
+Existing registrations and destinations are refused, not upgraded or replaced.
+Imported snapshots omit Git
 metadata and start disabled, without approval or grants. Source directories and
 extension data are untouched. `extensions link PATH` still registers an external
 working copy in place for development. No automatic update/rollback is provided.

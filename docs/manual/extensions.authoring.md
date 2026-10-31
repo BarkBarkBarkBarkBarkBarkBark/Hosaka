@@ -26,7 +26,7 @@ Scaffold, validate and discover independent extension.yaml packages and declarat
 - `/extensions create <id>`
 - `/extensions validate <id-or-path>`
 - `/extensions link <path>`
-- `/extensions install <path-or-https-url>`
+- `/extensions install <path-or-https-url> [--subdir <relative-path>]`
 - `/extensions info <id>`
 - `/extensions enable <id>`
 - `/extensions disable <id>`

@@ -264,13 +264,16 @@ The same import is available from the CLI:
 
 ```bash
 hosaka extensions install https://github.com/OWNER/EXTENSION.git
+hosaka extensions install https://github.com/OWNER/PROJECT.git --subdir path/to/extension
 hosaka extensions install /absolute/path/to/my-extension
 ```
 
 Git imports need Git on the backend, accept public HTTPS repository URLs only,
 and time out after 60 seconds. URLs with credentials, query strings or fragments
 are rejected. No host Git credentials/configuration, hooks, submodules or package
-install scripts are used. The repository root must contain `extension.yaml`.
+install scripts are used. The repository root must contain `extension.yaml`, or
+`--subdir` must name a package directory inside that clone. The subdirectory is
+resolved and rejected if it escapes the repository. Only that package is copied.
 Imported source is a snapshot without `.git` history or automatic updates;
 existing IDs, folders and data are never overwritten.
 

@@ -207,6 +207,120 @@ def test_install_git_uses_guarded_clone_and_manifest_identity(manager, tmp_path,
     assert not list(manager.packages.glob(".extension-import-*"))
 
 
+def repository_with_extension(tmp_path, identifier="virgo-zone", folder="hosaka-extension"):
+    repo = tmp_path / "virgo_zone"
+    repo.mkdir()
+    shutil.move(package(tmp_path, identifier), repo / folder)
+    (repo / "README.md").write_text("web server requires separate setup\n")
+    server = repo / "app"
+    server.mkdir()
+    (server / "main.py").write_text("web server\n")
+    return repo
+
+
+def guarded_clone(monkeypatch, repo):
+    calls = []
+    monkeypatch.setattr(shutil, "which", lambda command: "/usr/bin/git")
+
+    def clone(command, **kwargs):
+        calls.append((command, kwargs))
+        shutil.copytree(repo, command[-1], symlinks=True)
+
+    monkeypatch.setattr(subprocess, "run", clone)
+    return calls
+
+
+def test_install_git_subdir_copies_manifest_package_only(manager, tmp_path, monkeypatch):
+    repo = repository_with_extension(tmp_path)
+    calls = guarded_clone(monkeypatch, repo)
+    installed = manager.install(
+        "https://github.com/BarkBarkBarkBarkBarkBarkBark/virgo_zone.git",
+        subdir="hosaka-extension",
+    )
+    destination = manager.packages / "virgo-zone"
+    assert installed["id"] == "virgo-zone"
+    assert installed["path"] == str(destination)
+    assert installed["registered"] and not installed["enabled"]
+    assert installed["approved_digest"] is None and installed["grants"] == []
+    assert not installed["execution_available"]
+    assert not Path(installed["data_path"]).exists()
+    assert (destination / "extension.yaml").is_file()
+    assert (destination / "main.py").is_file()
+    assert "web server requires separate setup" not in (destination / "README.md").read_text()
+    assert not (destination / "app").exists()
+    assert not (destination / ".git").exists()
+    command, options = calls[0]
+    assert "hosaka-extension" not in command
+    assert "protocol.allow=never" in command and "--no-recurse-submodules" in command
+    assert command[-3] == "--"
+    assert command[-2] == "https://github.com/BarkBarkBarkBarkBarkBarkBark/virgo_zone.git"
+    assert options["timeout"] == 60 and options["check"]
+    assert options["env"]["GIT_TERMINAL_PROMPT"] == "0"
+    assert not list(manager.packages.glob(".extension-import-*"))
+
+
+def test_install_git_subdir_preserves_existing_package_and_data(manager, tmp_path, monkeypatch):
+    repo = repository_with_extension(tmp_path)
+    guarded_clone(monkeypatch, repo)
+    installed = manager.install("https://github.com/example/virgo_zone.git", subdir="hosaka-extension")
+    data = Path(installed["data_path"])
+    data.mkdir()
+    (data / "owner.txt").write_text("keep this")
+    before = snapshot(manager.root)
+    with pytest.raises(ExtensionError, match="already registered"):
+        manager.install("https://github.com/example/virgo_zone.git", subdir="hosaka-extension")
+    assert snapshot(manager.root) == before
+    assert (data / "owner.txt").read_text() == "keep this"
+
+
+@pytest.mark.parametrize("subdir", [
+    "", ".", "..", "../outside", "/tmp/pkg", "hosaka-extension/../../etc",
+    "nested\\pkg", "hosaka-extension/./hidden", "hosaka-extension\nextra",
+])
+def test_install_git_subdir_rejects_unsafe_relative_paths(manager, subdir, monkeypatch):
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("Unexpected Git execution"))
+    with pytest.raises(ExtensionError, match="relative path"):
+        manager.install("https://github.com/example/virgo_zone.git", subdir=subdir)
+    assert not manager.root.exists()
+
+
+def test_install_subdir_requires_git_repository(manager, tmp_path, monkeypatch):
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("Unexpected Git execution"))
+    source = package(tmp_path)
+    with pytest.raises(ExtensionError, match="subdirectory applies only"):
+        manager.install(str(source), subdir="hosaka-extension")
+    assert source.exists()
+    assert not manager.registry().extensions
+
+
+def test_install_git_subdir_rejects_missing_and_escaping_directories(manager, tmp_path, monkeypatch):
+    repo = repository_with_extension(tmp_path)
+    outside = tmp_path / "outside-package"
+    shutil.copytree(repo / "hosaka-extension", outside)
+    (repo / "escaped").symlink_to(outside)
+    guarded_clone(monkeypatch, repo)
+    for subdir in ("missing-extension", "escaped", "README.md"):
+        with pytest.raises(ExtensionError, match="stay inside"):
+            manager.install("https://github.com/example/virgo_zone.git", subdir=subdir)
+    assert not (manager.packages / "virgo-zone").exists()
+    assert not (manager.root / "extension-data" / "virgo-zone").exists()
+    assert not list(manager.packages.glob(".extension-import-*"))
+    assert not manager.registry().extensions
+
+
+def test_install_cli_git_subdir(manager, tmp_path, monkeypatch, capsys):
+    repo = repository_with_extension(tmp_path)
+    guarded_clone(monkeypatch, repo)
+    assert main([
+        "install", "https://github.com/BarkBarkBarkBarkBarkBarkBark/virgo_zone.git",
+        "--subdir", "hosaka-extension", "--json",
+    ]) == 0
+    installed = json.loads(capsys.readouterr().out)
+    assert installed["id"] == "virgo-zone"
+    assert installed["path"] == str(manager.packages / "virgo-zone")
+    assert not installed["enabled"] and not installed["grants"] and installed["approved_digest"] is None
+
+
 @pytest.mark.parametrize("failure", [
     subprocess.TimeoutExpired("git", 60), subprocess.CalledProcessError(1, "git"),
 ])
