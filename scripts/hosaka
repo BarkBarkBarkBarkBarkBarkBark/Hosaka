@@ -28,6 +28,7 @@
 #   hosaka update [source|local] [--check] [--branch B]
 #                                  source = git pull + deploy (default)
 #                                  local  = deploy current working tree, no git pull
+#                                  source install also refreshes a sibling field terminal
 #   hosaka deploy [--check]        build + rsync into /opt + restart webserver
 #   hosaka logs [unit]             tail journalctl for one of our units
 #   hosaka reboot                  safe sync + reboot
@@ -951,9 +952,46 @@ cmd_dev() {
   fi
 }
 
+deck_memory_kb() {
+  if [[ -n "${HOSAKA_MEM_TOTAL_KB:-}" ]]; then
+    printf '%s\n' "$HOSAKA_MEM_TOTAL_KB"
+    return
+  fi
+  awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || true
+}
+
+low_memory_deck() {
+  local kb
+  kb="$(deck_memory_kb)"
+  [[ "$kb" =~ ^[0-9]+$ ]] || return 1
+  (( kb > 0 && kb <= 1572864 ))
+}
+
+prepare_native_update() {
+  if low_memory_deck; then
+    export HOSAKA_SKIP_UI_BUILD=1
+    note "1GB deck: native files only, no Docker image and no on-device UI build"
+  fi
+}
+
 cmd_deploy() {
   [[ -d "$DEPLOY_ROOT" ]] || die "deploy root $DEPLOY_ROOT missing — install Hosaka on this Pi first"
-  cmd_build "$@"
+  local skip_ui="${HOSAKA_SKIP_UI_BUILD:-0}"
+  local build_arg=""
+  while (( $# )); do
+    case "$1" in
+      --no-build) skip_ui=1; shift ;;
+      --check) build_arg="--check"; shift ;;
+      *) die "unknown deploy arg: $1" ;;
+    esac
+  done
+  if [[ "$skip_ui" == "1" ]]; then
+    note "native deploy without an on-device UI build"
+  elif [[ -n "$build_arg" ]]; then
+    cmd_build "$build_arg"
+  else
+    cmd_build
+  fi
   if [[ -d "$DEPLOY_ROOT" ]]; then
     note "syncing python sources into $(c_cyan "$DEPLOY_ROOT/hosaka/")"
     # Rsync the entire python package so new modules (e.g. hosaka.secrets,
@@ -1088,6 +1126,7 @@ start_update_job() {
   sudo systemctl reset-failed hosaka-update.service 2>/dev/null || true
   local path_environment=("--setenv=XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-$home/.config}")
   [[ -z "${HOSAKA_DATA_DIR+x}" ]] || path_environment+=("--setenv=HOSAKA_DATA_DIR=$HOSAKA_DATA_DIR")
+  [[ "${HOSAKA_SKIP_UI_BUILD:-0}" != "1" ]] || path_environment+=("--setenv=HOSAKA_SKIP_UI_BUILD=1")
   sudo systemd-run --unit=hosaka-update --description="Hosaka pull, build, and deploy" \
     --property=Type=oneshot --property=MemoryMax=650M --property=MemorySwapMax=512M \
     --property=OOMScoreAdjust=700 --property=CPUQuota=200% \
@@ -1101,14 +1140,39 @@ start_update_job() {
   note "check result:   hosaka update status"
 }
 
+update_deck() {
+  local script="$REPO_ROOT/scripts/update-deck.sh"
+  [[ -f "$script" ]] || return 0
+  HOSAKA_REPO="$REPO_ROOT" bash "$script"
+}
+
 cmd_update() {
   if [[ "${HOSAKA_SOURCE_INSTALL:-0}" == "1" ]]; then
+    if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || "${1:-}" == "help" ]]; then
+      cat <<'USAGE'
+hosaka update
+
+  Clean checkout: git pull --ff-only, then reinstall.
+  Local changes: reinstall this checkout without pulling.
+  Then copy this native tree to the cyberdeck over SSH. No Docker image.
+  A 1GB deck does not run npm. Extension-data stays on each machine.
+USAGE
+      return 0
+    fi
     (( $# == 0 )) || die "source updates take no options; use git for branch selection"
-    [[ -z "$(git -C "$REPO_ROOT" status --porcelain)" ]] || die "source checkout has local changes; commit or stash them before updating"
-    git -C "$REPO_ROOT" pull --ff-only
-    local source_args=()
-    [[ "${HOSAKA_SOURCE_GUI:-0}" != "1" ]] || source_args=(--gui)
-    exec bash "$REPO_ROOT/install.sh" "${source_args[@]}"
+    if [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]]; then
+      note "working tree has local changes; updating from this checkout"
+    else
+      note "pulling latest changes"
+      git -C "$REPO_ROOT" pull --ff-only
+    fi
+    if [[ "${HOSAKA_SOURCE_GUI:-0}" == "1" ]]; then
+      bash "$REPO_ROOT/install.sh" --gui
+    else
+      bash "$REPO_ROOT/install.sh"
+    fi
+    update_deck
+    return
   fi
   # Default source = "source" (git pull + deploy). `hosaka update local`
   # builds + deploys from the working tree without touching git, so dev
@@ -1146,6 +1210,10 @@ cmd_update() {
         deploy_arg="--check"
         shift
         ;;
+      --no-build)
+        deploy_arg="--no-build"
+        shift
+        ;;
       -b|--branch)
         [[ $# -ge 2 ]] || die "$1 needs a branch name"
         target_branch="$2"
@@ -1159,9 +1227,10 @@ cmd_update() {
         cat <<'USAGE'
 hosaka update [source|local] [--check] [--branch BRANCH] [--foreground]
 
-  source   (default) git fetch + checkout + ff-only pull, then build + rsync + restart
-  local    skip git entirely; build the working tree as-is, then rsync + restart
-  --check  run tsc gate before building
+  source   (default) git fetch + checkout + ff-only pull, then native rsync + restart
+  local    skip git entirely; deploy the working tree as-is, then rsync + restart
+  --check  run tsc gate before building. A 1GB deck skips that build.
+  --no-build  deploy Python and the UI already in the tree; do not run npm
   --branch BRANCH    only meaningful with `source`; chooses which ref to ff-pull
   --foreground      run in this shell instead of the Pi's independent systemd job
   logs / status     follow progress / show the latest job result
@@ -1180,6 +1249,7 @@ USAGE
     esac
   done
 
+  prepare_native_update
   if [[ "$(uname -s)" == "Linux" && "$foreground" == "0" ]]; then
     start_update_job "${original_args[@]}"
     return
