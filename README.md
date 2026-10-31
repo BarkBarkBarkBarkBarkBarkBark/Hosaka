@@ -304,9 +304,16 @@ bash scripts/hosaka update
 
 **Update commands differ by installation:** Docker `hosaka update` refreshes
 the image (re-run its installer to refresh the launcher); source
-`hosaka update` fast-forwards the checkout and re-runs its installer; appliance
+`hosaka update` fast-forwards a clean checkout, or reinstalls the working tree
+when it has local changes, then re-runs its installer; appliance
 `hosaka update` builds and deploys system services. Do not replace an appliance
 CLI with the Docker installer.
+
+A source install then copies this native tree to the cyberdeck over SSH
+(`HOSAKA_DECK_HOST`, default `hosaka`). That path does not use a Docker image.
+On a 1GB deck, `hosaka update` deploys Python and extensions and leaves the
+already built terminal UI in place. `~/.hosaka/extension-data` stays on each
+machine. Extension packages are copied without their virtualenv.
 
 ## Paths and diagnostics
 

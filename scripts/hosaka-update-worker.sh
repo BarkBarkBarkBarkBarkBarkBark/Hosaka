@@ -75,7 +75,9 @@ restore() {
     echo "UPDATE FAILED: could not identify the deployed commit." >&2
     exit 1
   fi
-  if ! curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:8421/build-stamp.json \
+  if [[ "${HOSAKA_SKIP_UI_BUILD:-0}" == "1" ]]; then
+    echo "Kept the existing terminal UI. Copy a laptop build with hosaka update when the menu should change."
+  elif ! curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:8421/build-stamp.json \
     | node -e 'let data=""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => { try { if (JSON.parse(data).sha !== process.argv[1]) process.exit(1); } catch { process.exit(1); } });' "$sha"; then
     echo "UPDATE FAILED: the web server is not serving this commit's frontend build." >&2
     exit 1
@@ -117,5 +119,14 @@ while read -r pid; do
   [[ -n "$pid" ]] && kill "$pid"
 done < <(pgrep -u "$OPERATOR" -f 'kiosk/node_modules/electron/dist/electron' || true)
 
-echo "Pulling, building, and deploying the requested checkout."
+mem_kb="${HOSAKA_MEM_TOTAL_KB:-}"
+if [[ -z "$mem_kb" && -r /proc/meminfo ]]; then
+  mem_kb="$(awk '/MemTotal:/ {print $2}' /proc/meminfo)"
+fi
+if [[ "$mem_kb" =~ ^[0-9]+$ ]] && (( mem_kb > 0 && mem_kb <= 1572864 )); then
+  export HOSAKA_SKIP_UI_BUILD=1
+  echo "1GB deck: native update. No Docker image and no on-device npm build."
+fi
+
+echo "Pulling and deploying the requested checkout."
 bash "$REPO_ROOT/scripts/hosaka" update --foreground "$@"
