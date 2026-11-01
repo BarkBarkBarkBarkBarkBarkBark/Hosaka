@@ -403,7 +403,7 @@ Use a humorous Halloween theme while retaining readable form controls.
 
 Suggested citation format:
 
-**OFFICIAL HALLOWEEN VIOLATION NOTICE**
+**VIOLATION NOTICE**
 
 - Citation number
 - Offender
