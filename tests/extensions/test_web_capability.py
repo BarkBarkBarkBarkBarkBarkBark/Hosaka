@@ -43,3 +43,28 @@ def test_web_approval_is_explicit_separately_digested_and_revocable(tmp_path, mo
     revoked = manager.registry().extensions["reference-extension"]
     assert "web:self" not in revoked.grants
     assert revoked.web_digest is None and revoked.web_source is None and revoked.web_python is None
+
+
+def test_extensions_update_reapproves_trusted_and_runs_initialize(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOSAKA_DATA_DIR", str(tmp_path / "data"))
+    for key in ("SUDO_USER", "HOSAKA_OPERATOR", "HOSAKA_PUBLIC_MODE", "HOSAKA_EXTENSIONS_SAFE_MODE"):
+        monkeypatch.delenv(key, raising=False)
+    manager = Manager()
+    manager.init()
+    ext = tmp_path / "sample-extension"
+    manager.create("sample-extension", ext)
+    manifest = yaml.safe_load((ext / "extension.yaml").read_text())
+    manifest["actions"]["initialize"] = dict(manifest["actions"]["load"])
+    (ext / "extension.yaml").write_text(yaml.safe_dump(manifest))
+    manager.trust("sample-extension", allow_storage=True)
+    manager.enable("sample-extension", True)
+    (ext / "main.py").write_text(
+        (ext / "main.py").read_text()
+        .replace('{"echo", "save", "load", "delete", "fail"}', '{"echo", "save", "load", "delete", "fail", "initialize"}')
+        .replace('elif action == "load":', 'elif action in {"load", "initialize"}:')
+    )
+    report = manager.update("sample-extension", reapprove_trusted=True)
+    item = report["updated"][0]
+    assert item["id"] == "sample-extension"
+    assert item["initialized"] is True
+    assert manager.info("sample-extension")["execution_available"] is True

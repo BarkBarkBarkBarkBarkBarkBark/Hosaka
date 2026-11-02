@@ -37,6 +37,8 @@ class Registration(StrictModel):
     web_source: str | None = None
     web_python: str | None = None
     web_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    source_url: str | None = None
+    source_subdir: str | None = None
 
 
 class Registry(StrictModel):
@@ -291,11 +293,38 @@ class Manager:
             if path.resolve().is_relative_to(core.resolve()):
                 raise ExtensionError("Extension working copies must be outside core.")
 
+    def _detect_git_origin(self, package_root: Path) -> tuple[str | None, str | None]:
+        if not shutil.which("git"):
+            return None, None
+        try:
+            top = subprocess.run(
+                ["git", "-C", str(package_root), "rev-parse", "--show-toplevel"],
+                check=True, capture_output=True, text=True, timeout=5,
+            ).stdout.strip()
+            url = subprocess.run(
+                ["git", "-C", top, "remote", "get-url", "origin"],
+                check=True, capture_output=True, text=True, timeout=5,
+            ).stdout.strip()
+            parts = urlsplit(url)
+            if parts.scheme != "https" or not parts.hostname:
+                return None, None
+            top_path = Path(top).resolve()
+            rel = package_root.resolve().relative_to(top_path)
+            subdir = str(rel).replace("\\", "/") if str(rel) != "." else None
+            return url, subdir
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return None, None
+
     def link(self, path: Path) -> dict:
         self._outside_core(path)
         package = validate_package(path)
+        source_url, source_subdir = self._detect_git_origin(package.root)
         with self.transaction() as registry:
             self._register(registry, package)
+            entry = registry.extensions[package.manifest.id]
+            if source_url:
+                entry.source_url = source_url
+                entry.source_subdir = source_subdir
         return self.info(package.manifest.id)
 
     def install(self, source: str, subdir: str | None = None) -> dict:
@@ -352,6 +381,9 @@ class Manager:
                 self._copy(package.root, destination, identifier)
                 try:
                     self._register(registry, validate_package(destination))
+                    if remote:
+                        registry.extensions[identifier].source_url = source
+                        registry.extensions[identifier].source_subdir = str(relative).replace("\\", "/") if relative is not None else None
                 except (OSError, ExtensionError, ValueError):
                     shutil.rmtree(destination)
                     raise
@@ -475,6 +507,143 @@ class Manager:
             entry.grants = []
             entry.web_source = entry.web_python = entry.web_digest = None
         return {"id": identifier, "approval_revoked": True, "grants": []}
+
+    def update(self, identifier: str | None = None, *, reapprove_trusted: bool = False) -> dict:
+        if os.geteuid() == 0:
+            raise ExtensionError("Update extensions as the unprivileged operator, not root.")
+        if identifier is not None:
+            validate_id(identifier)
+        registry_snapshot = self.registry()
+        targets = (
+            [identifier] if identifier is not None else [
+                ext_id for ext_id, entry in sorted(registry_snapshot.extensions.items())
+                if not entry.removed and ext_id != "reference-extension"
+            ]
+        )
+        updated_items: list[dict] = []
+        for ext_id in targets:
+            entry = registry_snapshot.extensions.get(ext_id)
+            if entry is None or entry.removed:
+                raise ExtensionError(f"Extension is not registered: {ext_id}")
+            pkg_path = Path(entry.path).expanduser().resolve()
+            status = "unchanged"
+            managed_copy = pkg_path.is_relative_to(self.packages.resolve())
+            if not managed_copy and shutil.which("git"):
+                try:
+                    top = subprocess.run(
+                        ["git", "-C", str(pkg_path), "rev-parse", "--show-toplevel"],
+                        check=True, capture_output=True, text=True, timeout=5,
+                    ).stdout.strip()
+                except (OSError, subprocess.SubprocessError):
+                    top = ""
+                if top:
+                    dirty = subprocess.run(
+                        ["git", "-C", top, "status", "--porcelain"],
+                        check=False, capture_output=True, text=True, timeout=10,
+                    ).stdout.strip()
+                    has_origin = subprocess.run(
+                        ["git", "-C", top, "remote", "get-url", "origin"],
+                        check=False, capture_output=True, text=True, timeout=5,
+                    ).returncode == 0
+                    if dirty:
+                        status = "dirty_working_tree_preserved"
+                    elif has_origin:
+                        before_sha = subprocess.run(
+                            ["git", "-C", top, "rev-parse", "HEAD"],
+                            check=False, capture_output=True, text=True, timeout=5,
+                        ).stdout.strip()
+                        env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+                        env["GIT_TERMINAL_PROMPT"] = "0"
+                        subprocess.run(
+                            ["git", "-C", top, "pull", "--ff-only"],
+                            check=True, timeout=60, env=env, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        )
+                        after_sha = subprocess.run(
+                            ["git", "-C", top, "rev-parse", "HEAD"],
+                            check=False, capture_output=True, text=True, timeout=5,
+                        ).stdout.strip()
+                        status = "updated" if after_sha != before_sha else "up_to_date"
+            elif managed_copy and entry.source_url and shutil.which("git"):
+                relative = self._relative_git_subdirectory(entry.source_subdir) if entry.source_subdir else None
+                with tempfile.TemporaryDirectory(prefix=".extension-update-", dir=self.packages) as temporary:
+                    template = Path(temporary) / "template"
+                    template.mkdir()
+                    home = Path(temporary) / "home"
+                    home.mkdir()
+                    checkout = Path(temporary) / "checkout"
+                    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+                    env.update(
+                        GIT_TERMINAL_PROMPT="0", GIT_CONFIG_NOSYSTEM="1",
+                        GIT_CONFIG_GLOBAL=os.devnull, GIT_LFS_SKIP_SMUDGE="1",
+                        HOME=str(home), XDG_CONFIG_HOME=str(home / ".config"),
+                    )
+                    subprocess.run([
+                        "git", "-c", f"core.hooksPath={os.devnull}",
+                        "-c", "protocol.allow=never", "-c", "protocol.https.allow=always",
+                        "-c", "credential.helper=", "clone", "--depth", "1", "--single-branch",
+                        "--no-tags", "--no-recurse-submodules", f"--template={template}",
+                        "--", entry.source_url, str(checkout),
+                    ], check=True, timeout=60, env=env, stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    selected = self._contained_clone_directory(checkout, relative) if relative is not None else checkout
+                    staged_pkg = validate_package(selected)
+                    if staged_pkg.manifest.id != ext_id:
+                        raise ExtensionError(f"Updated package changed ID from {ext_id} to {staged_pkg.manifest.id}.")
+                    new_digest = digest(staged_pkg.root)
+                    if new_digest != entry.digest:
+                        backup = self.packages / f".{ext_id}.backup"
+                        if backup.exists():
+                            shutil.rmtree(backup)
+                        pkg_path.rename(backup)
+                        try:
+                            self._copy(staged_pkg.root, pkg_path, ext_id)
+                        except BaseException:
+                            if pkg_path.exists():
+                                shutil.rmtree(pkg_path)
+                            backup.rename(pkg_path)
+                            raise
+                        shutil.rmtree(backup, ignore_errors=True)
+                        status = "updated"
+                    else:
+                        status = "up_to_date"
+            package = validate_package(pkg_path)
+            repo_dir = pkg_path.parent if (pkg_path.parent / "pyproject.toml").is_file() else (
+                pkg_path if (pkg_path / "pyproject.toml").is_file() else None
+            )
+            web_py = Path(entry.web_python) if entry.web_python else (repo_dir / ".web-venv/bin/python" if repo_dir else None)
+            if repo_dir is not None and web_py is not None and web_py.is_file() and os.access(web_py, os.X_OK):
+                subprocess.run(
+                    [str(web_py), "-m", "pip", "install", "--disable-pip-version-check", "-q", "--no-deps", "-e", str(repo_dir)],
+                    check=True, timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+            new_pkg_digest = digest(package.root)
+            with self.transaction() as registry:
+                reg_entry = registry.extensions[ext_id]
+                reg_entry.version = package.manifest.version
+                reg_entry.digest = new_pkg_digest
+                if reapprove_trusted and reg_entry.execution_mode == "trusted-local" and reg_entry.approved_digest:
+                    reg_entry.approved_digest = new_pkg_digest
+                    if "web:self" in reg_entry.grants and reg_entry.web_source and package.manifest.web is not None:
+                        from hosaka.extensions.manifest import package_file
+                        web_src = Path(reg_entry.web_source)
+                        package_file(web_src, package.manifest.web.file)
+                        reg_entry.web_digest = digest(web_src)
+            initialized = False
+            if "initialize" in package.manifest.actions:
+                from hosaka.extensions.runner import approval_reason, run
+                latest_entry = self.registry().extensions[ext_id]
+                if approval_reason(package, latest_entry, safe_mode=self.registry().safe_mode) is None:
+                    init_res = run(self, ext_id, "initialize", {})
+                    initialized = bool(init_res.get("ok"))
+            updated_items.append({
+                "id": ext_id,
+                "version": package.manifest.version,
+                "status": status,
+                "digest": new_pkg_digest,
+                "initialized": initialized,
+            })
+        return {"updated": updated_items}
 
     def safe_mode(self, setting: str) -> dict:
         if setting not in {"on", "off", "status"}:

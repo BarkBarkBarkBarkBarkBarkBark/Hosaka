@@ -45,6 +45,7 @@ if [[ -d "$HOME/.hosaka/extensions" ]]; then
   echo "copying extension packages; extension-data stays on each machine"
   rsync -a \
     --exclude '.venv/' \
+    --exclude '.web-venv/' \
     --exclude '__pycache__/' \
     --exclude '*.pyc' \
     --exclude '.env' \
@@ -53,6 +54,29 @@ if [[ -d "$HOME/.hosaka/extensions" ]]; then
     --exclude 'extension-data/' \
     "$HOME/.hosaka/extensions/" "$HOST:.hosaka/extensions/"
 fi
+
+REMOTE_PARENT="$(dirname "$REMOTE")"
+for sibling in hosaka-gateway hosaka_citations virgo_zone; do
+  if [[ -d "$REPO_ROOT/../$sibling" ]]; then
+    echo "copying $sibling to $HOST:$REMOTE_PARENT/$sibling"
+    rsync -a --delete \
+      --exclude '.git/' \
+      --exclude 'node_modules/' \
+      --exclude '.next/' \
+      --exclude '.vercel/' \
+      --exclude '.venv/' \
+      --exclude '.web-venv/' \
+      --exclude '__pycache__/' \
+      --exclude '*.pyc' \
+      --exclude '*.db*' \
+      --exclude '*.sqlite3*' \
+      --exclude 'data/' \
+      --exclude '.env' \
+      --exclude '.env.*' \
+      --exclude 'secrets.json' \
+      "$REPO_ROOT/../$sibling/" "$HOST:$REMOTE_PARENT/$sibling/"
+  fi
+done
 
 echo "deploying on the deck without npm or Docker"
 ssh -o BatchMode=yes -o ConnectTimeout=8 "$HOST" \

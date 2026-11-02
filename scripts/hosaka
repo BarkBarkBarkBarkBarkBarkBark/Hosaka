@@ -1140,6 +1140,17 @@ refresh_appliance_launchers() {
   sudo -u "$user" -H env HOSAKA_OPERATOR="$user" \
     HOSAKA_DATA_DIR="${HOSAKA_DATA_DIR:-$home/.hosaka}" PYTHONPATH="$DEPLOY_ROOT" \
     "$DEPLOY_ROOT/.venv/bin/python" -m hosaka.extensions init
+  sudo -u "$user" -H env HOSAKA_OPERATOR="$user" \
+    HOSAKA_DATA_DIR="${HOSAKA_DATA_DIR:-$home/.hosaka}" PYTHONPATH="$DEPLOY_ROOT" \
+    "$DEPLOY_ROOT/.venv/bin/python" -m hosaka.extensions update --all --reapprove-trusted || true
+  if [[ -f "$REPO_ROOT/../hosaka-gateway/install.py" ]]; then
+    local gw_args=(--core "$DEPLOY_ROOT" --prefix "$home/.local" --link --dev)
+    [[ ! -d "$REPO_ROOT/../hosaka_citations" ]] || gw_args+=(--citations "$(cd "$REPO_ROOT/../hosaka_citations" && pwd)")
+    [[ ! -d "$REPO_ROOT/../virgo_zone" ]] || gw_args+=(--virgozone "$(cd "$REPO_ROOT/../virgo_zone" && pwd)")
+    sudo -u "$user" -H env HOSAKA_OPERATOR="$user" \
+      HOSAKA_DATA_DIR="${HOSAKA_DATA_DIR:-$home/.hosaka}" PYTHONPATH="$DEPLOY_ROOT" \
+      "$DEPLOY_ROOT/.venv/bin/python" "$REPO_ROOT/../hosaka-gateway/install.py" "${gw_args[@]}"
+  fi
   local config="${XDG_CONFIG_HOME:-$home/.config}"
   local preference="$config/hosaka/display-mode"
   if [[ -f "$preference" ]] && [[ ! "$(cat "$preference")" =~ ^(tui|gui)$ ]]; then
@@ -1224,11 +1235,16 @@ USAGE
       note "pulling latest changes"
       git -C "$REPO_ROOT" pull --ff-only
     fi
-    if [[ "${HOSAKA_SOURCE_GUI:-0}" == "1" ]]; then
-      bash "$REPO_ROOT/install.sh" --gui
-    else
-      bash "$REPO_ROOT/install.sh"
+    if [[ -d "$REPO_ROOT/../hosaka-gateway/.git" && -z "$(git -C "$REPO_ROOT/../hosaka-gateway" status --porcelain 2>/dev/null)" ]]; then
+      git -C "$REPO_ROOT/../hosaka-gateway" pull --ff-only || true
     fi
+    if [[ -x "$REPO_ROOT/.hosakavenv/bin/python" || -x "$REPO_ROOT/.venv/bin/python" ]]; then
+      PYTHONPATH="$REPO_ROOT" "$(_hosaka_python)" -m hosaka.extensions update --all --reapprove-trusted >/dev/null || true
+    fi
+    local install_flags=()
+    [[ "${HOSAKA_SOURCE_GUI:-0}" == "1" ]] && install_flags+=(--gui)
+    [[ -f "$REPO_ROOT/../hosaka-gateway/install.py" ]] && install_flags+=(--dev-apps)
+    bash "$REPO_ROOT/install.sh" "${install_flags[@]}"
     update_deck
     return
   fi

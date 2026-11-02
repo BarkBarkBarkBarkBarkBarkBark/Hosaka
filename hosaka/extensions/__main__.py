@@ -57,6 +57,11 @@ def main(argv: list[str] | None = None) -> int:
     command = commands.add_parser("validate")
     command.add_argument("target", help="Installed ID or existing package directory")
     command.add_argument("--json", action="store_true")
+    command = commands.add_parser("update", help="Update one or all registered extensions and apply migrations")
+    command.add_argument("id", nargs="?", help="Extension ID to update (omit with --all to update all)")
+    command.add_argument("--all", action="store_true", help="Update all registered extensions")
+    command.add_argument("--reapprove-trusted", action="store_true", help="Refresh approved digests for already-trusted extensions")
+    command.add_argument("--json", action="store_true")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
@@ -93,6 +98,10 @@ def main(argv: list[str] | None = None) -> int:
                                    allow_web=args.allow_web, web_source=args.web_source, web_python=args.web_python)
         elif args.command == "revoke":
             result = manager.revoke(args.id)
+        elif args.command == "update":
+            if not args.all and not args.id:
+                raise ExtensionError("Specify an extension ID or pass --all.")
+            result = manager.update(None if args.all else args.id, reapprove_trusted=args.reapprove_trusted)
         elif args.command == "safe-mode":
             result = manager.safe_mode(args.setting)
         elif args.command == "run":
