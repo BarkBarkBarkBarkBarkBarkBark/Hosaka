@@ -19,6 +19,15 @@ There is no wrong way.
 
 ## Start here
 
+Optional native web applications now use the separate `hosaka-gateway`
+checkout. Add `--gateway /path/to/hosaka-gateway` to the source installer and,
+optionally, `--citations /path/to/hosaka_citations` and
+`--virgozone /path/to/virgo_zone`. This installs `hosaka gateway`, `cite` and
+`virgozone-start` without approving code or moving data. Follow the gateway
+README for explicit web grants, authentication and phone/LAN TLS setup.
+The existing terminal/desktop host remains unchanged; do not expose its native
+backend as the phone gateway.
+
 | I want to... | Go to |
 | --- | --- |
 | Try Hosaka without building it | [Docker install](#install-in-one-line) |

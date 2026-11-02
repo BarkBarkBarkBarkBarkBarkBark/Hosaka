@@ -26,6 +26,8 @@ elif [[ "$*" == *"-m hosaka tui"* ]]; then
   printf 'PYTHONPATH=%s\n' "$PYTHONPATH"
 elif [[ "$*" == *"-m hosaka.paths"* || "$*" == *"-m hosaka.extensions"* ]]; then
   exec "$TEST_PYTHON" "$@"
+elif [[ "$*" == *"install.py --core"* ]]; then
+  printf '%s\n' "$@" >"$WEB_CALLS"
 fi
 SH
 cp "$temp/bin/python3" "$temp/bin/python3.12"
@@ -36,7 +38,7 @@ printf '#!/bin/sh\nprintf "%%s:%%s\\n" "$PWD" "$*" >>"$NPM_CALLS"\n' >"$temp/bin
 printf '#!/bin/sh\necho "picoclaw 0.3.1"\n' >"$temp/bin/picoclaw"
 chmod +x "$temp/bin/"*
 export HOME="$temp/home" SHELL=/bin/zsh HOSAKA_PREFIX="$temp/prefix"
-export NPM_CALLS="$temp/npm-calls"
+export NPM_CALLS="$temp/npm-calls" WEB_CALLS="$temp/web-calls"
 export PATH="$temp/bin:/usr/bin:/bin"
 unset FLATPAK_ID
 TEST_SYSTEM_OLD=1 bash "$temp/repo/install.sh" >"$temp/install-output"
@@ -103,6 +105,20 @@ if HOSAKA_DATA_DIR="$temp/custom data" HOSAKA_GAMES_DIR="$temp/custom games" bas
   exit 1
 fi
 cp "$temp/reference-manifest.backup" "$temp/custom data/extensions/reference-extension/extension.yaml"
+if bash "$temp/repo/install.sh" --citations "$temp/repo" >"$temp/web-error" 2>&1; then
+  echo "Source installer accepted an app without its gateway" >&2
+  exit 1
+fi
+grep -q 'require --gateway' "$temp/web-error"
+mkdir "$temp/gateway checkout"
+touch "$temp/gateway checkout/install.py"
+bash "$temp/repo/install.sh" --tui --gateway "$temp/gateway checkout" \
+  --citations "$temp/repo" --virgozone "$temp/repo"
+grep -qF "$temp/gateway checkout/install.py" "$WEB_CALLS"
+grep -qx -- '--core' "$WEB_CALLS"
+grep -qx -- '--prefix' "$WEB_CALLS"
+grep -qx -- '--citations' "$WEB_CALLS"
+grep -qx -- '--virgozone' "$WEB_CALLS"
 printf '#!/bin/sh\n# Docker client\n' >"$HOSAKA_PREFIX/bin/hosaka"
 if bash "$temp/repo/install.sh"; then
   echo "Source install overwrote another installation" >&2

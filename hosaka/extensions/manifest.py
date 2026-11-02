@@ -5,6 +5,7 @@ import json
 import re
 import stat
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
@@ -89,6 +90,20 @@ class Background(StrictModel):
     interval_seconds: int = Field(ge=15, le=86400)
 
 
+class Web(StrictModel):
+    schema_version: Literal[1]
+    file: str = Field(pattern=r"^[a-z][a-z0-9_]*\.py$", max_length=80)
+    callable: str = Field(pattern=r"^[A-Za-z_][A-Za-z_0-9]*$", max_length=64)
+    health: str = Field(pattern=r"^/[a-zA-Z0-9/_-]*$", max_length=100)
+
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def integer_version(cls, value: object) -> object:
+        if type(value) is not int:
+            raise ValueError("Web schema version must be an integer")
+        return value
+
+
 class Manifest(StrictModel):
     schema_version: Literal[1]
     id: str
@@ -105,6 +120,7 @@ class Manifest(StrictModel):
     actions: dict[str, Action] = Field(min_length=1, max_length=32)
     limits: Limits
     background: Background | None = None
+    web: Web | None = None
 
     @field_validator("schema_version", mode="before")
     @classmethod
@@ -126,7 +142,7 @@ class Manifest(StrictModel):
         return values
 
 
-class UniqueLoader(yaml.SafeLoader):
+class UniqueLoader(getattr(yaml, "CSafeLoader", yaml.SafeLoader)):
     """Reject ambiguous duplicate YAML fields instead of taking the last value."""
 
 
@@ -213,9 +229,17 @@ def validate_schema(document: object) -> None:
     if document.get("$schema", "https://json-schema.org/draft/2020-12/schema") != "https://json-schema.org/draft/2020-12/schema":
         raise ExtensionError("Only JSON Schema draft 2020-12 is supported.")
     try:
-        Draft202012Validator.check_schema(document)
+        canonical = json.dumps(document, sort_keys=True, allow_nan=False)
+        if len(canonical) > MAX_DOCUMENT_BYTES:
+            raise ExtensionError("Action schema exceeds the document size limit.")
+        _check_schema(canonical)
     except SchemaError as exc:
         raise ExtensionError("Invalid action JSON Schema.") from exc
+
+
+@lru_cache(maxsize=256)
+def _check_schema(canonical: str) -> None:
+    Draft202012Validator.check_schema(json.loads(canonical))
 
 
 UI_FIELDS = {

@@ -27,6 +27,9 @@ def main(argv: list[str] | None = None) -> int:
     command.add_argument("--allow-managed-data", action="store_true", help="Grant this extension's persistent directory (SQLite/files)")
     command.add_argument("--allow-network", action="store_true", help="Grant requested network access")
     command.add_argument("--allow-background", action="store_true", help="Grant the declared periodic background action")
+    command.add_argument("--allow-web", action="store_true", help="Approve the separately inspected local web runtime (not sandboxed)")
+    command.add_argument("--web-source", type=Path, help="Absolute web/local source directory")
+    command.add_argument("--web-python", type=Path, help="Application interpreter with its web dependencies installed")
     command.add_argument("--json", action="store_true")
     command = commands.add_parser("run")
     command.add_argument("id")
@@ -86,7 +89,8 @@ def main(argv: list[str] | None = None) -> int:
             result = manager.remove(args.id)
         elif args.command == "trust":
             result = manager.trust(args.id, allow_storage=args.allow_storage, allow_managed_data=args.allow_managed_data,
-                                   allow_network=args.allow_network, allow_background=args.allow_background)
+                                   allow_network=args.allow_network, allow_background=args.allow_background,
+                                   allow_web=args.allow_web, web_source=args.web_source, web_python=args.web_python)
         elif args.command == "revoke":
             result = manager.revoke(args.id)
         elif args.command == "safe-mode":

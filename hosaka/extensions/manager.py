@@ -31,9 +31,12 @@ class Registration(StrictModel):
     digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     enabled: bool = False
     removed: bool = False
-    grants: list[Literal["storage:self", "storage:directory", "network:self", "background:self"]] = Field(default_factory=list)
+    grants: list[Literal["storage:self", "storage:directory", "network:self", "background:self", "web:self"]] = Field(default_factory=list)
     execution_mode: Literal["trusted-local"] | None = None
     approved_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    web_source: str | None = None
+    web_python: str | None = None
+    web_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class Registry(StrictModel):
@@ -191,7 +194,18 @@ class Manager:
         identifier = package.manifest.id
         existing = registry.extensions.get(identifier)
         if existing and Path(existing.path).resolve() != package.root:
-            raise ExtensionError(f"Extension ID is already registered: {identifier}")
+            if not existing.removed and (Path(existing.path) / "extension.yaml").is_file():
+                raise ExtensionError(f"Extension ID is already registered: {identifier}")
+            existing.path = str(package.root)
+            existing.version = package.manifest.version
+            existing.digest = digest(package.root)
+            existing.removed = False
+            existing.enabled = False
+            existing.approved_digest = None
+            existing.execution_mode = None
+            existing.grants = []
+            existing.web_source = existing.web_python = existing.web_digest = None
+            return
         discovered = self.discover()
         for item in discovered["extensions"]:
             if item["id"] == identifier and Path(item["path"]) != package.root:
@@ -404,7 +418,8 @@ class Manager:
         return {"id": identifier, "removed": True, "code_retained": True, "data_retained": True}
 
     def trust(self, identifier: str, *, allow_storage: bool = False, allow_managed_data: bool = False,
-              allow_network: bool = False, allow_background: bool = False) -> dict:
+              allow_network: bool = False, allow_background: bool = False,
+              allow_web: bool = False, web_source: Path | None = None, web_python: Path | None = None) -> dict:
         if os.geteuid() == 0:
             raise ExtensionError("Trusted-local approval refuses root; use the unprivileged operator.")
         info = self.info(identifier)
@@ -415,6 +430,20 @@ class Manager:
             raise ExtensionError("Package does not request network access.")
         if allow_background and package.manifest.background is None:
             raise ExtensionError("Package does not declare a background action.")
+        if allow_web:
+            from hosaka.extensions.manifest import package_file
+
+            if package.manifest.web is None or web_source is None or web_python is None:
+                raise ExtensionError("Web approval requires a web declaration, --web-source and --web-python.")
+            web_source = web_source.expanduser().resolve()
+            web_python = web_python.expanduser().absolute()
+            package_file(web_source, package.manifest.web.file)
+            if not web_python.is_file() or not os.access(web_python, os.X_OK):
+                raise ExtensionError("Web Python must be an executable interpreter.")
+            if web_source.is_relative_to(self.root.resolve()):
+                raise ExtensionError("Web source must be outside persistent Hosaka data.")
+        elif web_source is not None or web_python is not None:
+            raise ExtensionError("--web-source/--web-python require --allow-web.")
         with self.transaction() as registry:
             self._register(registry, package)
             entry = registry.extensions[identifier]
@@ -424,8 +453,12 @@ class Manager:
                 name for name, granted in (
                     ("storage:self", allow_storage), ("storage:directory", allow_managed_data),
                     ("network:self", allow_network), ("background:self", allow_background),
+                    ("web:self", allow_web),
                 ) if granted
             ]
+            entry.web_source = str(web_source) if allow_web else None
+            entry.web_python = str(web_python) if allow_web else None
+            entry.web_digest = digest(web_source) if allow_web else None
         return {
             **self.info(identifier),
             "warning": "Approved code runs with your user privileges. This is NOT an OS sandbox. Enablement remains separate.",
@@ -440,6 +473,7 @@ class Manager:
             entry.approved_digest = None
             entry.execution_mode = None
             entry.grants = []
+            entry.web_source = entry.web_python = entry.web_digest = None
         return {"id": identifier, "approval_revoked": True, "grants": []}
 
     def safe_mode(self, setting: str) -> dict:

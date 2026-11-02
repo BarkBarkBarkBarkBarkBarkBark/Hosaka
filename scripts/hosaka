@@ -233,6 +233,61 @@ backend_log_file() {
   echo "$DEV_LOG_DIR_DEFAULT/backend.log"
 }
 
+gateway_pid_file() {
+  echo "$DEV_LOG_DIR_DEFAULT/gateway.pid"
+}
+
+gateway_log_file() {
+  echo "$DEV_LOG_DIR_DEFAULT/gateway.log"
+}
+
+launch_dev_gateway() {
+  local gw_port="${HOSAKA_GATEWAY_PORT:-8086}"
+  command -v hosaka-gateway >/dev/null 2>&1 || return 0
+  if http_is_ready "http://127.0.0.1:$gw_port/health"; then
+    note "hosaka-gateway already responding on $(c_cyan "127.0.0.1:$gw_port")"
+    return 0
+  fi
+  mkdir -p "$DEV_LOG_DIR_DEFAULT"
+  local logfile pidfile
+  logfile="$(gateway_log_file)"
+  pidfile="$(gateway_pid_file)"
+  : > "$logfile"
+  note "starting hosaka-gateway (dev mode) on $(c_cyan "127.0.0.1:$gw_port")"
+  note "log → $(c_dim "$logfile")"
+  (
+    cd "$REPO_ROOT"
+    nohup hosaka-gateway serve --dev --port "$gw_port" >>"$logfile" 2>&1 &
+    echo $! > "$pidfile"
+    disown || true
+  )
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8; do
+    if http_is_ready "http://127.0.0.1:$gw_port/health"; then
+      ok "hosaka-gateway responding on $(c_cyan "http://127.0.0.1:$gw_port/")"
+      return 0
+    fi
+    sleep 1
+  done
+  warn "hosaka-gateway did not answer its health check — tail $(c_dim "$logfile")"
+  return 1
+}
+
+kill_dev_gateway() {
+  local gw_port="${1:-${HOSAKA_GATEWAY_PORT:-8086}}"
+  local pidfile
+  pidfile="$(gateway_pid_file)"
+  if [[ -f "$pidfile" ]]; then
+    local pid
+    pid="$(cat "$pidfile" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+    fi
+    rm -f "$pidfile"
+  fi
+  kill_port_listeners "$gw_port"
+}
+
 launch_dev_backend() {
   local port="$1"
   local py
@@ -322,7 +377,8 @@ cmd_down() {
   fi
   kill_local_dev_electron
   kill_dev_backend "$BACKEND_PORT_DEFAULT"
-  ok "local hosaka dev processes stopped (frontend + backend)"
+  kill_dev_gateway "${HOSAKA_GATEWAY_PORT:-8086}"
+  ok "local hosaka dev processes stopped (frontend + backend + gateway)"
 }
 
 resolve_dev_port_conflict() {
@@ -869,6 +925,7 @@ cmd_dev() {
     restart)
       (( fe_busy )) && { note "fresh: stopping frontend on :$port"; kill_port_listeners "$port"; }
       (( be_busy )) && { note "fresh: stopping backend on :$backend_port"; kill_dev_backend "$backend_port"; }
+      kill_dev_gateway "${HOSAKA_GATEWAY_PORT:-8086}"
       kill_local_dev_electron
       fe_busy=0; be_busy=0
       ;;
@@ -906,6 +963,7 @@ cmd_dev() {
   if (( ! be_busy )); then
     launch_dev_backend "$backend_port" || die "backend startup failed; not opening an unusable GUI"
   fi
+  launch_dev_gateway || true
 
   # if frontend is already up under reuse, just attach electron/browser
   if (( fe_busy )); then
@@ -2026,6 +2084,9 @@ main() {
     paths)     cmd_paths "$@" ;;
     migrate)   cmd_migrate "$@" ;;
     extensions) cmd_extensions "$@" ;;
+    gateway)
+      command -v hosaka-gateway >/dev/null || die "Gateway is not installed. Rerun install.sh with --gateway /path/to/hosaka-gateway."
+      exec hosaka-gateway "$@" ;;
     scan)      (cd "$REPO_ROOT" && PYTHONPATH=. exec python -m hosaka.scan "$@") ;;
     llm)       (cd "$REPO_ROOT" && PYTHONPATH=. exec python -m hosaka.llm_cli "$@") ;;
     inference) (cd "$REPO_ROOT" && PYTHONPATH=. exec python -m hosaka.main_role.inference_client "$@") ;;

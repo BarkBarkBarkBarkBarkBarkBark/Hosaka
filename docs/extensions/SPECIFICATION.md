@@ -36,6 +36,15 @@ Required fields: `schema_version`, `id`, `name`, `version`, `description`,
 - Optional `background: {action, interval_seconds}` declares a periodic action
   and 15-86400-second host interval; its action must appear in `actions`.
   See [persistent capabilities](PERSISTENCE.md) for explicit grants and lifecycle.
+- Optional `web: {schema_version: 1, file: server.py, callable: app, health: /health}`
+  declares an ASGI contribution for `hosaka-gateway`. `file` is a plain Python
+  filename, not a command; `callable` is an identifier and health is an absolute
+  app-relative path. This does not grant execution. CLI approval additionally
+  requires `--allow-web --web-source PATH --web-python PATH`, storing a separate
+  digest of the inspected web source. Revocation clears that approval.
+  The gateway is a separate trusted-local runtime, not an expansion of the
+  bounded native action worker. Browser installation/trust controls remain
+  native-only. App dependencies live outside the approved source directories.
 
 References cannot be absolute, contain `..`/backslashes or escape via symlinks.
 Referenced files must exist. Registration/copy rejects all package symlinks and
@@ -67,7 +76,7 @@ no separate disk/network quota; the validated source retains the normal package
 file-count/size limits.
 
 The manifest ID selects `paths.extensions/ID`. For example,
-`virgo_zone.git --subdir hosaka-extension` installs manifest ID `virgo-zone`
+`virgo_zone.git --subdir extension` installs manifest ID `virgo-zone`
 and leaves the rest of that repository, including its web server, uninstalled.
 Existing registrations and destinations are refused, not upgraded or replaced.
 Imported snapshots omit Git

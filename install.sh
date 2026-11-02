@@ -5,18 +5,49 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREFIX="${HOSAKA_PREFIX:-$HOME/.local}"
 GUI=1
-for arg in "$@"; do
+GATEWAY=""
+CITATIONS=""
+VIRGOZONE=""
+WITH_APPS=0
+DEV_APPS=0
+while (( $# )); do
+  arg="$1"
   case "$arg" in
     --gui) GUI=1 ;;
     --tui) GUI=0 ;;
+    --with-apps) WITH_APPS=1 ;;
+    --dev-apps) WITH_APPS=1; DEV_APPS=1 ;;
+    --gateway|--citations|--virgozone)
+      [[ $# -ge 2 && -d "$2" ]] || { echo "$arg requires an existing checkout directory." >&2; exit 2; }
+      case "$arg" in
+        --gateway) GATEWAY="$(cd "$2" && pwd)" ;;
+        --citations) CITATIONS="$(cd "$2" && pwd)" ;;
+        --virgozone) VIRGOZONE="$(cd "$2" && pwd)" ;;
+      esac
+      shift ;;
     --help|-h)
-      echo "Usage: bash install.sh [--gui|--tui]"
+      echo "Usage: bash install.sh [--gui|--tui] [--with-apps|--dev-apps] [--gateway PATH [--citations PATH] [--virgozone PATH]]"
       echo "Installs Python dependencies, PicoClaw, and a source CLI under HOSAKA_PREFIX (default ~/.local)."
       echo "The graphical dev host is installed by default; --tui skips Node.js/npm dependencies."
+      echo "Optional web apps install portable commands; --with-apps auto-detects sibling checkouts."
       exit 0 ;;
     *) echo "Unknown option: $arg" >&2; exit 2 ;;
   esac
+  shift
 done
+if (( WITH_APPS )); then
+  [[ -n "$GATEWAY" || ! -d "$ROOT/../hosaka-gateway" ]] || GATEWAY="$(cd "$ROOT/../hosaka-gateway" && pwd)"
+  [[ -n "$CITATIONS" || ! -d "$ROOT/../hosaka_citations" ]] || CITATIONS="$(cd "$ROOT/../hosaka_citations" && pwd)"
+  [[ -n "$VIRGOZONE" || ! -d "$ROOT/../virgo_zone" ]] || VIRGOZONE="$(cd "$ROOT/../virgo_zone" && pwd)"
+fi
+if [[ -n "$CITATIONS$VIRGOZONE" && -z "$GATEWAY" ]]; then
+  echo "--citations/--virgozone require --gateway PATH." >&2
+  exit 2
+fi
+if [[ -n "$GATEWAY" && ! -f "$GATEWAY/install.py" ]]; then
+  echo "--gateway must point at a hosaka-gateway checkout." >&2
+  exit 2
+fi
 [[ "$(id -u)" != 0 ]] || { echo "Run this installer as your normal user, not sudo." >&2; exit 1; }
 if [[ -n "${FLATPAK_ID:-}" ]]; then
   echo "Run the installer in your desktop's host terminal, outside the Flatpak sandbox." >&2
@@ -120,6 +151,14 @@ trap 'rm -f "$TMP"' EXIT
 } >"$TMP"
 chmod 755 "$TMP"
 mv "$TMP" "$TARGET"
+if [[ -n "$GATEWAY" ]]; then
+  WEB_ARGS=(--core "$ROOT" --prefix "$PREFIX")
+  [[ -z "$CITATIONS" ]] || WEB_ARGS+=(--citations "$CITATIONS")
+  [[ -z "$VIRGOZONE" ]] || WEB_ARGS+=(--virgozone "$VIRGOZONE")
+  (( ! WITH_APPS )) || WEB_ARGS+=(--link)
+  (( ! DEV_APPS )) || WEB_ARGS+=(--dev)
+  "$VENV/bin/python" "$GATEWAY/install.py" "${WEB_ARGS[@]}"
+fi
 case "${SHELL:-}" in
   */zsh) RC="$HOME/.zshrc" ;;
   */bash)
